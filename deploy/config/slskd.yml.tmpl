@@ -1,0 +1,16 @@
+# Rendered by scripts/run.sh (env substitution) -> deploy/config/rendered/slskd.yml
+# Soulseek credentials auto-register the username on first connect.
+soulseek:
+  username: ${SLSKD_SLSK_USERNAME}
+  password: ${SLSKD_SLSK_PASSWORD}
+directories:
+  downloads: /downloads
+shares:
+  directories:
+    - /shared/Mixtapes
+web:
+  authentication:
+    api_keys:
+      radiod:
+        key: ${SLSKD_API_KEY}
+        cidr: 0.0.0.0/0,::/0

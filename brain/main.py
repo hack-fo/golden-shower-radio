@@ -1,0 +1,143 @@
+"""Wire everything together and run the station brain.
+
+Starts (concurrently):
+  - the HTTP server (:8080) for Liquidsoap pulls + the website,
+  - the director loop (LLM curation -> wishlist),
+  - the acquisition workers (slskd + yt-dlp -> files).
+
+Every subsystem is resilient (catch + log + continue). Graceful shutdown on
+SIGINT/SIGTERM. A brief interruption on restart/crash is acceptable - the
+station's identity is continuous operation, not a zero-gap real-time guarantee.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import signal
+import threading
+
+from .acquire import Acquirer
+from .analyzer import Analyzer
+from .config import load_config
+from .director import Director
+from .knowledge import KnowledgeStore
+from .library import Library
+from .logging_setup import log_event, setup_logging
+from .research import Researcher
+from .server import make_server
+from .state import StationState
+from .talk import TalkDirector
+from .website import render_website
+
+log = logging.getLogger("brain.main")
+
+
+def run() -> int:
+    setup_logging()
+    cfg = load_config()
+
+    # Defense in depth: if ANTHROPIC_API_KEY somehow leaked into our env, drop it
+    # so the LLM uses the subscription OAuth creds and never bills credits.
+    if os.environ.pop("ANTHROPIC_API_KEY", None):
+        log_event(log, "main.dropped_anthropic_api_key", note="forcing subscription auth")
+
+    os.makedirs(cfg.db_dir, exist_ok=True)
+    os.makedirs(cfg.music_dir, exist_ok=True)
+
+    log_event(
+        log,
+        "main.boot",
+        station=cfg.station_name,
+        model=cfg.anthropic_model,
+        music_dir=cfg.music_dir,
+        db_dir=cfg.db_dir,
+        slskd=cfg.slskd_url,
+    )
+
+    stop_event = threading.Event()
+    state = StationState(cfg.station_name, recent_window=cfg.recent_window)
+    state.set_website_html(render_website(cfg))
+
+    library = Library(cfg.music_dir, cfg.library_path)
+    acquirer = Acquirer(cfg, library, state, stop_event)
+    director = Director(cfg, library, acquirer, state, stop_event)
+    # KNOWLEDGE-008: the dated, sourced, relational editorial-knowledge store (SQLite in
+    # /db). Best-effort - if disabled or the store can't open, the host simply talks from
+    # genre/feel only. NEVER on the <1s /api/next pull path. Built before TalkDirector +
+    # the server so both can read the grounding feed.
+    knowledge = None
+    if cfg.knowledge_enabled:
+        try:
+            knowledge = KnowledgeStore(
+                cfg.knowledge_db_path,
+                min_consensus_sources=cfg.knowledge_min_consensus_sources,
+            )
+        except Exception as exc:  # noqa: BLE001 - knowledge is best-effort, never fatal
+            log_event(log, "main.knowledge_init_failed", error=str(exc))
+            knowledge = None
+    # TALKING layer (phase 2a): pre-renders host talk clips between songs. Best-effort -
+    # if disabled or TTS/LLM fails, the station stays pure music. Carries the KNOWLEDGE-008
+    # grounding feed (verified facts) when the store is available (REQ-KI-001).
+    talk_director = TalkDirector(cfg, library, state, stop_event, knowledge=knowledge)
+    # ANALYSIS-006: background, serialized, non-blocking track-intelligence worker.
+    # Best-effort - if disabled or the audio stack is absent, every track still plays
+    # with safe-default transitions. NEVER on the <1s /api/next pull path.
+    analyzer = Analyzer(cfg, library, state, stop_event)
+    # KNOWLEDGE-008: background, serialized, non-blocking research worker (Group KR). Fills
+    # the editorial-knowledge store from MusicBrainz / Last.fm / etc. Best-effort + bounded +
+    # throttled; degrades gracefully on a source outage. NEVER blocks playout.
+    researcher = Researcher(cfg, library, knowledge, state, stop_event) if knowledge else None
+
+    httpd = make_server(cfg, library, state, knowledge=knowledge)
+    http_thread = threading.Thread(target=httpd.serve_forever, name="http", daemon=True)
+
+    def _shutdown(signum, _frame):
+        log_event(log, "main.shutdown_signal", signal=int(signum))
+        stop_event.set()
+        try:
+            httpd.shutdown()
+        except Exception:  # noqa: BLE001
+            pass
+
+    signal.signal(signal.SIGINT, _shutdown)
+    signal.signal(signal.SIGTERM, _shutdown)
+
+    http_thread.start()
+    acquirer.start()
+    director.start()
+    talk_director.start()
+    analyzer.start()
+    if researcher is not None:
+        researcher.start()
+    log_event(
+        log, "main.started",
+        http_port=cfg.http_port, talk_enabled=cfg.talk_enabled,
+        analysis_enabled=cfg.analysis_enabled,
+        knowledge_enabled=cfg.knowledge_enabled and knowledge is not None,
+    )
+
+    # Block the main thread until a shutdown signal arrives.
+    try:
+        while not stop_event.is_set():
+            stop_event.wait(1.0)
+    except KeyboardInterrupt:
+        stop_event.set()
+
+    # Graceful-ish cleanup.
+    try:
+        httpd.server_close()
+    except Exception:  # noqa: BLE001
+        pass
+    acquirer.close()
+    try:
+        library.save()
+    except Exception:  # noqa: BLE001
+        pass
+    if knowledge is not None:
+        try:
+            knowledge.close()
+        except Exception:  # noqa: BLE001
+            pass
+    log_event(log, "main.stopped")
+    return 0

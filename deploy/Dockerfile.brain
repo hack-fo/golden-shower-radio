@@ -1,0 +1,118 @@
+# Golden Shower Radio - the Python brain.
+#
+# python:3.12-slim is Debian/glibc on purpose: the `claude-agent-sdk` wheel bundles
+# a NATIVE Claude Code CLI binary (no Node.js needed) that links against glibc - it
+# would NOT run on Alpine/musl. HOME=/root so the SDK finds the mounted /root/.claude
+# OAuth credentials (MAX subscription). We never set ANTHROPIC_API_KEY: the brain
+# uses the subscription, and pay-per-use credits are exactly what broke the old brain.
+FROM python:3.12-slim
+
+ENV HOME=/root \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Runtime tools:
+#   ffmpeg     - yt-dlp audio extraction/transcode to mp3 + talk-clip loudnorm.
+#   yt-dlp     - YouTube fallback acquisition (installed as a standalone binary so it
+#                stays current independent of the apt release).
+#   espeak-ng  - Kokoro G2P fallback for English (and non-English) phonemisation.
+#   libsndfile1 - runtime lib behind python `soundfile` (Kokoro WAV writing).
+#   ca-certificates / tzdata - TLS for slskd/HTTP + sane timestamps.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        ffmpeg \
+        tzdata \
+        espeak-ng \
+        libsndfile1 \
+        curl \
+    && curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
+        -o /usr/local/bin/yt-dlp \
+    && chmod a+rx /usr/local/bin/yt-dlp \
+    && apt-get purge -y --auto-remove curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install Python deps first for layer caching. The claude-agent-sdk wheel pulls in its
+# bundled native CLI here; piper-tts pulls the ONNX runtime (CPU, NO torch). This step
+# uses the DEFAULT PyPI index, so Kokoro/torch are intentionally NOT in requirements.txt
+# (see the note there) - they need the CPU-only torch index, installed below.
+COPY requirements.txt ./
+RUN pip install -r requirements.txt
+
+# Kokoro (PRIMARY voice) + the ANALYSIS-006 audio engine. CRITICAL disk discipline:
+# install CPU-ONLY torch from the PyTorch CPU wheel index so we avoid the multi-GB CUDA
+# download, THEN kokoro + soundfile + the audio-analysis stack. This grows the image
+# ~2-3 GB (torch) which is acceptable on the 40 GB disk; we keep it as lean as possible
+# (CPU torch, no extras).
+#
+# AUDIT MUST-FIX B4: librosa + pyloudnorm are installed in the SAME `pip install`
+# invocation as kokoro/soundfile (NOT a separate step), so pip's resolver sees the full
+# constraint set at once. librosa pulls `numba`, which pins numpy to a NARROW range, and
+# kokoro/torch pin their own numpy; resolving them together avoids the classic
+# "numba needs numpy<2.1 but torch grabbed numpy 2.2" incompatibility that two separate
+# resolver runs would silently produce. soundfile (already needed by Kokoro) doubles as
+# pyloudnorm's WAV reader. If this resolver step fails, the build STOPS here (the audio
+# stack is a hard dependency of brain/analysis.py).
+RUN pip install torch --index-url https://download.pytorch.org/whl/cpu \
+    && pip install "kokoro>=0.9.2" soundfile "librosa>=0.10,<0.11" "pyloudnorm>=0.1,<0.2"
+
+# AUDIT MUST-FIX B4: build-time sanity check that the audio stack imported cleanly and
+# the numpy/numba/librosa triad is mutually compatible IN THE BUILT IMAGE. We import
+# `numba` EXPLICITLY (not just transitively via librosa) because a numpy<->numba ABI
+# mismatch is the #1 librosa install failure mode and surfaces only on `import numba`.
+# Fatal: a broken audio stack must fail the build, not surface at runtime on the live box.
+# (This runs BEFORE `COPY brain` so it depends only on the installed packages; the
+# brain.analysis import smoke-test lives in its own step after the app code is copied.)
+RUN python -c "import numpy, numba, librosa, pyloudnorm; print('audio-stack ok numpy', numpy.__version__, 'numba', numba.__version__, 'librosa', librosa.__version__)"
+
+# Kokoro's English G2P (misaki) pulls the spaCy `en_core_web_sm` model on first use; bake
+# it into the image so the first runtime synth does not stall downloading it.
+ENV BRAIN_KOKORO_VOICE=af_heart \
+    BRAIN_KOKORO_LANG=a
+RUN python -m spacy download en_core_web_sm
+
+# TALKING layer (Piper FALLBACK): bake ONE English Piper voice into the image so the DJ
+# keeps talking if Kokoro can't load at runtime. en_US-ryan-high is a clear, warm male
+# voice. Downloads the .onnx + .onnx.json pair into /app/voices (BRAIN_PIPER_DATA_DIR).
+ENV BRAIN_PIPER_VOICE=en_US-ryan-high \
+    BRAIN_PIPER_DATA_DIR=/app/voices
+RUN python -m piper.download_voices "${BRAIN_PIPER_VOICE}" --data-dir "${BRAIN_PIPER_DATA_DIR}" \
+    && ls -la "${BRAIN_PIPER_DATA_DIR}"
+
+# App code: the brain package + entrypoint.
+COPY radio-brain.py ./
+COPY brain ./brain
+
+# TALKING layer (Kokoro primary): pre-download the model + the full English voice palette
+# into the HuggingFace cache (HOME=/root -> /root/.cache/huggingface) so the first runtime
+# synth never stalls on a network fetch. brain.voice.prefetch_kokoro_voices() synthesises
+# one short clip per voice, which downloads each voicepack (~523 KB .pt from
+# hexgrad/Kokoro-82M voices/) AND sanity-checks `from kokoro import KPipeline` + that every
+# voice loads and produces audio (it raises -> fails the build if any voice yields none).
+# af_heart is the configurable default; the 10-voice palette feeds future per-persona use.
+# Runs AFTER `COPY brain` so it can reuse the exact extraction logic (single source).
+RUN python -c "from brain.voice import prefetch_kokoro_voices; prefetch_kokoro_voices()"
+
+# Sanity-check that the bundled `claude` CLI is present and runnable in-image.
+# (Non-fatal: the brain still runs on the seed list if the CLI is somehow missing.)
+RUN python -c "import claude_agent_sdk; print('claude-agent-sdk', claude_agent_sdk.__version__)"
+
+# ANALYSIS-006 (B4): smoke-test that the new audio ENGINE module imports in-image and
+# its lazy librosa/pyloudnorm import path resolves end-to-end. The module import itself
+# is stdlib-only (the audio libs are lazy-imported inside analyze_file), so this proves
+# the file copied + parses; we then force the lazy import to prove the engine can decode
+# at runtime on the live box. Fatal: the engine is a hard dependency once analysis is on.
+RUN python -c "import brain.analysis as a; print('brain.analysis ok engine=', a.ENGINE); import numpy, librosa, pyloudnorm; print('lazy audio import ok')"
+
+# Sanity-check the Piper FALLBACK is importable and the voice files landed.
+# (Non-fatal at runtime: Kokoro->Piper->music degradation is handled in brain.voice.)
+RUN python -c "import piper; print('piper ok')" \
+    && test -f "${BRAIN_PIPER_DATA_DIR}/${BRAIN_PIPER_VOICE}.onnx" \
+    && test -f "${BRAIN_PIPER_DATA_DIR}/${BRAIN_PIPER_VOICE}.onnx.json"
+
+EXPOSE 8080
+
+ENTRYPOINT ["python", "radio-brain.py"]

@@ -1,0 +1,581 @@
+"""Music library: scan MUSIC_DIR, extract metadata, dedup, pick next track.
+
+The library is the source of truth for playout. /api/next selects the
+least-recently-played track (avoiding immediate repeats). Metadata comes from
+mutagen; if a tag is missing we fall back to parsing "Artist - Title" from the
+filename.
+
+Index is persisted as JSON under DB_DIR so play history survives restarts (brief
+interruption on restart is acceptable per the station's operating philosophy).
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import re
+import threading
+import time
+import unicodedata
+from dataclasses import asdict, dataclass, field, fields
+from typing import Any, Dict, List, Optional
+
+from .config import AUDIO_EXTS
+from .logging_setup import log_event
+
+log = logging.getLogger("brain.library")
+
+# ANALYSIS-006 feature schema version (REQ-AD-005 / REQ-AE-002). Bumping this
+# value marks every existing analysis record stale so the bounded backfill
+# (Group AP) re-analyzes lazily; it NEVER triggers a synchronous re-scan or a
+# wipe. A pre-analysis Track carries schema_version == 0 (the "unanalyzed"
+# sentinel) and is fully playable with safe-default transitions (REQ-AT-006).
+SCHEMA_VERSION = 1
+
+
+def normalize_key(artist: str, title: str) -> str:
+    """Canonical dedup key from artist + title (case/space/diacritic-insensitive)."""
+    raw = f"{artist} - {title}".lower()
+    raw = unicodedata.normalize("NFKD", raw)
+    raw = "".join(c for c in raw if not unicodedata.combining(c))
+    raw = re.sub(r"[^a-z0-9]+", " ", raw).strip()
+    return raw
+
+
+@dataclass
+class Track:
+    """A library track plus its (optional) ANALYSIS-006 track-intelligence record.
+
+    The first five fields are the CORE-001 identity/dedup fields and MUST keep
+    their meaning unchanged. In particular ``key`` is the DEDUP SLUG (artist-title,
+    see ``normalize_key``) — it is NOT a musical key. The analyzed MUSICAL key
+    lives in the DISTINCT ``musical_key`` field (REQ-AD-005). The remaining fields
+    are the ANALYSIS-006 feature record (REQ-AD-001); every one defaults to
+    empty/None/0 so a track ingested before analysis existed remains valid and
+    playable (graceful degradation, REQ-AT-006).
+    """
+
+    # -- CORE-001 identity / dedup (semantics frozen) ----------------------------
+    path: str                 # absolute path under MUSIC_DIR
+    artist: str
+    title: str
+    album: str = ""
+    key: str = ""             # DEDUP SLUG (artist-title) — NOT a musical key
+    added_at: float = field(default_factory=time.time)
+    last_played: float = 0.0
+    play_count: int = 0
+
+    # -- ANALYSIS-006: rhythm / tempo (REQ-AE-001) -------------------------------
+    bpm: float = 0.0
+    bpm_confidence: float = 0.0
+
+    # -- ANALYSIS-006: harmonic / key (REQ-AE-001, REQ-AD-005) -------------------
+    musical_key: str = ""     # estimated tonal key, e.g. "A minor" — DISTINCT from .key
+    camelot: str = ""         # harmonic-mixing notation, e.g. "8A"
+    key_confidence: float = 0.0
+
+    # -- ANALYSIS-006: energy / loudness (REQ-AE-001) ----------------------------
+    energy: float = 0.0
+    danceability: float = 0.0
+    integrated_lufs: Optional[float] = None
+    replaygain_gain_db: Optional[float] = None
+
+    # -- ANALYSIS-006: cue / boundary points (Group AT) --------------------------
+    # Offsets in seconds. None = not analyzed (consumer applies safe defaults).
+    cue_in: Optional[float] = None
+    cue_out: Optional[float] = None
+    true_end: Optional[float] = None
+    trailing_silence: Optional[float] = None
+
+    # -- ANALYSIS-006: beat grid (REQ-AT-004) — RESERVED, NOT persisted (B3) -----
+    # The heaviest field, needed only by the DEFERRED beat-aligned club render.
+    # Left as reserved-empty lists this increment and EXCLUDED from the persisted
+    # index (see _ANALYSIS_VOLATILE_FIELDS) so library.json stays small + fast.
+    beat_grid: List[float] = field(default_factory=list)
+    downbeats: List[float] = field(default_factory=list)
+
+    # -- ANALYSIS-006: genre / mood / descriptive tags (Group AM) ----------------
+    genre: str = ""
+    sub_genre: str = ""
+    mood: str = ""
+    tags: List[str] = field(default_factory=list)
+    year: Optional[int] = None
+
+    # -- ANALYSIS-006: sonic-character profile (REQ-AE-006) ----------------------
+    timbre: str = ""
+    production_character: str = ""
+    instrumentation_feel: str = ""
+    vocal_instrumental: str = ""
+    acoustic_electronic: str = ""
+    dynamics: str = ""
+    sonic_description: str = ""          # DEFERRED grounded-LLM summary — stays empty
+    embedding_ref: str = ""              # DEFERRED content-embedding reference — unused
+
+    # -- ANALYSIS-006: consensus / provenance (REQ-AM-003) -----------------------
+    # provenance maps feature-name -> {sources, consensus_level, confidence}.
+    provenance: Dict[str, Any] = field(default_factory=dict)
+
+    # -- ANALYSIS-006: schema bookkeeping (REQ-AD-005, REQ-AE-002) ---------------
+    schema_version: int = 0              # 0 = unanalyzed; SCHEMA_VERSION once analyzed
+    analyzed_at: Optional[float] = None
+    content_sig: str = ""                # "<size>:<mtime>" cache key (REQ-AE-002, M1)
+    low_confidence_flags: List[str] = field(default_factory=list)
+    analysis_error: str = ""             # last failure reason (failed records still play)
+
+
+# Identity / dedup fields that set_analysis MUST NEVER overwrite (M5 allowlist
+# hard-exclusions). A metadata provider returning a field literally named "key"
+# (or path/artist/title) must NOT corrupt the dedup slug or the file identity.
+_IDENTITY_FIELDS = frozenset({"path", "artist", "title", "key", "added_at", "last_played", "play_count"})
+
+# Beat grid is reserved-empty this increment and excluded from the persisted
+# index (B3): it is the heaviest field and only the DEFERRED club render uses it.
+# Keeping it out of asdict() keeps _save_locked small + fast on the hot path.
+_ANALYSIS_VOLATILE_FIELDS = frozenset({"beat_grid", "downbeats"})
+
+# The ALLOWLIST set_analysis may write: every Track field EXCEPT the frozen
+# identity fields and the volatile (not-persisted) beat-grid fields. Computed
+# once from the dataclass so new analysis fields are automatically writable while
+# identity stays protected.
+_ANALYSIS_WRITABLE_FIELDS = frozenset(
+    f.name for f in fields(Track)
+) - _IDENTITY_FIELDS - _ANALYSIS_VOLATILE_FIELDS
+
+
+def _parse_filename(filename: str) -> Dict[str, str]:
+    """Best-effort 'Artist - Title' parse from a bare filename."""
+    stem = os.path.splitext(os.path.basename(filename))[0]
+    stem = re.sub(r"^\s*\d+\s*[\-.\)]\s*", "", stem)  # strip leading track numbers
+    m = re.match(r"^(.+?)\s+[\-–—]\s+(.+)$", stem)
+    if m:
+        return {"artist": m.group(1).strip(), "title": m.group(2).strip()}
+    return {"artist": "", "title": stem.strip()}
+
+
+def _read_tags(path: str) -> Dict[str, str]:
+    """Read artist/title/album via mutagen; fall back to filename parsing."""
+    artist = title = album = ""
+    try:
+        from mutagen import File as MutagenFile  # type: ignore
+
+        mf = MutagenFile(path, easy=True)
+        if mf is not None and mf.tags is not None:
+            def _tag(*names):
+                for n in names:
+                    v = mf.tags.get(n)
+                    if v:
+                        return str(v[0]) if isinstance(v, list) else str(v)
+                return ""
+
+            artist = _tag("artist", "albumartist", "performer")
+            title = _tag("title")
+            album = _tag("album")
+    except Exception:  # noqa: BLE001 - corrupt tags must never crash the scan
+        pass
+
+    if not artist or not title:
+        parsed = _parse_filename(path)
+        artist = artist or parsed["artist"]
+        title = title or parsed["title"]
+    return {"artist": artist.strip(), "title": title.strip(), "album": album.strip()}
+
+
+class Library:
+    """Thread-safe music library with a persisted JSON index."""
+
+    def __init__(self, music_dir: str, index_path: str):
+        self.music_dir = music_dir
+        self.index_path = index_path
+        self._lock = threading.RLock()
+        self._tracks: Dict[str, Track] = {}  # key -> Track
+        self._load()
+
+    # -- persistence -------------------------------------------------------------
+
+    def _load(self) -> None:
+        """TOLERANT loader (ANALYSIS-006 #1 safety item).
+
+        The old loader did ``Track(**rec)`` and wiped the WHOLE index on a single
+        ``TypeError`` — which the new schema would trigger for any record carrying
+        an unknown key, and which an unrelated future field rename could trigger
+        too. This loader instead:
+          - filters each record down to the CURRENT Track field set (unknown extra
+            keys are dropped, not fatal), and
+          - wraps EACH record in its own try/except so one corrupt record is skipped
+            without losing the rest.
+        A missing/unreadable file yields an empty index (first run); a JSON parse
+        failure of the whole file is the only case that legitimately produces an
+        empty index. We NEVER zero a successfully-parsed index because of one bad
+        record.
+        """
+        try:
+            with open(self.index_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            self._tracks = {}
+            return
+        except (json.JSONDecodeError, OSError) as exc:
+            log_event(log, "library.load_failed", error=str(exc))
+            self._tracks = {}
+            return
+
+        valid_names = {f.name for f in fields(Track)}
+        loaded = 0
+        skipped = 0
+        for rec in data.get("tracks", []):
+            try:
+                if not isinstance(rec, dict):
+                    skipped += 1
+                    continue
+                clean = {k: v for k, v in rec.items() if k in valid_names}
+                t = Track(**clean)
+                if not t.key:
+                    # A record with no dedup slug cannot be indexed; skip it
+                    # rather than clobber another track under the empty key.
+                    skipped += 1
+                    continue
+                self._tracks[t.key] = t
+                loaded += 1
+            except (TypeError, ValueError) as exc:  # noqa: PERF203 - per-record isolation is the point
+                skipped += 1
+                log_event(log, "library.record_skipped", error=str(exc))
+        log_event(log, "library.loaded", count=loaded, skipped=skipped)
+
+    def _save_locked(self) -> None:
+        os.makedirs(os.path.dirname(self.index_path) or ".", exist_ok=True)
+        tmp = self.index_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"tracks": [self._serialize(t) for t in self._tracks.values()]}, f, ensure_ascii=False)
+        os.replace(tmp, self.index_path)
+
+    @staticmethod
+    def _serialize(track: Track) -> Dict[str, Any]:
+        """asdict minus the volatile beat-grid fields (B3 index-bloat guard).
+
+        beat_grid/downbeats are the heaviest fields and only the DEFERRED club
+        render uses them, so they are NOT persisted this increment. They reload as
+        their empty defaults, which is exactly the reserved-empty contract.
+        """
+        rec = asdict(track)
+        for name in _ANALYSIS_VOLATILE_FIELDS:
+            rec.pop(name, None)
+        return rec
+
+    def save(self) -> None:
+        with self._lock:
+            self._save_locked()
+
+    # -- scanning ----------------------------------------------------------------
+
+    def scan(self) -> int:
+        """Recursively (re)scan MUSIC_DIR. Returns number of NEW tracks added.
+
+        Existing tracks keep their play history. Files that vanished are pruned.
+        """
+        found_paths = set()
+        added = 0
+        with self._lock:
+            existing_by_path = {t.path: t for t in self._tracks.values()}
+            for root, dirs, files in os.walk(self.music_dir):
+                # Skip dot-directories (e.g. ``.talk`` holds rendered host-talk clips,
+                # NOT songs - indexing them would put the DJ's voice in the music
+                # rotation). Pruning ``dirs`` in place stops os.walk descending in.
+                dirs[:] = [d for d in dirs if not d.startswith(".")]
+                for name in files:
+                    if os.path.splitext(name)[1].lower() not in AUDIO_EXTS:
+                        continue
+                    path = os.path.join(root, name)
+                    found_paths.add(path)
+                    if path in existing_by_path:
+                        continue
+                    # New file: ignore partial downloads slskd/yt-dlp may leave.
+                    if name.endswith((".part", ".tmp", ".ytdl")):
+                        continue
+                    tags = _read_tags(path)
+                    if not tags["title"]:
+                        continue
+                    key = normalize_key(tags["artist"], tags["title"])
+                    if key in self._tracks:
+                        # Dedup: keep the first one we saw, skip duplicate file.
+                        continue
+                    self._tracks[key] = Track(
+                        path=path,
+                        artist=tags["artist"],
+                        title=tags["title"],
+                        album=tags["album"],
+                        key=key,
+                    )
+                    added += 1
+
+            # Prune tracks whose files disappeared.
+            for key in [k for k, t in self._tracks.items() if t.path not in found_paths]:
+                del self._tracks[key]
+
+            if added or True:  # persist on every scan (cheap; survives restarts)
+                self._save_locked()
+        if added:
+            log_event(log, "library.scanned", added=added, total=len(self._tracks))
+        return added
+
+    # -- queries -----------------------------------------------------------------
+
+    def count(self) -> int:
+        with self._lock:
+            return len(self._tracks)
+
+    def has_key(self, key: str) -> bool:
+        with self._lock:
+            return key in self._tracks
+
+    def keys(self) -> List[str]:
+        with self._lock:
+            return list(self._tracks.keys())
+
+    def pick_next(self, exclude_path: Optional[str], recent_keys: List[str]) -> Optional[Track]:
+        """Least-recently-played track, avoiding the immediate previous track and
+        (best-effort) the recent window. Returns None if the library is empty."""
+        with self._lock:
+            if not self._tracks:
+                return None
+            recent_set = set(recent_keys)
+            # Candidates not in the recent window and not the currently-playing file.
+            candidates = [
+                t for t in self._tracks.values()
+                if t.path != exclude_path and t.key not in recent_set
+            ]
+            if not candidates:
+                # Everything is "recent" (tiny library) - relax, just avoid the
+                # immediately-previous file.
+                candidates = [t for t in self._tracks.values() if t.path != exclude_path]
+            if not candidates:
+                candidates = list(self._tracks.values())
+            # Least-recently-played first; never-played (last_played==0) sort first.
+            candidates.sort(key=lambda t: (t.last_played, t.play_count))
+            return candidates[0]
+
+    def mark_played(self, track: Track) -> None:
+        with self._lock:
+            t = self._tracks.get(track.key)
+            if t is not None:
+                t.last_played = time.time()
+                t.play_count += 1
+                self._save_locked()
+
+    # -- ANALYSIS-006: analysis read/write ---------------------------------------
+
+    def needs_analysis(self, track: Track) -> bool:
+        """True if the track has no current-schema analysis record (REQ-AE-002).
+
+        Idempotent gate for the bounded backfill worker (Group AP): a track is
+        analyzed at most once per (content, schema) — a track already at
+        SCHEMA_VERSION is skipped. A record whose content_sig no longer matches
+        the file on disk (file changed) or whose schema_version is stale is
+        eligible again. content_sig comparison is the caller's responsibility via
+        ``content_sig``; here we gate on schema only, which is the cache key that
+        survives restarts.
+        """
+        return track.schema_version < SCHEMA_VERSION
+
+    def set_analysis(self, key: str, payload: Dict[str, Any]) -> bool:
+        """ALLOWLIST writer for an analysis record (M5 — non-negotiable).
+
+        Writes ONLY known analysis field names from ``payload`` onto the track;
+        every other key (including a provider field literally named ``key``,
+        ``path``, ``artist`` or ``title``) is hard-excluded so it can NEVER corrupt
+        the dedup slug or the file identity. Returns True if the track existed and
+        was updated, False otherwise. Persists under the lock. The write is brief
+        (it does no decode/network) so it is safe on the same lock as scan/pick.
+        """
+        with self._lock:
+            t = self._tracks.get(key)
+            if t is None:
+                return False
+            for name, value in payload.items():
+                if name not in _ANALYSIS_WRITABLE_FIELDS:
+                    continue  # identity + volatile fields are immutable here
+                setattr(t, name, value)
+            self._save_locked()
+            return True
+
+    def note_source(self, key: str, source: str) -> None:
+        """Record where a track entered the library (e.g. 'slskd', 'manual', 'ytdlp').
+
+        Stored under provenance['source'] via the allowlist writer so it can never
+        touch identity fields. Best-effort; a missing track is a silent no-op so
+        the acquisition path never raises into the pull (golden rule).
+        """
+        with self._lock:
+            t = self._tracks.get(key)
+            if t is None:
+                return
+            prov = dict(t.provenance)
+            prov["source"] = source
+            t.provenance = prov
+            self._save_locked()
+
+    def query(
+        self,
+        *,
+        genre: Optional[str] = None,
+        sub_genre: Optional[str] = None,
+        mood: Optional[str] = None,
+        camelot: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        bpm_min: Optional[float] = None,
+        bpm_max: Optional[float] = None,
+        energy_min: Optional[float] = None,
+        energy_max: Optional[float] = None,
+        year_min: Optional[int] = None,
+        year_max: Optional[int] = None,
+        analyzed_only: bool = False,
+        limit: Optional[int] = None,
+    ) -> List[Track]:
+        """Filter the catalog by feature dimensions (REQ-AD-002 / REQ-AD-003).
+
+        All criteria are AND-combined; an omitted criterion is not constrained.
+        Genre/sub_genre/mood/camelot match case-insensitively; tags require ALL
+        requested tags to be present. Unanalyzed tracks are treated as
+        feature-unknown: they pass a criterion only when that criterion is not set
+        (graceful degradation, REQ-AP-004), unless ``analyzed_only`` is True.
+        The query is the primitive that makes distinct per-persona taste profiles
+        select materially distinct candidate pools; it owns NO curation policy.
+        """
+        def _ci(value: str) -> str:
+            return value.strip().lower()
+
+        want_tags = {_ci(t) for t in tags} if tags else None
+
+        with self._lock:
+            out: List[Track] = []
+            for t in self._tracks.values():
+                if analyzed_only and t.schema_version < SCHEMA_VERSION:
+                    continue
+                if genre is not None and _ci(t.genre) != _ci(genre):
+                    continue
+                if sub_genre is not None and _ci(t.sub_genre) != _ci(sub_genre):
+                    continue
+                if mood is not None and _ci(t.mood) != _ci(mood):
+                    continue
+                if camelot is not None and _ci(t.camelot) != _ci(camelot):
+                    continue
+                if want_tags is not None and not want_tags.issubset({_ci(x) for x in t.tags}):
+                    continue
+                if bpm_min is not None and t.bpm < bpm_min:
+                    continue
+                if bpm_max is not None and (t.bpm == 0.0 or t.bpm > bpm_max):
+                    continue
+                if energy_min is not None and t.energy < energy_min:
+                    continue
+                if energy_max is not None and t.energy > energy_max:
+                    continue
+                if year_min is not None and (t.year is None or t.year < year_min):
+                    continue
+                if year_max is not None and (t.year is None or t.year > year_max):
+                    continue
+                out.append(t)
+            if limit is not None and limit >= 0:
+                out = out[:limit]
+            return out
+
+    def adjacency(
+        self,
+        track: Track,
+        *,
+        bpm_tolerance: float = 0.06,
+        harmonic_only: bool = True,
+        rising_energy: bool = False,
+        require_confident_key: bool = True,
+        limit: Optional[int] = None,
+    ) -> List[Track]:
+        """Candidate neighbors for a sequenced DJ set (REQ-AD-004).
+
+        Returns tracks within ±``bpm_tolerance`` (fractional, e.g. 0.06 == ±6%) of
+        ``track``'s BPM and, when ``harmonic_only``, Camelot-compatible (same code,
+        ±1 number same letter, or same number switching letter). When the seed's
+        key is low-confidence and ``require_confident_key`` is set, the harmonic
+        filter is WITHHELD (a hedged claim, never a confident-but-wrong blend —
+        REQ-AT-007 grounding). ``rising_energy`` keeps only higher-energy
+        candidates. This provides query primitives only; the adjacency DECISION and
+        mixing policy are OPS-004's (REQ-OA-006 / REQ-OA-014).
+        """
+        if track.bpm <= 0.0:
+            return []
+        lo = track.bpm * (1.0 - bpm_tolerance)
+        hi = track.bpm * (1.0 + bpm_tolerance)
+
+        seed_key_trusted = track.key_confidence > 0.0 and "musical_key" not in track.low_confidence_flags
+        apply_harmonic = harmonic_only and bool(track.camelot)
+        if apply_harmonic and require_confident_key and not seed_key_trusted:
+            apply_harmonic = False  # grounded: refuse rather than blend into a clash
+        compatible = self._camelot_neighbors(track.camelot) if apply_harmonic else None
+
+        with self._lock:
+            out: List[Track] = []
+            for t in self._tracks.values():
+                if t.key == track.key:
+                    continue
+                if t.bpm <= 0.0 or not (lo <= t.bpm <= hi):
+                    continue
+                if compatible is not None and t.camelot not in compatible:
+                    continue
+                if rising_energy and not (t.energy > track.energy):
+                    continue
+                out.append(t)
+            out.sort(key=lambda c: abs(c.bpm - track.bpm))
+            if limit is not None and limit >= 0:
+                out = out[:limit]
+            return out
+
+    @staticmethod
+    def _camelot_neighbors(camelot: str) -> set:
+        """Harmonically-compatible Camelot codes for a given code (incl. itself).
+
+        Compatible = same code, ±1 number (wrapping 1..12) same letter, or same
+        number with the letter switched (relative major/minor). Returns an empty
+        set for an unparseable code so adjacency simply finds no harmonic match.
+        """
+        m = re.fullmatch(r"(\d{1,2})([AB])", camelot.strip().upper())
+        if not m:
+            return set()
+        num = int(m.group(1))
+        letter = m.group(2)
+        if not 1 <= num <= 12:
+            return set()
+        up = num % 12 + 1
+        down = (num - 2) % 12 + 1
+        other = "B" if letter == "A" else "A"
+        return {f"{num}{letter}", f"{up}{letter}", f"{down}{letter}", f"{num}{other}"}
+
+    def analysis_stats(self) -> Dict[str, Any]:
+        """Observability snapshot for the health/status surface (REQ-AP-006).
+
+        Counts total tracks, how many carry a current-schema analysis record, how
+        many are pending, how many recorded an analysis error, and the
+        low-confidence rate among analyzed tracks. Cheap; safe to call from the
+        status endpoint.
+        """
+        with self._lock:
+            total = len(self._tracks)
+            analyzed = 0
+            pending = 0
+            errored = 0
+            low_conf = 0
+            for t in self._tracks.values():
+                if t.schema_version >= SCHEMA_VERSION:
+                    analyzed += 1
+                    if t.low_confidence_flags:
+                        low_conf += 1
+                else:
+                    pending += 1
+                if t.analysis_error:
+                    errored += 1
+            return {
+                "schema_version": SCHEMA_VERSION,
+                "total": total,
+                "analyzed": analyzed,
+                "pending": pending,
+                "errored": errored,
+                "low_confidence": low_conf,
+                "low_confidence_rate": (low_conf / analyzed) if analyzed else 0.0,
+            }

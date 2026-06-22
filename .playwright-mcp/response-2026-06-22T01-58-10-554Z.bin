@@ -1,0 +1,10 @@
+{"event":[{"EventKind":"Text","ID":0,"SamplePosition":160,"Time":"0.007256","Flags":"TTS_TextBegin","Start":true,"Text":"Hetta er eitt test."},
+{"EventKind":"Sentence","ID":1,"SamplePosition":1280,"Time":"0.058049","Flags":"TTS_Word, TTS_Sentence","SentenceOffset":0,"SentenceSize":19,"Sentence":"Hetta er eitt test."},
+{"EventKind":"Word","ID":1,"SamplePosition":1280,"Time":"0.058049","Flags":"TTS_Word, TTS_Sentence","WordOffset":0,"WordSize":5,"Word":"Hetta"},
+{"EventKind":"Word","ID":5,"SamplePosition":6080,"Time":"0.275736","Flags":"TTS_Word","WordOffset":6,"WordSize":2,"Word":"er"},
+{"EventKind":"Word","ID":7,"SamplePosition":7840,"Time":"0.355555","Flags":"TTS_Word","WordOffset":9,"WordSize":4,"Word":"eitt"},
+{"EventKind":"Word","ID":9,"SamplePosition":9600,"Time":"0.435374","Flags":"TTS_Word","WordOffset":14,"WordSize":4,"Word":"test"},
+{"EventKind":"Word","ID":13,"SamplePosition":18560,"Time":"0.841723","Flags":"TTS_Word, TTS_Pause, TTS_TextEnd, TTS_Punctuation","WordOffset":18,"WordSize":1,"Word":"."},
+{"EventKind":"Text","ID":13,"SamplePosition":18560,"Time":"0.841723","Flags":"TTS_Word, TTS_Pause, TTS_TextEnd, TTS_Punctuation","Start":false},
+{"EventKind":"TotalSamples","ID":14,"SamplePosition":29440,"Time":"0.000000","Flags":"TTS_None","Samples":29440,"ElapsedMillis":187}
+]}

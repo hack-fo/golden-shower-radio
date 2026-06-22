@@ -1,0 +1,36 @@
+# Golden Shower Radio - Python brain dependencies.
+#
+# claude-agent-sdk: Claude curation via the host's MAX subscription. Shells out to
+#   the bundled `claude` CLI; authenticates with ~/.claude OAuth (NO ANTHROPIC_API_KEY).
+# httpx: slskd REST client.
+# mutagen: audio metadata (artist/title/album) extraction during library scan.
+# piper-tts: local neural TTS (ONNX/CPU, NO torch). FALLBACK voice for the TALKING layer
+#   when Kokoro can't load. Invoked as `python -m piper`; voice baked in at build time.
+#
+# kokoro / torch / soundfile are NOT listed here on purpose: they are installed in
+#   Dockerfile.brain with the CPU-only PyTorch index
+#   (--index-url https://download.pytorch.org/whl/cpu) so we avoid the multi-GB CUDA
+#   build. `pip install -r requirements.txt` uses the default index and would pull CUDA
+#   torch, so the Kokoro stack is installed in a dedicated Dockerfile step instead.
+#
+# librosa / pyloudnorm (ANALYSIS-006 audio engine, brain/analysis.py) are ALSO NOT
+#   listed here, for the SAME pip-resolver reason (audit must-fix B4): librosa pulls
+#   numba, which pins numpy to a NARROW compatible range, and torch/kokoro pin their
+#   own numpy. Installing them in a SEPARATE `pip install -r requirements.txt` step
+#   would let two independent resolver runs land incompatible numpy/numba versions
+#   (the classic "numba needs numpy<2.1 but torch grabbed numpy 2.2" break). So the
+#   audio stack is installed in the SAME Dockerfile step as torch/kokoro, where pip
+#   sees the full constraint set at once and a build sanity-check imports numba AND
+#   librosa explicitly. See deploy/Dockerfile.brain.
+#
+# yt-dlp is installed as a CLI in the image (Dockerfile.brain), not via pip here.
+#
+# KNOWLEDGE-008 (brain/knowledge.py + brain/research.py) adds NO new dependency: the
+# editorial-knowledge store uses the stdlib `sqlite3` (+ stdlib `zoneinfo` for the
+# Atlantic/Faroe freshness date), and the research providers reuse the already-present
+# `httpx` (Last.fm) and the `musicbrainzngs` already installed for ANALYSIS-006 enrichment,
+# both lazy-imported + exception-isolated. No SQL ORM, no graph-DB engine, no vector store.
+claude-agent-sdk>=0.2,<0.3
+httpx>=0.27,<1.0
+mutagen>=1.47,<2.0
+piper-tts>=1.3,<2.0

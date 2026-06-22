@@ -1,0 +1,72 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - link "Home" [ref=e6] [cursor=pointer]:
+        - /url: /
+      - navigation [ref=e7]:
+        - generic [ref=e8]:
+          - link "New document" [ref=e9] [cursor=pointer]:
+            - /url: /documents/new
+          - link:
+            - /url: "#"
+          - link "Register" [ref=e10] [cursor=pointer]:
+            - /url: /register
+          - link "Log in" [ref=e11] [cursor=pointer]:
+            - /url: /login
+          - button "Faroese" [ref=e12] [cursor=pointer]
+  - main [ref=e13]:
+    - generic [ref=e14]:
+      - heading "Faroese Voice Player" [level=1] [ref=e15]
+      - generic [ref=e17]:
+        - generic [ref=e18]:
+          - generic [ref=e20]:
+            - checkbox "Edit text" [checked] [ref=e21]
+            - text: Edit text
+          - generic [ref=e23]:
+            - generic:
+              - generic:
+                - mark:
+                  - mark: Hetta
+                  - text: er eitt test.
+            - textbox [disabled] [ref=e24]: Hetta er eitt test.
+          - generic [ref=e25]:
+            - checkbox "Highlight" [checked] [ref=e26]
+            - generic [ref=e27]: Highlight
+            - generic [ref=e28]: "Reading position: 0"
+          - generic [ref=e29]:
+            - button "Pause" [ref=e67] [cursor=pointer]: Pause
+            - button "Rewind" [ref=e32] [cursor=pointer]: Rewind
+            - button "Back" [ref=e34] [cursor=pointer]: Back
+            - button "Forward" [ref=e36] [cursor=pointer]: Forward
+        - generic [ref=e38]:
+          - generic [ref=e40]:
+            - generic [ref=e41]: Speaker voice
+            - combobox "Speaker voice" [disabled] [ref=e42]:
+              - option "Einar (dr)"
+              - option "Eva (ge)"
+              - option "Geir (dr)"
+              - option "Gunn (ge)"
+              - option "Hanna (kv)" [selected]
+              - option "Hanus (ma)"
+              - option "Karl (dr)"
+              - option "Katrina (ge)"
+          - generic [ref=e43]:
+            - generic [ref=e44]:
+              - generic [ref=e45]: Speech rate
+              - generic [ref=e46]:
+                - button "Decrease speech rate" [disabled] [ref=e47]
+                - spinbutton "Speech rate" [disabled] [ref=e49]: "100"
+                - button "Increase speech rate" [disabled] [ref=e50]
+            - generic [ref=e52]:
+              - generic [ref=e53]: Vocal tract
+              - generic [ref=e54]:
+                - button "Decrease vocal tract" [disabled] [ref=e55]
+                - textbox "Vocal tract" [disabled] [ref=e57]: "100"
+                - button "Increase vocal tract" [disabled] [ref=e58]
+            - button "Reset to defaults" [ref=e61] [cursor=pointer]: Reset to defaults
+  - contentinfo [ref=e63]:
+    - generic [ref=e64]: © 2026 ‐ Acapela Group
+    - generic [ref=e65]:
+      - text: Faroese Voice Portal
+      - link "Terms of service" [ref=e66] [cursor=pointer]:
+        - /url: /tos

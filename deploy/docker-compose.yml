@@ -1,0 +1,90 @@
+name: golden-shower-radio
+
+# All services share the "gsr" network and reach each other by service name.
+# Secrets/config come from ../secrets/.env (gitignored). Music downloaded by
+# slskd lands in ../data/music, which liquidsoap and radiod also mount.
+
+services:
+  icecast:
+    image: moul/icecast
+    container_name: gsr-icecast
+    restart: unless-stopped
+    env_file: ../secrets/.env
+    environment:
+      ICECAST_ADMIN_USERNAME: admin
+    ports:
+      - "8000:8000"
+    networks: [gsr]
+
+  slskd:
+    image: slskd/slskd:latest
+    container_name: gsr-slskd
+    restart: unless-stopped
+    # Behind a compose profile: only starts when the "slskd" profile is active
+    # (run.sh passes --profile slskd when Soulseek acquisition is enabled). On
+    # networks that block P2P traffic, omit the profile and slskd never launches;
+    # the brain tolerates slskd-absent at runtime (connection errors are caught).
+    profiles: ["slskd"]
+    env_file: ../secrets/.env
+    environment:
+      SLSKD_SHARED_DIR: /shared/Mixtapes
+      SLSKD_DOWNLOADS_DIR: /downloads
+      SLSKD_REMOTE_CONFIGURATION: "true"
+    volumes:
+      - /mnt/f/Mixtapes:/shared/Mixtapes:ro
+      - ../data/music:/downloads
+      - ../data/slskd:/app
+    ports:
+      - "5030:5030"
+    networks: [gsr]
+
+  liquidsoap:
+    image: savonet/liquidsoap:v2.2.5
+    container_name: gsr-liquidsoap
+    restart: unless-stopped
+    depends_on: [icecast, brain]
+    env_file: ../secrets/.env
+    entrypoint: ["liquidsoap"]
+    command: ["/radio.liq"]
+    volumes:
+      - ./config/radio.liq:/radio.liq:ro
+      - ../data/music:/music:ro
+    networks: [gsr]
+
+  brain:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.brain
+    container_name: gsr-brain
+    restart: unless-stopped
+    # No depends_on: slskd is optional (behind the "slskd" compose profile). The brain
+    # tolerates slskd-absent at runtime (acquisition pauses gracefully — broad except in
+    # slskd.py), so it must NOT hard-depend on a profiled service (that errors when the
+    # profile is off).
+    # IMPORTANT: do NOT use env_file here. secrets/.env contains ANTHROPIC_API_KEY,
+    # and if that var is present it silently overrides the Claude subscription and
+    # bills pay-per-use credits (this is what broke the old brain). The brain must
+    # authenticate via the mounted ~/.claude OAuth subscription creds, so we pass
+    # ONLY the vars it needs and leave ANTHROPIC_API_KEY unset.
+    environment:
+      SLSKD_URL: http://slskd:5030
+      SLSKD_API_KEY: ${SLSKD_API_KEY}
+      STATION_NAME: ${STATION_NAME}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
+      MUSIC_DIR: /music
+      DB_DIR: /db
+      HOME: /root
+      TZ: Atlantic/Faroe
+    volumes:
+      # Claude MAX subscription OAuth creds (RW so the access token can refresh).
+      - /home/charlie/.claude:/root/.claude
+      - ../data/music:/music
+      - ../data/db:/db
+      - ../data/logs:/logs
+    ports:
+      - "8080:8080"
+    networks: [gsr]
+
+networks:
+  gsr:
+    driver: bridge

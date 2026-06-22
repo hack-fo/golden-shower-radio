@@ -1,0 +1,131 @@
+# Golden Shower Radio — continuous playout (Liquidsoap 2.2.x), PULL-based.
+#
+# Liquidsoap asks the Python brain "what's next?" via HTTP and plays it.
+# This replaces the flaky telnet-push interface: no pushing, no command-server
+# timeouts. The brain picks the next eligible item (music or a pre-rendered host
+# talk clip) and returns a Liquidsoap `annotate:` URI carrying the brain's CLEAN
+# artist/title (so players show correct ICY metadata even when a file's embedded
+# tags are garbled) plus a `mix_mode` hint ("music"|"talk") that steers the
+# transition below. mksafe guarantees the source never fails — a brief silence
+# while the library is still filling is acceptable (continuous-operation identity,
+# not a zero-gap SLA).
+#
+# NOW-PLAYING IS GROUND TRUTH (no lead, no stale hang): because the dynamic source
+# resolves ahead (prefetch=2 for crossfade buffering), /api/next is called up to 2
+# items BEFORE airtime — so the brain must NOT treat hand-out as "now playing". The
+# `on_track` callback below POSTs the metadata of the item that JUST started on air
+# back to the brain (POST /api/airing), and the brain sets its displayed now_playing
+# from THAT. The POST runs in a background thread (thread.run, fast=false) so it never
+# blocks the streaming thread / playout.
+#
+# TRANSITIONS (per-kind — songs finish before the host speaks):
+#   • music -> music : gentle, volume-aware smart crossfade (~3s fades, dB-aware) —
+#                      the smooth segue the user asked for ("at least fade out so it
+#                      doesn't cut off sharply"). Implemented with cross.smart.
+#   • -> talk        : NO overlap. The outgoing song FINISHES, then the host talk clip
+#                      starts dry. The voice is never buried under a song's tail.
+#   • talk -> music  : clean, no overlap — the host's closing words are never cut by
+#                      an incoming song; music starts after the clip ends.
+# Only music->music truly crossfades; talk boundaries are clean sequences. We use the
+# low-level `cross` operator with a transition that branches on the INCOMING item's
+# `mix_mode` metadata (set by the brain via annotate:).
+
+def next_track() =
+  ret = http.get("http://brain:8080/api/next", timeout=6.0)
+  uri = string.trim("#{ret}")
+  if ret.status_code == 200 and uri != "" then
+    log("playout: pulling #{uri}")
+    # uri is an annotate: string (annotate:artist=...,title=...,mix_mode=...:/path).
+    # request.create resolves the trailing real file path and applies the annotated
+    # metadata (which overrides the file's embedded tags for ICY StreamTitle).
+    [request.create(uri)]
+  else
+    log("playout: nothing to play yet (status #{ret.status_code})")
+    []
+  end
+end
+
+source = request.dynamic.list(id="gsr", prefetch=2, retry_delay=2.0, next_track)
+
+# --- Per-kind transition --------------------------------------------------------
+# `cross` hands the transition function two records {db_level, metadata, source} for
+# the OUTGOING (old) and INCOMING (new) items. We branch on mix_mode:
+#   new == talk  -> sequence([old, new]) : let the song finish, then talk dry.
+#   old == talk  -> sequence([old, new]) : let the host finish, then music clean.
+#   otherwise    -> cross.smart(...)     : music<->music gentle power-aware crossfade.
+def transition(old, new) =
+  new_kind = new.metadata["mix_mode"]
+  old_kind = old.metadata["mix_mode"]
+  if new_kind == "talk" then
+    # Incoming host break: NO overlap. The outgoing song plays to its end, then the
+    # talk clip starts clean — the host's voice never sits under the music's tail.
+    sequence([old.source, new.source])
+  elsif old_kind == "talk" then
+    # Talk -> music: let the host finish; start the song clean after (no overlap, so
+    # the host's closing words are not cut off by an incoming track).
+    sequence([old.source, new.source])
+  else
+    # music -> music: the gentle, dB-aware smart crossfade (the smooth default segue).
+    cross.smart(fade_in=3.0, fade_out=3.0, old, new)
+  end
+end
+
+# duration = how much tail/head is buffered to compute the transition. width = the
+# power-measurement window cross.smart uses. mksafe wraps the result so output.icecast
+# always receives an infallible source; only a total brain stall falls through to
+# brief silence.
+radio = cross(duration=4.0, width=2.0, transition, source)
+
+# --- Ground-truth now-playing report --------------------------------------------
+# Fire the instant a new item starts on air. The callback MUST be fast (it runs in the
+# main streaming thread), so it only assembles a tiny form body and hands the blocking
+# HTTP POST to a background thread (thread.run with fast=false). Playout is never
+# blocked on the brain's response.
+def report_airing(m) =
+  artist = m["artist"]
+  title = m["title"]
+  mix_mode = m["mix_mode"]
+  kind = if mix_mode == "talk" then "talk" else "music" end
+  # url-encode the values for a safe x-www-form-urlencoded body.
+  body =
+    "artist=#{url.encode(artist)}&title=#{url.encode(title)}&kind=#{url.encode(kind)}"
+  log("playout: on air -> #{artist} - #{title} (#{kind})")
+  thread.run(
+    fast=false,
+    fun () ->
+      begin
+        ignore(
+          http.post(
+            data=body,
+            headers=[("Content-Type", "application/x-www-form-urlencoded")],
+            timeout=5.0,
+            "http://brain:8080/api/airing"
+          )
+        )
+      end
+  )
+end
+
+# Register the airing callback on the cross OUTPUT, using on_metadata (not on_track):
+# `cross` merges/deduplicates track marks (crossfades combine two tracks into one
+# continuous output), so on_track at the cross output fires unreliably. on_metadata
+# fires on exactly the metadata packets that flow on to output.icecast and drive the
+# ICY StreamTitle - so the brain's now_playing stays in LOCKSTEP with what listeners'
+# players show = true ground truth of what is airing. The brain dedups repeat reports
+# (set_on_air is idempotent), so cross's occasional duplicate metadata is harmless.
+# Callback-only method form avoids the positional source/function ambiguity that the
+# source.on_metadata(...) free function hits once the graph is pinned to %mp3 output.
+radio.on_metadata(report_airing)
+radio = mksafe(radio)
+
+output.icecast(
+  %mp3(bitrate=320),
+  host="icecast",
+  port=8000,
+  password=environment.get("ICECAST_SOURCE_PASSWORD"),
+  mount="/radio",
+  name=environment.get("STATION_NAME"),
+  description="Autonomous AI radio that finds, downloads and spins its own music 24/7",
+  genre="Eclectic",
+  radio
+)
