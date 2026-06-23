@@ -32,7 +32,7 @@ tolerated outcome; a wrongly-blocked wanted track is the defect this module prev
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
 
 # Decision constants (spec Glossary "Gate decision").

@@ -23,12 +23,10 @@ import tempfile
 try:
     from brain import albumart as A
     from brain import enrich as E
-    from brain import library as L
 except Exception:  # noqa: BLE001 - direct-run fallback
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from brain import albumart as A
     from brain import enrich as E
-    from brain import library as L
 
 
 # --------------------------------------------------------------------------- #

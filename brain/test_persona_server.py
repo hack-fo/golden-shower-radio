@@ -19,7 +19,6 @@ import os
 import sys
 import threading
 
-import pytest
 
 if os.path.basename(os.path.dirname(os.path.abspath(__file__))) == "brain":
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

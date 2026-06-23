@@ -36,12 +36,12 @@ import time
 
 try:
     from brain.acquire import AttemptsIndex, RETRY_COOLDOWN, WishItem
-    from brain.slskd import SlskdClient, Candidate
+    from brain.slskd import SlskdClient
     from brain.library import normalize_key
 except Exception:  # noqa: BLE001 - direct-run fallback
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from brain.acquire import AttemptsIndex, RETRY_COOLDOWN, WishItem
-    from brain.slskd import SlskdClient, Candidate
+    from brain.slskd import SlskdClient
     from brain.library import normalize_key
 
 

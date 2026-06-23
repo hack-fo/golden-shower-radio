@@ -182,7 +182,9 @@ def test_detect_records_queryable_flag(tmp_path):
     fk = _add_track(lib, music, "09 - track.mp3", "Bobby", "Untitled")
     nk = _add_track(lib, music, "x.mp3", "", "Nameless")
     hy = filename.FilenameHygiene(_cfg(), lib, _FakeState())
-    hy.detect(ck); hy.detect(fk); hy.detect(nk)
+    hy.detect(ck)
+    hy.detect(fk)
+    hy.detect(nk)
     flags = {t.key: t.provenance.get("filename_flag") for t in lib.query(limit=None)}
     assert flags[ck] == filename.CONSISTENT
     assert flags[fk] == filename.FLAGGED
@@ -206,7 +208,7 @@ def test_rename_off_by_default_renames_zero_files(tmp_path):
     """B1: a fresh install (default config) flags but renames ZERO files."""
     lib = _library(tmp_path)
     music = tmp_path / "music"
-    key = _add_track(lib, music, "09 - track.mp3", "Linda Perhacs", "Chimacum Rain")
+    _add_track(lib, music, "09 - track.mp3", "Linda Perhacs", "Chimacum Rain")
     before = sorted(os.listdir(str(music)))
     hy = filename.FilenameHygiene(_cfg(), lib, _FakeState())  # rename OFF
     assert hy.rename_active() is False

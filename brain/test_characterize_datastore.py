@@ -33,12 +33,12 @@ import pytest
 
 try:
     from brain.library import Library, Track, normalize_key
-    from brain.acquire import AttemptsIndex, RETRY_COOLDOWN
+    from brain.acquire import AttemptsIndex
     from brain import sqlite_store
 except Exception:  # noqa: BLE001 - direct-run fallback
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from brain.library import Library, Track, normalize_key
-    from brain.acquire import AttemptsIndex, RETRY_COOLDOWN
+    from brain.acquire import AttemptsIndex
     from brain import sqlite_store
 
 

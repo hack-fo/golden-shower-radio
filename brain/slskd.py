@@ -17,14 +17,13 @@ Auth: header ``X-API-Key: <SLSKD_API_KEY>``.
 from __future__ import annotations
 
 import logging
-import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 import httpx
 
-from .config import AUDIO_EXTS, LOSSLESS_EXTS, LOSSY_EXTS
+from .config import AUDIO_EXTS, LOSSLESS_EXTS
 from .logging_setup import log_event
 
 log = logging.getLogger("brain.slskd")
