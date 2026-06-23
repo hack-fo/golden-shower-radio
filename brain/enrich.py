@@ -295,13 +295,26 @@ def identify_text(artist: str, title: str, cfg: Any) -> Optional[Canonical]:
     timeout = float(getattr(cfg, "enrichment_http_timeout_seconds", 10))
     try:
         metadata._mb_set_useragent(musicbrainzngs, cfg, timeout)
-        metadata._mb_throttle()
         # Search by recording (+ artist when we have a trustworthy one). include releases so
         # we can lift the album + year in one call.
         kwargs: Dict[str, Any] = {"recording": title, "limit": 5}
         if artist and not is_garbled("artist", artist):
             kwargs["artist"] = artist
-        result = musicbrainzngs.search_recordings(**kwargs)
+
+        # MBMIRROR-017 Group MC: route the text-match search through the persistent result
+        # cache so the whole-library id3 backfill is a one-time crawl. The throttle is inside
+        # the fetch closure -> it runs ONLY on a cache miss (a real network call); a HIT serves
+        # the cached result with no throttle, no network. A miss does EXACTLY what the
+        # pre-cache code did, and any cache failure degrades to that same live call.
+        def _fetch() -> Dict[str, Any]:
+            metadata._mb_throttle()
+            return musicbrainzngs.search_recordings(**kwargs)
+
+        from . import mb_cache  # noqa: PLC0415 - lazy; keeps enrich importable standalone.
+
+        result = mb_cache.lookup_or_fetch(
+            cfg, "search_recordings", _fetch, **kwargs
+        ) or {}
         recs = result.get("recording-list") or []
         if not recs:
             return None

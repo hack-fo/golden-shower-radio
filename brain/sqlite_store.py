@@ -721,3 +721,100 @@ class EventsStore:
             cur.execute("SELECT * FROM hypotheses WHERE id=?", (hyp_id,))
             row = cur.fetchone()
             return dict(row) if row else None
+
+
+# --------------------------------------------------------------------------- #
+# brain.db — mb_result_cache (SPEC-RADIO-MBMIRROR-017 Group MC)
+# --------------------------------------------------------------------------- #
+
+
+class MbCacheStore:
+    """``mb_result_cache`` table in ``brain.db`` — the persistent MusicBrainz lookup cache.
+
+    SPEC-RADIO-MBMIRROR-017 Group MC (REQ-MC-002/003/006): a durable, cache-once /
+    reuse-forever store of MusicBrainz web-service RESULTS keyed by the normalized query,
+    so a recording identified once is never re-fetched across re-scans, restarts, or
+    retries. It is the substrate that makes the public-API 1 req/s default sufficient at
+    the station's scale (the whole-library backfill becomes a one-time crawl).
+
+    It lives in ``brain.db`` (operational, low-churn, read-heavy) and SHARES that file's
+    one connection + WAL write lock (REQ-DP-003), so it never opens a competing connection.
+
+    Each row records WHICH source filled it (``source``: public-musicbrainz / mirror-
+    musicbrainz) and WHEN (``fetched_at``), the cache-side face of the Group MX per-field
+    provenance (REQ-MC-006) — every cached value has an auditable origin.
+
+    SCOPE SEAM (LOOKUPLOG-023): this is the MB-RESULT cache MBMIRROR-017 owns — the decoded
+    MB payload keyed by query. The lookup LEDGER / in-flight query-dedup (recording every
+    lookup ATTEMPT + outcome) is SPEC-RADIO-LOOKUPLOG-023's ``lookup_log`` table (a sibling,
+    not yet built). LOOKUPLOG-023 will wrap the cache accessor to record attempts; it does
+    NOT replace this result store. Names are kept disjoint (``mb_result_cache`` here) so the
+    two tables never collide.
+    """
+
+    def __init__(self, db_path: str):
+        self.handle = _conn_for(db_path)
+        _ensure_meta(self.handle)
+        with self.handle.lock:
+            self.handle.conn.execute(
+                """CREATE TABLE IF NOT EXISTS mb_result_cache (
+                       cache_key  TEXT PRIMARY KEY,
+                       payload    TEXT NOT NULL,
+                       source     TEXT NOT NULL,
+                       fetched_at INTEGER NOT NULL
+                   )"""
+            )
+            self.handle.conn.commit()
+
+    def get(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        """Return ``{"payload": <dict>, "source": str, "fetched_at": int}`` or None on miss.
+
+        ``payload`` is the JSON-decoded MusicBrainz result. A row whose payload fails to
+        decode is treated as a MISS (returns None) rather than raising — a corrupt entry
+        degrades to a re-fetch, never a crash (the never-block rail at the cache layer).
+        """
+        with self.handle.lock:
+            cur = self.handle.conn.cursor()
+            cur.execute(
+                "SELECT payload, source, fetched_at FROM mb_result_cache WHERE cache_key=?",
+                (cache_key,),
+            )
+            row = cur.fetchone()
+        if row is None:
+            return None
+        try:
+            payload = json.loads(row["payload"])
+        except (json.JSONDecodeError, TypeError):
+            return None
+        return {"payload": payload, "source": row["source"], "fetched_at": int(row["fetched_at"])}
+
+    def put(self, cache_key: str, payload: Dict[str, Any], source: str,
+            fetched_at: Optional[int] = None) -> None:
+        """Cache-once write: idempotent UPSERT of one MusicBrainz result + its provenance."""
+        ts = int(fetched_at if fetched_at is not None else time.time())
+        blob = json.dumps(payload, ensure_ascii=False)
+        with self.handle.lock:
+            self.handle.conn.execute(
+                """INSERT INTO mb_result_cache(cache_key, payload, source, fetched_at)
+                   VALUES(?,?,?,?)
+                   ON CONFLICT(cache_key) DO UPDATE SET
+                       payload=excluded.payload,
+                       source=excluded.source,
+                       fetched_at=excluded.fetched_at""",
+                (cache_key, blob, source, ts),
+            )
+            self.handle.conn.commit()
+
+    def count(self) -> int:
+        with self.handle.lock:
+            cur = self.handle.conn.cursor()
+            cur.execute("SELECT COUNT(*) AS n FROM mb_result_cache")
+            return int(cur.fetchone()["n"])
+
+    def invalidate(self, cache_key: str) -> None:
+        """Remove one entry (REQ-MC-004 explicit refresh / file-change invalidation hook)."""
+        with self.handle.lock:
+            self.handle.conn.execute(
+                "DELETE FROM mb_result_cache WHERE cache_key=?", (cache_key,)
+            )
+            self.handle.conn.commit()

@@ -427,10 +427,23 @@ def _provider_musicbrainz(artist: str, title: str, cfg: Any, timeout: float) -> 
 
     try:
         _mb_set_useragent(musicbrainzngs, cfg, timeout)
-        _mb_throttle()
-        result = musicbrainzngs.search_recordings(
-            artist=artist, recording=title, limit=1
-        )
+
+        # MBMIRROR-017 Group MC: route this search through the persistent result cache.
+        # The throttle lives INSIDE the fetch closure so it runs ONLY on a cache miss (a
+        # live network call); a cache HIT serves the stored result with no throttle + no
+        # network. A cache miss does EXACTLY what the pre-cache code did (throttle + live
+        # search), and any cache-layer failure degrades to this same live call.
+        def _fetch() -> Dict[str, Any]:
+            _mb_throttle()
+            return musicbrainzngs.search_recordings(
+                artist=artist, recording=title, limit=1
+            )
+
+        from . import mb_cache  # noqa: PLC0415 - lazy; keeps metadata importable standalone.
+
+        result = mb_cache.lookup_or_fetch(
+            cfg, "search_recordings", _fetch, artist=artist, recording=title, limit=1
+        ) or {}
         recs = result.get("recording-list") or []
         if not recs:
             return {}

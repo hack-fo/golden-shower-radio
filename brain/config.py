@@ -137,6 +137,27 @@ class Config:
     # MusicBrainz User-Agent (their API requires an identifying UA).
     musicbrainz_user_agent: str = field(default_factory=lambda: _env("BRAIN_MB_USER_AGENT", "GoldenShowerRadio/1.0 (radio brain)"))
 
+    # --- MBMIRROR-017: persistent MusicBrainz result cache (Group MC) + client seam ---
+    # Group MC: the persistent, cache-once / reuse-forever MusicBrainz result cache
+    # (brain/mb_cache.py + sqlite_store.MbCacheStore in brain.db). DEFAULT ON: a recording
+    # looked up once is never re-fetched, making the public-API 1 req/s default sufficient at
+    # the station's scale (REQ-MC-002/003). Off -> the brain calls MusicBrainz live every time
+    # (the pre-cache behaviour) — a transparent rollback flag. The cache also degrades to a
+    # live call whenever it is unavailable (json backend, store error), so it never blocks.
+    mb_cache_enabled: bool = field(default_factory=lambda: _env("BRAIN_MB_CACHE_ENABLED", "1") not in ("0", "false", "no"))
+    # Group MB (REQ-MB-001): the config-gated OPTIONAL mirror host. EMPTY (default) -> the
+    # brain uses the PUBLIC MusicBrainz API. When set, the same musicbrainzngs client is
+    # repointed at a self-hosted mirror via set_hostname. The mirror (Group MM/MV) is a
+    # DEFERRED future upgrade; this field is the seam, not yet wired to a repoint call.
+    musicbrainz_mirror_host: str = field(default_factory=lambda: _env("BRAIN_MB_MIRROR_HOST", ""))
+    musicbrainz_mirror_use_https: bool = field(default_factory=lambda: _env("BRAIN_MB_MIRROR_HTTPS", "0") not in ("0", "false", "no"))
+    # Group MX (REQ-MX-001): the shared Discogs cross-check token gate. EMPTY (default) ->
+    # the Discogs cross-check provider is DISABLED (log-once, returns empty), exactly like the
+    # Last.fm provider. The Discogs/Last.fm cross-check itself (Group MX) is DEFERRED new-
+    # feature work; this is only the minimal config gate ENRICH-012 (Group EX) + MBMIRROR-017
+    # both consume. A secret -> never committed (gitignored secrets/ or env only).
+    discogs_token: str = field(default_factory=lambda: _env("BRAIN_DISCOGS_TOKEN", ""))
+
     # --- ENRICH-012: core-tag enrichment (artist/title/album/year/genre) + write-back ---
     # Master switch for the core-tag enrichment engine (brain/enrich.py). Distinct from
     # enrichment_enabled (ANALYSIS-006 genre/mood derivation): this one IDENTIFIES the
