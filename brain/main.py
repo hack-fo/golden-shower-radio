@@ -56,6 +56,21 @@ def run() -> int:
         slskd=cfg.slskd_url,
     )
 
+    # REQ-A-001a / REQ-A-001b: record the acquisition gate state at startup. The slskd
+    # acquisition path is gated by the presence of an slskd API key (Acquirer._try_slskd
+    # returns False with no key — no Soulseek search/transfer request is ever issued).
+    # This is the implicit gate today; the line makes the gate state OBSERVABLE in the
+    # logs, which both REQ-A-001a and REQ-A-001b acceptance criteria require. Behavior is
+    # unchanged — this is a log-only addition. The slskd base URL is recorded; the key
+    # itself is NEVER logged (REQ-F-005 secrets rule).
+    slskd_acquisition_enabled = bool(cfg.slskd_api_key)
+    log_event(
+        log,
+        "main.acquisition_gate",
+        slskd_acquisition_enabled=slskd_acquisition_enabled,
+        slskd_url=cfg.slskd_url,
+    )
+
     stop_event = threading.Event()
     state = StationState(cfg.station_name, recent_window=cfg.recent_window)
     state.set_website_html(render_website(cfg))

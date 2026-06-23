@@ -68,6 +68,12 @@ class StationState:
 
     # -- now playing / recent (GROUND TRUTH from air) -----------------------------
 
+    # @MX:ANCHOR: [AUTO] Ground-truth now-playing invariant — the ONLY writer of now_playing.
+    # @MX:REASON: POST /api/airing is the sole driver of the displayed now-playing; the
+    #   website / /api/nowplaying / /status read it. Idempotency (a duplicate airing report
+    #   for the same item is a no-op and must NOT push a duplicate into history) is load-
+    #   bearing — Liquidsoap re-emits metadata packets. Locked by test_characterize_state.
+    # @MX:SPEC: SPEC-RADIO-CORE-001 REQ-E-005
     def set_on_air(self, artist: str, title: str, kind: str = "music", path: str = "",
                    album: str = "") -> bool:
         """Set the now-playing to what Liquidsoap reports is airing RIGHT NOW.

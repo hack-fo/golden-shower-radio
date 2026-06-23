@@ -1,0 +1,30 @@
+# Golden Shower Radio — test/tooling configuration.
+#
+# This file configures the DEV test harness only; it does NOT declare the brain's
+# runtime dependencies (those live in requirements.txt and are installed into the
+# lean Dockerfile.brain image). DEV/test deps live in requirements-dev.txt.
+#
+# Run the suite:
+#   python3 -m pip install -r requirements-dev.txt
+#   python3 -m pytest brain/ -q
+#
+# Coverage of the CORE-001 critical path:
+#   python3 -m pytest brain/ \
+#     --cov=brain.state --cov=brain.library --cov=brain.server --cov=brain.acquire \
+#     --cov=brain.slskd --cov-report=term-missing
+
+[tool.pytest.ini_options]
+# The brain is the system under test; all tests live alongside it (brain/test_*.py).
+testpaths = ["brain"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-ra"
+
+# NOTE: one known-stale ENRICH-012 test is deselected at collection time by
+# brain/conftest.py (KNOWN_STALE) with a documented cause. It is NOT a CORE-001
+# test and NOT a regression — see that file for the full rationale. pytest's
+# ini layer has no `deselect` option, so the deselect lives in conftest.
+
+filterwarnings = [
+  "ignore::DeprecationWarning",
+]

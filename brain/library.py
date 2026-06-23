@@ -34,6 +34,12 @@ log = logging.getLogger("brain.library")
 SCHEMA_VERSION = 1
 
 
+# @MX:ANCHOR: [AUTO] Canonical dedup-slug contract — the identity key for every track.
+# @MX:REASON: fan_in >= 7 (server, acquire, talk, analyzer, research, knowledge, library)
+#   all key the SAME track by this slug; a change to its normalization silently splits or
+#   merges library/rotation/attempts identities across the whole brain. Case/space/diacritic
+#   insensitivity is locked by test_characterize_library (CORE-001 REQ-A-008 dedup).
+# @MX:SPEC: SPEC-RADIO-CORE-001 REQ-A-008
 def normalize_key(artist: str, title: str) -> str:
     """Canonical dedup key from artist + title (case/space/diacritic-insensitive)."""
     raw = f"{artist} - {title}".lower()

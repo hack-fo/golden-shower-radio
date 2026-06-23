@@ -13,6 +13,25 @@ ingestion reqs) and one significant consistency/feasibility red flag (the
 `[HARD]` Go mandate vs the actually-live Python brain). These need resolution
 before/at Run, but none is a catastrophic blocker.
 
+## Resolution Status (all must-fixes APPLIED)
+
+- 2026-06-23 (DDD characterization slice): All four must-fixes are RESOLVED in
+  spec.md v0.4.1 + acceptance.md v0.4.1. Verified against the current text:
+  - MF-1 — §12 stale "concrete Spotify/YouTube OAuth ingestion EXCLUDED" bullet
+    removed; §12 now excludes ONLY YouTube watch history (impossible via Data API
+    v3), matching §3.2. DONE.
+  - MF-2 — §14 SPEC-RADIO-INGEST narrowed to "future expansion of ingestion
+    sources beyond Spotify saved + YouTube liked." DONE.
+  - MF-3 — §4 + §1.4 reconciled to the live PYTHON brain (`brain/`,
+    `Dockerfile.brain`, `radio.liq → brain:8080/api/next`); the `internal/` +
+    `cmd/radiod/` Go tree is marked DEPRECATED/SUPERSEDED; the `[HARD]` Go
+    language mandate is removed (implementation language is no longer a [HARD]
+    constraint). DONE.
+  - MF-4 — acceptance.md bumped to v0.4.1 with a Changelog entry recording the
+    AC-B-012 sync; AC-B-012 present and 1:1 with REQ-B-012. DONE.
+  No further spec edits required by this slice. Nits (NFR→AC references, personal
+  default identifiers) left as-is — out of scope for the characterization slice.
+
 ---
 
 ## Must-Fixes (with REQ IDs + concrete fix)
