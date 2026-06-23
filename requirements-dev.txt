@@ -1,0 +1,15 @@
+# Golden Shower Radio — DEV/TEST-ONLY dependencies.
+#
+# These are NOT installed into the brain runtime image (Dockerfile.brain uses the
+# lean runtime requirements.txt). They exist purely so the test suite under brain/
+# is discoverable and runnable by CI and by developers:
+#
+#   python3 -m pip install -r requirements-dev.txt
+#   python3 -m pytest brain/ -q
+#
+# Keep this file free of anything the running station needs at broadcast time.
+# Runtime deps belong in requirements.txt (httpx, mutagen, claude-agent-sdk, …).
+
+pytest>=8,<10
+pytest-cov>=5,<8
+coverage>=7,<8

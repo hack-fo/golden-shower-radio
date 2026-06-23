@@ -195,6 +195,19 @@ class Config:
     knowledge_refresh_time_sensitive_days: int = field(default_factory=lambda: int(_env("BRAIN_KNOWLEDGE_REFRESH_TS_DAYS", "3")))
     knowledge_refresh_timeless_days: int = field(default_factory=lambda: int(_env("BRAIN_KNOWLEDGE_REFRESH_TL_DAYS", "180")))
 
+    # --- DATASTORE-022: brain local persistence backend (json | sqlite) ---
+    # Selects how the operational JSON stores (library/attempts/watch_manifest)
+    # persist. "sqlite" (default) routes them onto the partitioned SQLite (WAL)
+    # files behind the SAME public store APIs; "json" keeps the legacy flat-file
+    # behaviour. A rollback is a flag flip: set BRAIN_STORE_BACKEND=json — the
+    # one-time migration KEEPS the JSON files as backup, so the legacy path still
+    # works from the same on-disk source of truth (REQ-DM-003). On ANY SQLite
+    # init/migration failure the store classes fall back to JSON automatically and
+    # log loudly, so a migration hiccup never crashes the daemon (NFR-D-5).
+    store_backend: str = field(
+        default_factory=lambda: _env("BRAIN_STORE_BACKEND", "sqlite").strip().lower()
+    )
+
     @property
     def attempts_path(self) -> str:
         return os.path.join(self.db_dir, "attempts.json")
@@ -218,8 +231,36 @@ class Config:
     @property
     def knowledge_db_path(self) -> str:
         """The KNOWLEDGE-008 SQLite editorial-knowledge store, in /db alongside the JSON
-        stores (REQ-KS-001). A NEW relational file; it does NOT fork library.json."""
+        stores (REQ-KS-001). A NEW relational file; it does NOT fork library.json.
+
+        DATASTORE-022 leaves this file EXACTLY as-is (REQ-DP-002) — it is the fourth
+        of the four partitioned files and is never touched by the consolidation."""
         return os.path.join(self.db_dir, "knowledge.db")
+
+    # --- DATASTORE-022: the partitioned SQLite (WAL) files (Group DP / REQ-DP-004) ---
+    # Added BESIDE the retained JSON-path properties above (the migration reads the
+    # JSON and keeps it as backup). The four-file partition (research.md §6):
+    #   knowledge.db (above, untouched) + brain.db + state.db + events.db.
+    @property
+    def brain_db_path(self) -> str:
+        """Core operational SQLite file: tracks (library) + attempts + watch_manifest.
+        The ONE cross-domain atomic write (grab: tracks + attempts) lives entirely in
+        this single file, so it is atomic even under WAL (REQ-DP-003)."""
+        return os.path.join(self.db_dir, "brain.db")
+
+    @property
+    def state_db_path(self) -> str:
+        """HIGH-churn ephemeral SQLite file: now_playing + recent_ring (+ downloads).
+        Isolated blast cell (REQ-DR-002); the durable-ring feature is WEBUI-018's."""
+        return os.path.join(self.db_dir, "state.db")
+
+    @property
+    def events_db_path(self) -> str:
+        """Append-heavy analytics SQLite file: play_events + likes + shows + hypotheses.
+        Provisioned for STATS-013 (analytics) and SPEC-RADIO-REFLECT-026 (the hypotheses
+        table is MAPPED here; REFLECT-026 owns its lifecycle). Isolated growth/long-read
+        store; cross-file reads use read-only ATTACH (REQ-DX-001)."""
+        return os.path.join(self.db_dir, "events.db")
 
     @property
     def welcome_marker_path(self) -> str:

@@ -360,7 +360,39 @@ class Analyzer:
                     continue
         return out
 
+    def _manifest_store(self):
+        """Lazily open the SQLite watch_manifest store (DATASTORE-022), or None.
+
+        Returns the brain.db ManifestStore when the backend is sqlite, having run the
+        one-time idempotent JSON import (which KEEPS watch_manifest.json as backup).
+        Any failure → None, so _load/_save_manifest fall back to the legacy JSON path
+        and the watch loop never crashes on a store hiccup (NFR-D-5)."""
+        if getattr(self.cfg, "store_backend", "sqlite") != "sqlite":
+            return None
+        store = getattr(self, "_mstore", None)
+        if store is not None:
+            return store
+        if getattr(self, "_mstore_failed", False):
+            return None
+        try:
+            from . import sqlite_store
+
+            store = sqlite_store.ManifestStore(self.cfg.brain_db_path)
+            store.migrate_from_json(self.cfg.manifest_path)
+            self._mstore = store
+            return store
+        except Exception as exc:  # noqa: BLE001 - never crash the watch loop
+            log_event(log, "analyzer.manifest_sqlite_init_failed_fallback_json", error=str(exc))
+            self._mstore_failed = True
+            return None
+
     def _load_manifest(self) -> Dict[str, str]:
+        store = self._manifest_store()
+        if store is not None:
+            try:
+                return store.load()
+            except Exception as exc:  # noqa: BLE001 - degrade to JSON read
+                log_event(log, "analyzer.manifest_sqlite_load_failed_fallback_json", error=str(exc))
         try:
             with open(self.cfg.manifest_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -369,6 +401,13 @@ class Analyzer:
             return {}
 
     def _save_manifest(self, manifest: Dict[str, str]) -> None:
+        store = self._manifest_store()
+        if store is not None:
+            try:
+                store.save(manifest)
+                return
+            except Exception as exc:  # noqa: BLE001 - degrade to JSON write
+                log_event(log, "analyzer.manifest_sqlite_save_failed_fallback_json", error=str(exc))
         try:
             os.makedirs(os.path.dirname(self.cfg.manifest_path) or ".", exist_ok=True)
             tmp = self.cfg.manifest_path + ".tmp"

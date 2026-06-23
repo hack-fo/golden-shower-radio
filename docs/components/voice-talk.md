@@ -201,9 +201,7 @@ error, quota hit, or empty response. `TalkDirector` calls `state.defer_talk()` t
 reset the cadence counter so it retries after more songs play, not on every 5-second
 poll.
 
-**Phase 2b seam.** `produce_talk_clip` renders DRY voice only (no music bed, no
-ducking). The comment in `voice.py` identifies the exact line to extend for a
-bed/ducking/jingle mix without changing the `TalkClip` return contract.
+**Voice-only output (music bed/ducking not implemented).** `produce_talk_clip` renders dry voice only. The comment in `voice.py` identifies the exact line to extend for a bed/ducking/jingle mix without changing the `TalkClip` return contract.
 
 ---
 

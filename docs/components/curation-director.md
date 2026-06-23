@@ -12,8 +12,8 @@ Modules: `brain/director.py`, `brain/llm.py`
 ## What it does
 
 The director runs as a background daemon thread. On each "tick" it asks Claude for a
-batch of `{artist, title}` pairs, filters out tracks that were recently played or
-already attempted, and enqueues the survivors for slskd/yt-dlp to download. Between
+batch of `{artist, title}` pairs, filters out tracks that were played or already
+attempted, and enqueues the survivors for slskd/yt-dlp to download. Between
 ticks it polls every 15 seconds and fires an early tick whenever the combined
 wishlist + library count falls below a low-watermark threshold, so the queue refills
 before it drains rather than after.
@@ -41,7 +41,7 @@ Director._loop()
 
 `_recent_strings()` reads the last N played tracks from shared state and formats them
 as `"Artist - Title"` strings for the prompt. `_seed_reference()` is a stub that
-returns `[]` in phase 1; it will eventually pull the user's Spotify/YouTube liked
+returns `[]`; it is a stub for a planned feature that would pull the user's Spotify/YouTube liked
 tracks as non-binding context (see `SEED_ENRICHMENT_STUBS` in `brain/config.py`).
 
 ---
@@ -171,10 +171,9 @@ All values are read from environment variables via `brain/config.py` (`Config`).
 
 ## Gotchas
 
-- **`ANTHROPIC_API_KEY` must be absent.** If it leaks into the container environment,
+- **`ANTHROPIC_API_KEY` must be absent.** If it reaches the container environment,
   every LLM call silently switches to pay-per-use billing and fails. The stripping
-  happens in `_build_options()` but `config.py` also documents this prominently. This
-  was the bug that broke the previous brain implementation.
+  happens in `_build_options()`; `config.py` also documents this prominently.
 
 - **Plain string system prompt is mandatory.** Passing `system_prompt` as a dict with
   `"preset": "claude_code"` would inflate every call by ~85k tokens, burning the 5-hour

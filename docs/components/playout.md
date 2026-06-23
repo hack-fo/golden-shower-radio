@@ -73,7 +73,7 @@ end
 `b_meta` is extracted from `b` before the blend. After the rewrite, `on_metadata`
 fires in lockstep with what the listener hears.
 
-The ICY `StreamTitle` also now includes album when present:
+The ICY `StreamTitle` includes album when present:
 `Artist - Title (Album)` if album is non-empty, `Artist - Title` otherwise.
 
 ### First-run welcome
@@ -149,7 +149,7 @@ The split is essential: with `prefetch=2`, the committed item is up to two track
 - **`cross.smart` is banned for music→music.** It can hard-cut. The `add([fade.out, fade.in])` form is unconditional.
 - **Airing reports are idempotent.** `cross` can emit duplicate metadata packets during a fade; `set_on_air` ignores them. Do not add dedup logic on the Liquidsoap side.
 - **Welcome clip is first-in-queue.** When `BRAIN_WELCOME_ENABLED=1` the very first `/api/next` response is the welcome clip, not a song. Subsequent `/api/next` calls operate normally.
-- **Album in ICY StreamTitle.** `_annotate_uri` now includes `album` in the annotate string; the Liquidsoap `StreamTitle` format string renders `Artist - Title (Album)` when album is non-empty.
+- **Album in ICY StreamTitle.** `_annotate_uri` includes `album` in the annotate string; the Liquidsoap `StreamTitle` format string renders `Artist - Title (Album)` when album is non-empty.
 - **Empty 200 from `/api/next` means "nothing ready, try again".** Liquidsoap's `retry_delay=2.0` handles this; the brain never crashes the streaming thread by returning a non-200 error.
 
 ---

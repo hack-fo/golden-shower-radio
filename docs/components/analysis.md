@@ -1,6 +1,8 @@
 # Analysis Subsystem
 
-The analysis subsystem is the offline, CPU-only intelligence layer that turns raw audio files into structured feature records consumed by the scheduler, harmonic mixer, and metadata catalog.
+The analysis subsystem is the offline, CPU-only intelligence layer that turns raw
+audio files into structured feature records consumed by the scheduler, harmonic
+mixer, and metadata catalog.
 
 Two modules cooperate:
 
@@ -58,7 +60,7 @@ analyze_file(path)
 - `cue_in` — offset of the first audible sample (skip dead intro)
 - `true_end` — offset of the last audible sample
 - `trailing_silence` — `file_duration − true_end`
-- `cue_out` — **only emitted when `trailing_silence >= 1.0 s`**. When the track ends cleanly (no real boundary), `cue_out = None` and the crossfade owns the overlap. This replaces the old behaviour that set `cue_out = true_end − 8.0` unconditionally and trimmed every analyzed track ~8 s early.
+- `cue_out` — **only emitted when `trailing_silence >= 1.0 s`**. When the track ends cleanly (no real boundary), `cue_out = None` and the crossfade owns the overlap.
 
 **`_sonic_character()`** Six coarse string buckets derived from spectral features, no LLM (REQ-AE-006):
 
@@ -219,7 +221,7 @@ A process-wide lock (`_MB_LOCK`) enforces the 1 request/second MusicBrainz polic
 
 ## Gotchas
 
-**`cue_out = None` is intentional.** The scheduler treats `None` as "play in full". Only tracks with ≥ 1 s of detected trailing silence receive a non-None `cue_out`. The previous behaviour that always set `cue_out = true_end − 8.0` has been removed.
+**`cue_out = None` is intentional.** The scheduler treats `None` as "play in full". Only tracks with ≥ 1 s of detected trailing silence receive a non-None `cue_out`.
 
 **LUFS is measured at native sample rate.** `_measure_lufs()` decodes a separate buffer at the file's original SR because pyloudnorm's K-weighting filters are sample-rate-dependent. The 22050 Hz analysis buffer is not reused for this step.
 

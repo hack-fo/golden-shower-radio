@@ -34,6 +34,12 @@ log = logging.getLogger("brain.library")
 SCHEMA_VERSION = 1
 
 
+# @MX:ANCHOR: [AUTO] Canonical dedup-slug contract — the identity key for every track.
+# @MX:REASON: fan_in >= 7 (server, acquire, talk, analyzer, research, knowledge, library)
+#   all key the SAME track by this slug; a change to its normalization silently splits or
+#   merges library/rotation/attempts identities across the whole brain. Case/space/diacritic
+#   insensitivity is locked by test_characterize_library (CORE-001 REQ-A-008 dedup).
+# @MX:SPEC: SPEC-RADIO-CORE-001 REQ-A-008
 def normalize_key(artist: str, title: str) -> str:
     """Canonical dedup key from artist + title (case/space/diacritic-insensitive)."""
     raw = f"{artist} - {title}".lower()
@@ -203,18 +209,97 @@ def _read_tags(path: str) -> Dict[str, str]:
 
 
 class Library:
-    """Thread-safe music library with a persisted JSON index."""
+    """Thread-safe music library with a persisted index.
 
-    def __init__(self, music_dir: str, index_path: str):
+    DATASTORE-022: the index persists to SQLite (WAL) by default, behind this exact
+    same public API — a behaviour-preserving (DDD) refactor. The in-memory
+    ``self._tracks`` dict remains the working set every query / pick / scan operates
+    on (so observable behaviour and the <1s read path are unchanged, NFR-D-1); ONLY
+    the load + persist mechanism changes. ``backend`` selects "sqlite" (default,
+    ``brain.db`` beside the index) or "json" (the legacy flat-file). On any SQLite
+    init/migration failure the Library falls back to the JSON backend and logs loudly,
+    so a migration hiccup never crashes the daemon (NFR-D-5). The legacy ``library.json``
+    is KEPT as backup (REQ-DM-003) so a rollback is a flag flip.
+    """
+
+    def __init__(self, music_dir: str, index_path: str, backend: Optional[str] = None):
         self.music_dir = music_dir
         self.index_path = index_path
         self._lock = threading.RLock()
         self._tracks: Dict[str, Track] = {}  # key -> Track
+        # Resolve the persistence backend. Default "sqlite"; explicit arg wins; a
+        # failed SQLite open downgrades to "json" inside _init_backend.
+        self._backend = (backend or "sqlite").strip().lower()
+        self._store = None  # sqlite_store.TrackStore when backend == "sqlite"
+        self._init_backend()
         self._load()
+
+    # -- persistence backend (DATASTORE-022) -------------------------------------
+
+    def _brain_db_path(self) -> str:
+        """The brain.db file beside the legacy library.json index (same /db dir)."""
+        return os.path.join(os.path.dirname(self.index_path) or ".", "brain.db")
+
+    # @MX:NOTE: [AUTO] DATASTORE-022 behaviour-preservation seam — the ONLY place the
+    #   persistence backend is chosen. Everything above this line (query/pick/scan/dedup)
+    #   operates on the in-memory self._tracks dict and is backend-agnostic, so observable
+    #   behaviour is identical on json and sqlite (NFR-D-2). The sqlite path falls back to
+    #   json on ANY failure so a migration hiccup never crashes the daemon (NFR-D-5).
+    # @MX:SPEC: SPEC-RADIO-DATASTORE-022 REQ-DC-001 / NFR-D-5
+    def _init_backend(self) -> None:
+        """Open the SQLite TrackStore + run the one-time JSON import, or fall back.
+
+        Idempotent migration (Group DM): on first start with an empty tracks table
+        and an existing library.json, import the JSON (tolerant per-record) and KEEP
+        the JSON as backup. Any failure → degrade to the JSON backend (NFR-D-5).
+        """
+        if self._backend != "sqlite":
+            self._backend = "json"
+            return
+        try:
+            from . import sqlite_store
+
+            valid_names = {f.name for f in fields(Track)}
+            self._store = sqlite_store.TrackStore(self._brain_db_path())
+            self._store.migrate_from_json(self.index_path, valid_names)
+        except Exception as exc:  # noqa: BLE001 - never crash on a store/migration hiccup
+            log_event(log, "library.sqlite_init_failed_fallback_json", error=str(exc))
+            self._backend = "json"
+            self._store = None
 
     # -- persistence -------------------------------------------------------------
 
     def _load(self) -> None:
+        if self._backend == "sqlite" and self._store is not None:
+            self._load_sqlite()
+            return
+        self._load_json()
+
+    def _load_sqlite(self) -> None:
+        """Load the working dict from the SQLite tracks table (tolerant per-record)."""
+        try:
+            valid_names = {f.name for f in fields(Track)}
+            recs = self._store.load_all(valid_names)
+            loaded = skipped = 0
+            for key, clean in recs.items():
+                try:
+                    t = Track(**clean)
+                    if not t.key:
+                        skipped += 1
+                        continue
+                    self._tracks[t.key] = t
+                    loaded += 1
+                except (TypeError, ValueError):
+                    skipped += 1
+            log_event(log, "library.loaded", count=loaded, skipped=skipped, backend="sqlite")
+        except Exception as exc:  # noqa: BLE001 - degrade to JSON on a read fault
+            log_event(log, "library.sqlite_load_failed_fallback_json", error=str(exc))
+            self._backend = "json"
+            self._store = None
+            self._tracks = {}
+            self._load_json()
+
+    def _load_json(self) -> None:
         """TOLERANT loader (ANALYSIS-006 #1 safety item).
 
         The old loader did ``Track(**rec)`` and wiped the WHOLE index on a single
@@ -264,11 +349,48 @@ class Library:
         log_event(log, "library.loaded", count=loaded, skipped=skipped)
 
     def _save_locked(self) -> None:
+        """Persist the whole working set (bulk path: scan prune+upsert / save()).
+
+        SQLite backend: one transaction that deletes vanished keys and upserts the
+        present set (REQ-DR-001 atomic). JSON backend: the legacy tmp+rename full-file
+        rewrite, preserved verbatim. For single-row mutations (mark_played etc.) the
+        targeted ``_persist_row`` path writes ONE row instead — the DR-001 fewer-disk-
+        writes win on the hot path. Callers already hold self._lock.
+        """
+        if self._backend == "sqlite" and self._store is not None:
+            try:
+                records = {t.key: self._serialize(t) for t in self._tracks.values()}
+                self._store.bulk_replace(records)
+                return
+            except Exception as exc:  # noqa: BLE001 - degrade to JSON, never crash
+                log_event(log, "library.sqlite_save_failed_fallback_json", error=str(exc))
+                self._backend = "json"
+                self._store = None
+        self._save_json_locked()
+
+    def _save_json_locked(self) -> None:
         os.makedirs(os.path.dirname(self.index_path) or ".", exist_ok=True)
         tmp = self.index_path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({"tracks": [self._serialize(t) for t in self._tracks.values()]}, f, ensure_ascii=False)
         os.replace(tmp, self.index_path)
+
+    def _persist_row(self, track: Track) -> None:
+        """Persist ONE track row — the DR-001 fewer-disk-writes hot path.
+
+        SQLite backend writes just this row (not the whole ~673 KB collection). JSON
+        backend has no per-row capability, so it falls back to the full-file rewrite —
+        identical observable behaviour, only the byte volume differs. Caller holds the lock.
+        """
+        if self._backend == "sqlite" and self._store is not None:
+            try:
+                self._store.upsert(track.key, self._serialize(track))
+                return
+            except Exception as exc:  # noqa: BLE001 - degrade to JSON, never crash
+                log_event(log, "library.sqlite_row_save_failed_fallback_json", error=str(exc))
+                self._backend = "json"
+                self._store = None
+        self._save_json_locked()
 
     @staticmethod
     def _serialize(track: Track) -> Dict[str, Any]:
@@ -381,7 +503,7 @@ class Library:
             if t is not None:
                 t.last_played = time.time()
                 t.play_count += 1
-                self._save_locked()
+                self._persist_row(t)
 
     # -- ANALYSIS-006: analysis read/write ---------------------------------------
 
@@ -416,7 +538,7 @@ class Library:
                 if name not in _ANALYSIS_WRITABLE_FIELDS:
                     continue  # identity + volatile fields are immutable here
                 setattr(t, name, value)
-            self._save_locked()
+            self._persist_row(t)
             return True
 
     def set_core_tags(self, key: str, payload: Dict[str, Any]) -> bool:
@@ -439,7 +561,7 @@ class Library:
                 if name not in _ENRICH_WRITABLE_FIELDS:
                     continue  # identity + play-history + analysis fields immutable here
                 setattr(t, name, value)
-            self._save_locked()
+            self._persist_row(t)
             return True
 
     def note_source(self, key: str, source: str) -> None:
@@ -456,7 +578,7 @@ class Library:
             prov = dict(t.provenance)
             prov["source"] = source
             t.provenance = prov
-            self._save_locked()
+            self._persist_row(t)
 
     def query(
         self,

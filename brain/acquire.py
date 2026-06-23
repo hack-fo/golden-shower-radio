@@ -59,14 +59,50 @@ class RateLimiter:
 
 
 class AttemptsIndex:
-    """Persisted record of acquisition outcomes, keyed by normalized track key."""
+    """Persisted record of acquisition outcomes, keyed by normalized track key.
 
-    def __init__(self, path: str):
+    DATASTORE-022: persists to SQLite (WAL) by default behind this SAME public API
+    (a behaviour-preserving DDD refactor). The in-memory ``self._data`` dict stays the
+    working set ``should_skip`` reads (so observable behaviour is unchanged); ONLY the
+    load + persist mechanism changes. ``backend`` selects "sqlite" (default,
+    ``brain.db`` beside the attempts.json path — the SAME file as the library
+    ``tracks`` table so the grab's tracks+attempts write is one single-file atomic
+    transaction, REQ-DP-003) or "json" (legacy flat file). On any SQLite failure it
+    falls back to JSON and logs (NFR-D-5). The attempts.json is KEPT as backup
+    (REQ-DM-003) so a rollback is a flag flip.
+    """
+
+    def __init__(self, path: str, backend: Optional[str] = None):
         self.path = path
         self._lock = threading.Lock()
         self._data: Dict[str, Dict] = {}
+        self._backend = (backend or "sqlite").strip().lower()
+        self._store = None  # sqlite_store.AttemptsStore when backend == "sqlite"
+        self._init_backend()
+
+    def _brain_db_path(self) -> str:
+        return os.path.join(os.path.dirname(self.path) or ".", "brain.db")
+
+    def _init_backend(self) -> None:
+        if self._backend != "sqlite":
+            self._backend = "json"
+            self._load_json()
+            return
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            from . import sqlite_store
+
+            self._store = sqlite_store.AttemptsStore(self._brain_db_path())
+            self._store.migrate_from_json(self.path)  # one-time, idempotent, keeps JSON
+            self._data = self._store.load_all()
+        except Exception as exc:  # noqa: BLE001 - never crash on a store/migration hiccup
+            log_event(log, "attempts.sqlite_init_failed_fallback_json", error=str(exc))
+            self._backend = "json"
+            self._store = None
+            self._load_json()
+
+    def _load_json(self) -> None:
+        try:
+            with open(self.path, "r", encoding="utf-8") as f:
                 self._data = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             self._data = {}
@@ -90,7 +126,16 @@ class AttemptsIndex:
 
     def record(self, key: str, status: str, via: str = "") -> None:
         with self._lock:
-            self._data[key] = {"status": status, "via": via, "ts": time.time()}
+            ts = time.time()
+            self._data[key] = {"status": status, "via": via, "ts": ts}
+            if self._backend == "sqlite" and self._store is not None:
+                try:
+                    self._store.record(key, status, via, ts)
+                    return
+                except Exception as exc:  # noqa: BLE001 - degrade to JSON, never crash
+                    log_event(log, "attempts.sqlite_save_failed_fallback_json", error=str(exc))
+                    self._backend = "json"
+                    self._store = None
             self._save_locked()
 
 
@@ -115,7 +160,7 @@ class Acquirer:
         self.state = state
         self.stop_event = stop_event
         self.wishlist: "queue.Queue[WishItem]" = queue.Queue()
-        self.attempts = AttemptsIndex(cfg.attempts_path)
+        self.attempts = AttemptsIndex(cfg.attempts_path, backend=getattr(cfg, "store_backend", "sqlite"))
         self.limiter = RateLimiter(cfg.max_searches_per_window, cfg.search_window_seconds)
         self._slskd = SlskdClient(cfg.slskd_url, cfg.slskd_api_key)
         self._workers: list[threading.Thread] = []

@@ -71,7 +71,7 @@ All file I/O is exception-isolated. `write_tags` returns `False` on error and ne
 
 `enrich_track(track, cfg)` owns the file write only (when `enrich_write_files` is `True`). It returns `changes` and `provenance` regardless of that flag, so a dry run (`enrich_write_files = False`) still reports exactly what would change without touching any bytes on disk.
 
-Persisting the corrected display fields and the `enrich_version` marker to `library.json` is the caller's responsibility via `Library.set_core_tags`. The `EnrichmentWorker` does this after each successful call to `enrich_one`. The version marker is written even when no changes were found, so the idempotent gate skips the track on re-runs without re-querying MusicBrainz.
+Persisting the corrected display fields and the `enrich_version` marker to the library catalog is the caller's responsibility via `Library.set_core_tags`. The `EnrichmentWorker` does this after each successful call to `enrich_one`. The version marker is written even when no changes were found, so the idempotent gate skips the track on re-runs without re-querying MusicBrainz.
 
 ---
 
@@ -163,5 +163,5 @@ The `enrich.proposal` event is emitted regardless of `enrich_write_files`, makin
 
 - `brain/acquire.py` — on-download hook (`Acquirer._enrich_on_download`)
 - `brain/metadata.py` — ANALYSIS-006 genre/mood enrichment (separate system, shares MB throttle)
-- `brain/library.py` — `Library.set_core_tags()` (persists corrections + `enrich_version` to `library.json`)
+- `brain/library.py` — `Library.set_core_tags()` (persists corrections + `enrich_version` to the library catalog)
 - `.moai/specs/SPEC-RADIO-ENRICH-012/` — full requirements and acceptance criteria
