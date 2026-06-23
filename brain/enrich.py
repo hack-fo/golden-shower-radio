@@ -290,13 +290,18 @@ def identify_acoustid(path: str, cfg: Any) -> Optional[Canonical]:
     try:
         import httpx  # noqa: PLC0415 - lazy; already a brain dep
         metadata._mb_throttle()  # AcoustID is friendlier but reuse a polite spacing
-        resp = httpx.get(
+        # POST (not GET): fingerprints are large (multi-KB) and the documented lookup form
+        # is POST. `meta` MUST be a SPACE-separated list ("recordings releasegroups"); the
+        # earlier "recordings+releasegroups+compress" form silently returned id+score ONLY
+        # (no recordings) so identification always fell through to text-match. Verified
+        # against the live API: space-separated returns full recordings + releasegroups.
+        resp = httpx.post(
             "https://api.acoustid.org/v2/lookup",
-            params={
+            data={
                 "client": key,
                 "duration": int(duration),
                 "fingerprint": fingerprint,
-                "meta": "recordings+releasegroups+compress",
+                "meta": "recordings releasegroups",
             },
             timeout=timeout,
         )
@@ -374,6 +379,23 @@ def propose(current: Dict[str, Any], canonical: Optional[Canonical], cfg: Any) -
     p = Proposal(canonical=canonical)
     if canonical is None:
         return p
+    # SAFETY GATE (no guessing from a bare title): only act on a TRUSTWORTHY identification.
+    # A title-only MusicBrainz text match — empty/garbled input artist AND not fingerprint-
+    # confirmed — routinely resolves the WRONG recording (e.g. "Wildfires" -> a random
+    # same-titled track), so we refuse to write artist/album/year derived from it. Trustworthy
+    # iff: AcoustID fingerprint match, OR a corroborating non-garbled input artist, OR the
+    # input TITLE carries the canonical artist (the artist-folded-into-title un-fold case).
+    # Otherwise keep everything as-is; AcoustID will resolve such tracks once their print is
+    # in the DB, and we never mis-tag the rest.
+    in_artist = str(current.get("artist") or "").strip()
+    in_title = str(current.get("title") or "")
+    trustworthy = (
+        canonical.source == SRC_ACOUSTID
+        or (bool(in_artist) and not is_garbled("artist", in_artist))
+        or (bool(canonical.artist) and _contains(in_title, canonical.artist))
+    )
+    if not trustworthy:
+        return p  # unidentifiable from a bare title — never guess
     threshold = float(getattr(cfg, "enrich_confidence_threshold", 0.85))
     fill_bar = max(0.5, threshold - 0.15)
     conf = canonical.confidence
