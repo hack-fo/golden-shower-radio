@@ -26,7 +26,7 @@ from .config import Config
 from .library import Library, normalize_key
 from .logging_setup import log_event
 from .slskd import SlskdClient
-from . import ytdlp
+from . import dedup, ytdlp
 
 log = logging.getLogger("brain.acquire")
 
@@ -170,6 +170,13 @@ class Acquirer:
         # cfg.enrich_tags_enabled; left None otherwise (the hook is then a no-op).
         # Best-effort throughout: enrichment never blocks or raises into acquisition.
         self.enricher = None
+        # DEDUP-014: counters surfaced for the health/status surface (REQ-DO-002). The dedup
+        # detection is observe-only (mark + log + count); it NEVER blocks the already-landed
+        # file, never touches the pre-download slug gate, and never raises into acquisition.
+        self._dedup_lock = threading.Lock()
+        self._dedup_counts: Dict[str, int] = {
+            "reject_duplicate": 0, "allow_distinct_version": 0, "allow_new": 0,
+        }
 
     # -- wishlist API ------------------------------------------------------------
 
@@ -254,6 +261,64 @@ class Acquirer:
             self.enricher.enrich_one(key)
         except Exception as exc:  # noqa: BLE001 - never let enrichment break a download
             log_event(log, "acquire.enrich_error", key=key, error=str(exc))
+        # DEDUP-014: now that ENRICH-012 has (maybe) stamped this track's recording_mbid,
+        # check whether it duplicates a recording already owned. Best-effort + isolated.
+        self._dedup_detect(key)
+
+    def _dedup_detect(self, key: str) -> None:
+        """DEDUP-014 post-enrichment duplicate DETECTION for a just-landed track.
+
+        After ENRICH-012 has resolved (or failed to resolve) the recording MBID, build the
+        in-memory dedup index from the current library and classify this track against the
+        REST of it (version-aware). The decision is LOGGED (REQ-DO-001), COUNTED (REQ-DO-002),
+        and — for a true duplicate — MARKED on the track's provenance via the allowlist writer
+        (NFR-D-4, never touches a frozen identity field). It does NOT delete the file (library
+        pruning is deferred, spec Section 4.2) and NEVER blocks acquisition or playout: this is
+        observe-and-record. Absent/empty recording_mbid -> ALLOW (fail-open), no false dedup.
+        Exception-isolated: any fault here is swallowed (the golden rule — the stream never
+        stops because a dedup check hiccuped).
+        """
+        if not getattr(self.cfg, "dedup_enabled", True):
+            return
+        try:
+            index = dedup.DedupIndex.from_library(self.library)
+            decision = index.duplicate_of(key)
+            counter = {
+                dedup.REJECT_DUPLICATE: "reject_duplicate",
+                dedup.ALLOW_DISTINCT_VERSION: "allow_distinct_version",
+                dedup.ALLOW_NEW: "allow_new",
+            }.get(decision.decision, "allow_new")
+            with self._dedup_lock:
+                self._dedup_counts[counter] = self._dedup_counts.get(counter, 0) + 1
+            log_event(
+                log, "acquire.dedup_decision",
+                key=key, decision=decision.decision, basis=decision.basis,
+                matched_key=decision.matched_key or "",
+                signals=list(decision.signals),
+            )
+            if not decision.allowed:
+                # MARK the just-landed track as a detected duplicate (provenance is an
+                # ANALYSIS-006-writable field, so set_analysis won't touch frozen identity).
+                self._mark_duplicate(key, decision.matched_key or "")
+        except Exception as exc:  # noqa: BLE001 - dedup is best-effort; never break a download
+            log_event(log, "acquire.dedup_error", key=key, error=str(exc))
+
+    def _mark_duplicate(self, key: str, matched_key: str) -> None:
+        """Record a detected-duplicate flag on the track's provenance (allowlist-safe)."""
+        try:
+            for t in self.library.query(limit=None):
+                if t.key == key:
+                    prov = dict(t.provenance)
+                    prov["dedup_duplicate_of"] = matched_key
+                    self.library.set_analysis(key, {"provenance": prov})
+                    return
+        except Exception as exc:  # noqa: BLE001 - marking is best-effort, never raises out
+            log_event(log, "acquire.dedup_mark_error", key=key, error=str(exc))
+
+    def dedup_counts(self) -> Dict[str, int]:
+        """Snapshot of DEDUP-014 decision counters (REQ-DO-002 health-surface substrate)."""
+        with self._dedup_lock:
+            return dict(self._dedup_counts)
 
     # -- slskd path --------------------------------------------------------------
 

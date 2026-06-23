@@ -216,6 +216,16 @@ class Config:
     knowledge_refresh_time_sensitive_days: int = field(default_factory=lambda: int(_env("BRAIN_KNOWLEDGE_REFRESH_TS_DAYS", "3")))
     knowledge_refresh_timeless_days: int = field(default_factory=lambda: int(_env("BRAIN_KNOWLEDGE_REFRESH_TL_DAYS", "180")))
 
+    # --- DEDUP-014: version-aware download de-duplication (the GATE DECISION) ---
+    # Master switch for the post-enrichment duplicate DETECTION (brain/dedup.py). When on
+    # (default), after ENRICH-012 stamps a just-landed track's recording_mbid the acquirer
+    # checks whether it duplicates a recording already owned and LOGS + MARKS it (version-
+    # aware: a live/remaster/remix under a DIFFERENT recording_mbid is NOT a duplicate; an
+    # absent mbid falls back and never blocks — fail-open). It NEVER prunes the existing
+    # library (deferred) and NEVER touches the pre-download slug gate or playout, so the
+    # worst case when disabled is exactly today's exact-slug behaviour (NFR-D-5).
+    dedup_enabled: bool = field(default_factory=lambda: _env("BRAIN_DEDUP_ENABLED", "1") not in ("0", "false", "no"))
+
     # --- DATASTORE-022: brain local persistence backend (json | sqlite) ---
     # Selects how the operational JSON stores (library/attempts/watch_manifest)
     # persist. "sqlite" (default) routes them onto the partitioned SQLite (WAL)

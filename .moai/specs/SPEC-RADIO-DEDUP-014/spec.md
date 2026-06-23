@@ -13,6 +13,33 @@ issue_number: 14
 
 ## HISTORY
 
+- 2026-06-23 (v0.1.1): DDD slice — version-aware dedup DECISION + post-enrichment detection
+  BUILT and characterized (`brain/dedup.py`, wired into `brain/acquire.py`). Seam resolution
+  of D-1/D-3: `recording_mbid` is only known POST-download (ENRICH-012 stamps it in
+  `_enrich_on_download` after the file lands), so the PRE-download artist-title slug gate
+  (`has_key`) is kept EXACTLY as-is (behaviour-preserving, NFR-D-5) and a POST-enrichment
+  duplicate DETECTION is added: after `enrich_one`, the just-landed track is classified
+  against the rebuildable in-memory MBID index (REQ-DK-001/003), version-aware
+  (REQ-DV-001/002/003) — SAME `recording_mbid` + no version signal = reject-duplicate;
+  DIFFERENT `recording_mbid` (even same slug) = allow-distinct-version; absent/empty MBID =
+  fall back, fail-open ALLOW (NFR-D-1). The detection is observe-only: it LOGS
+  (`acquire.dedup_decision`, REQ-DO-001), COUNTS (`Acquirer.dedup_counts`, REQ-DO-002
+  substrate), and MARKS a true duplicate on `provenance` via the allowlist writer
+  (NFR-D-4 frozen identity untouched) — it does NOT prune the library (deferred, Section 4.2)
+  and is exception-isolated (golden rule). Gated by `BRAIN_DEDUP_ENABLED` (default on);
+  disabled = exactly today's exact-slug behaviour. CRITICAL DESIGN FINDING (updates D-1):
+  ENRICH-012 Group EC persists ONLY `recording_mbid` / `release_group_mbid` / `barcode` /
+  `catno` on `Track` — it does NOT persist `release_type` / `secondary_types` /
+  `disambiguation`, so REQ-DV-001's release-type signal is NOT yet available; the built
+  version-distinctness uses (a) DIFFERENT recording_mbid = distinct, and (b) title-token
+  version signals (live/remaster/acoustic/...). DEFERRED (not built this slice): the no-MBID
+  FUZZY pre-download fallback wired into `enqueue` (Group DF — highest false-positive risk,
+  kept out to protect the wanted-track path), the director/manual OVERRIDE via `grab_reason`
+  (REQ-DO-003), and the health-surface counter wiring into `server.py` (REQ-DO-002 display).
+  Tests: `brain/test_characterize_dedup.py` (19 tests) — characterizes the current
+  over/under-collapse slug behaviour + enqueue idempotency, and proves the version-aware
+  gate (same-mbid=dup / different-mbid=distinct / absent-mbid=fall-back). Full suite: 210
+  passed, 1 deselected, 0 skips.
 - 2026-06-23 (v0.1.0): Initial draft. The acquisition-side DEDUPLICATION GATE for the
   golden-shower-radio autonomous AI radio station. It answers a direct user request
   (feature-backlog 2026-06-23, prompt #2, VERBATIM): "Ensure that there is duplication
