@@ -21,6 +21,7 @@ from .acquire import Acquirer
 from .analyzer import Analyzer
 from .config import load_config
 from .director import Director
+from .enrich import EnrichmentWorker
 from .knowledge import KnowledgeStore
 from .library import Library
 from .logging_setup import log_event, setup_logging
@@ -92,6 +93,14 @@ def run() -> int:
     # Best-effort - if disabled or the audio stack is absent, every track still plays
     # with safe-default transitions. NEVER on the <1s /api/next pull path.
     analyzer = Analyzer(cfg, library, state, stop_event)
+    # ENRICH-012: background, serialized, non-blocking CORE-tag enrichment worker. Identifies
+    # the canonical recording (AcoustID/MusicBrainz) and CORRECTS artist/title/album/year/
+    # genre on the file + library.json. Best-effort - if disabled or mutagen/MB are absent,
+    # tracks still play with whatever tags they have. NEVER on the <1s /api/next pull path.
+    # Wired to the acquirer (below) so a freshly-downloaded file is enriched on landing.
+    enricher = EnrichmentWorker(cfg, library, state, stop_event)
+    if cfg.enrich_tags_enabled:
+        acquirer.enricher = enricher  # on-download hook (best-effort; see Acquirer)
     # KNOWLEDGE-008: background, serialized, non-blocking research worker (Group KR). Fills
     # the editorial-knowledge store from MusicBrainz / Last.fm / etc. Best-effort + bounded +
     # throttled; degrades gracefully on a source outage. NEVER blocks playout.
@@ -116,6 +125,7 @@ def run() -> int:
     director.start()
     talk_director.start()
     analyzer.start()
+    enricher.start()
     if researcher is not None:
         researcher.start()
     log_event(

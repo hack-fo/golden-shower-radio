@@ -123,6 +123,17 @@ class Track:
     low_confidence_flags: List[str] = field(default_factory=list)
     analysis_error: str = ""             # last failure reason (failed records still play)
 
+    # -- ENRICH-012: core-tag enrichment bookkeeping -----------------------------
+    # enrich_version is the idempotent gate for the core-tag enrichment worker
+    # (brain/enrich.py): 0 = never enriched; once a track has been processed it is
+    # stamped to ENRICH_SCHEMA_VERSION so the backfill skips it on re-runs — even
+    # when no correction was applied (avoids re-querying MusicBrainz/AcoustID).
+    # Defaults keep an old library.json (lacking these keys) loading cleanly: the
+    # tolerant loader drops unknown keys and fills missing ones from these defaults.
+    enrich_version: int = 0
+    # provenance log of corrections: [{field, old, new, source, confidence, action}].
+    enrich_provenance: List[Dict[str, Any]] = field(default_factory=list)
+
 
 # Identity / dedup fields that set_analysis MUST NEVER overwrite (M5 allowlist
 # hard-exclusions). A metadata provider returning a field literally named "key"
@@ -141,6 +152,16 @@ _ANALYSIS_VOLATILE_FIELDS = frozenset({"beat_grid", "downbeats"})
 _ANALYSIS_WRITABLE_FIELDS = frozenset(
     f.name for f in fields(Track)
 ) - _IDENTITY_FIELDS - _ANALYSIS_VOLATILE_FIELDS
+
+# ENRICH-012 ALLOWLIST: the DISPLAY/identity-correction fields set_core_tags may
+# write. Distinct from set_analysis — the core-tag engine is allowed to CORRECT the
+# display ``artist``/``title``/``album``/``year``/``genre`` (the very fields slskd /
+# yt-dlp rips routinely get wrong) plus its own bookkeeping. ``key`` (the dedup slug),
+# ``path``, and the play-history fields stay frozen: a re-tag never re-keys the track
+# (the existing record keeps its slot + play history; a future scan can re-key copies).
+_ENRICH_WRITABLE_FIELDS = frozenset(
+    {"artist", "title", "album", "year", "genre", "enrich_version", "enrich_provenance"}
+)
 
 
 def _parse_filename(filename: str) -> Dict[str, str]:
@@ -394,6 +415,29 @@ class Library:
             for name, value in payload.items():
                 if name not in _ANALYSIS_WRITABLE_FIELDS:
                     continue  # identity + volatile fields are immutable here
+                setattr(t, name, value)
+            self._save_locked()
+            return True
+
+    def set_core_tags(self, key: str, payload: Dict[str, Any]) -> bool:
+        """ALLOWLIST writer for ENRICH-012 core-tag corrections (mirrors set_analysis).
+
+        Writes ONLY the display/identity-correction fields from ``payload`` onto the
+        track: ``artist``/``title``/``album``/``year``/``genre`` plus the enrichment
+        bookkeeping (``enrich_version``, ``enrich_provenance``). Every other key —
+        including ``key``, ``path``, and the play-history fields — is hard-excluded so
+        a re-tag can never re-key the track or corrupt its identity slot / history.
+        Returns True if the track existed and was updated, False otherwise. Persists
+        under the lock. The write is brief (no decode/network) so it is safe on the
+        same lock as scan/pick. Best-effort: a missing track is a silent False.
+        """
+        with self._lock:
+            t = self._tracks.get(key)
+            if t is None:
+                return False
+            for name, value in payload.items():
+                if name not in _ENRICH_WRITABLE_FIELDS:
+                    continue  # identity + play-history + analysis fields immutable here
                 setattr(t, name, value)
             self._save_locked()
             return True

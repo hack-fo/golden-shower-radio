@@ -121,6 +121,10 @@ class Acquirer:
         self._workers: list[threading.Thread] = []
         self._inflight_keys: set[str] = set()
         self._inflight_lock = threading.Lock()
+        # ENRICH-012: on-download core-tag enrichment hook. Set by main.py when
+        # cfg.enrich_tags_enabled; left None otherwise (the hook is then a no-op).
+        # Best-effort throughout: enrichment never blocks or raises into acquisition.
+        self.enricher = None
 
     # -- wishlist API ------------------------------------------------------------
 
@@ -178,15 +182,33 @@ class Acquirer:
             if self._try_slskd(item):
                 self.attempts.record(key, "success", via="slskd")
                 self.library.note_source(key, "slskd")  # ANALYSIS-006: record acquisition source
+                self._enrich_on_download(key)           # ENRICH-012: correct the fresh file's tags
                 return
             if self._try_ytdlp(item):
                 self.attempts.record(key, "success", via="yt-dlp")
                 self.library.note_source(key, "yt-dlp")  # ANALYSIS-006: record acquisition source
+                self._enrich_on_download(key)           # ENRICH-012: correct the fresh file's tags
                 return
             self.attempts.record(key, "failed")
             log_event(log, "acquire.failed", query=item.query)
         finally:
             self.state.finish_download(label)
+
+    def _enrich_on_download(self, key: str) -> None:
+        """Best-effort ENRICH-012 core-tag correction for a just-landed track.
+
+        Runs the on-download arm of the enrichment pipeline (gated on
+        cfg.enrich_tags_enabled via main.py setting self.enricher). Exception-isolated:
+        a failure here NEVER blocks or raises into acquisition — the golden rule is that
+        the brain keeps running and the stream never stops. The heavy identify() work is
+        inline here (acquisition is already a background worker, not the <1s pull path).
+        """
+        if not getattr(self.cfg, "enrich_tags_enabled", False) or self.enricher is None:
+            return
+        try:
+            self.enricher.enrich_one(key)
+        except Exception as exc:  # noqa: BLE001 - never let enrichment break a download
+            log_event(log, "acquire.enrich_error", key=key, error=str(exc))
 
     # -- slskd path --------------------------------------------------------------
 

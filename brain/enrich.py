@@ -29,6 +29,8 @@ import logging
 import os
 import re
 import subprocess
+import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -40,6 +42,13 @@ log = logging.getLogger("brain.enrich")
 # Core identity fields this engine owns. (genre/year are shared with ANALYSIS-006 but a
 # canonical MB resolution is authoritative for them too, so we fill them when empty.)
 CORE_FIELDS = ("artist", "title", "album", "year", "genre")
+
+# Idempotent gate for the core-tag enrichment worker (mirrors library.SCHEMA_VERSION for
+# the analysis worker). A Track with ``enrich_version < ENRICH_SCHEMA_VERSION`` is eligible
+# for (re-)enrichment; once processed it is stamped to this value so the bounded backfill
+# skips it — even when no correction was applied (so we never re-query MB/AcoustID for a
+# track we already resolved). Bump it to force a one-time re-pass over the whole library.
+ENRICH_SCHEMA_VERSION = 1
 
 SRC_ACOUSTID = "acoustid"
 SRC_MUSICBRAINZ_TEXT = "musicbrainz-text"
@@ -389,3 +398,328 @@ def propose(current: Dict[str, Any], canonical: Optional[Canonical], cfg: Any) -
                 "source": canonical.source, "confidence": conf, "action": decision,
             })
     return p
+
+
+# --------------------------------------------------------------------------- #
+# File write-back (mutagen) — idempotent, art-preserving, exception-isolated
+# --------------------------------------------------------------------------- #
+
+# Logical CORE field -> EasyID3 key (MP3) and Vorbis-comment key (FLAC/Ogg). EasyID3
+# maps "date" -> TDRC and "genre" -> TCON under the hood, so we only ever touch the
+# core fields and leave every OTHER frame (incl. APIC cover art, comments, ReplayGain)
+# byte-for-byte intact: EasyID3/FLAC.save() rewrites the existing tag object in place,
+# it does NOT drop frames it doesn't know about.
+_EASYID3_KEYS = {"artist": "artist", "title": "title", "album": "album",
+                 "year": "date", "genre": "genre"}
+_VORBIS_KEYS = {"artist": "ARTIST", "title": "TITLE", "album": "ALBUM",
+                "year": "DATE", "genre": "GENRE"}
+
+
+def _str_value(fname: str, value: Any) -> str:
+    """Render a proposed value as the string mutagen stores (year -> 4-digit string)."""
+    if fname == "year":
+        try:
+            return str(int(value))
+        except (TypeError, ValueError):
+            return str(value).strip()
+    return str(value).strip()
+
+
+def write_tags(path: str, fields: Dict[str, Any]) -> bool:
+    """Write corrected CORE tags to the audio file via mutagen. Returns True on success.
+
+    Format dispatch by extension: ID3 (EasyID3) for .mp3, Vorbis comments for .flac/.ogg/
+    .opus. Only the fields PRESENT in ``fields`` are written; a field the format can't take
+    is skipped (never fatal). IDEMPOTENT: a field whose stored value already equals the new
+    value is a no-op (and if NOTHING needs changing the file is not rewritten at all, so the
+    bytes — including embedded cover art — are untouched). Every other tag and the embedded
+    artwork are preserved because we mutate the existing tag object and re-save it rather
+    than rebuilding it. Exception-isolated: returns False on any error, NEVER raises.
+    """
+    if not fields:
+        return True  # nothing to write is trivially "successful" (idempotent no-op)
+    ext = os.path.splitext(path)[1].lower()
+    try:
+        if ext == ".mp3":
+            return _write_id3(path, fields)
+        if ext in (".flac", ".ogg", ".oga", ".opus"):
+            return _write_vorbis(path, fields)
+        # Other formats (m4a/aac/etc.): MP4 atoms differ; out of scope this increment.
+        # Library display fields are still corrected via set_core_tags by the caller.
+        log_event(log, "enrich.write_unsupported_format",
+                  path=os.path.basename(path), ext=ext)
+        return False
+    except Exception as exc:  # noqa: BLE001 - corrupt tags / IO error must never raise
+        log_event(log, "enrich.write_failed", path=os.path.basename(path), error=str(exc))
+        return False
+
+
+def _write_id3(path: str, fields: Dict[str, Any]) -> bool:
+    """EasyID3 write for .mp3 — idempotent + APIC-preserving. Raises on hard error."""
+    from mutagen.easyid3 import EasyID3  # type: ignore  # noqa: PLC0415 - lazy by design
+    from mutagen.id3 import ID3NoHeaderError  # type: ignore  # noqa: PLC0415
+
+    try:
+        audio = EasyID3(path)
+    except ID3NoHeaderError:
+        # No ID3 tag yet — create one. (EasyID3() on a tagless file raises; this adds it.)
+        audio = EasyID3()
+        audio.save(path)
+        audio = EasyID3(path)
+
+    dirty = False
+    for fname, raw in fields.items():
+        ezk = _EASYID3_KEYS.get(fname)
+        if not ezk:
+            continue
+        new_v = _str_value(fname, raw)
+        if not new_v:
+            continue
+        cur = audio.get(ezk)
+        cur_v = str(cur[0]) if cur else ""
+        if cur_v == new_v:
+            continue  # idempotent: already correct
+        audio[ezk] = [new_v]
+        dirty = True
+    if dirty:
+        audio.save(path)  # rewrites the underlying ID3 incl. all other frames + APIC art
+    return True
+
+
+def _write_vorbis(path: str, fields: Dict[str, Any]) -> bool:
+    """Vorbis-comment write for .flac/.ogg/.opus — idempotent + picture-preserving."""
+    from mutagen import File as MutagenFile  # type: ignore  # noqa: PLC0415 - lazy
+
+    audio = MutagenFile(path)
+    if audio is None or audio.tags is None:
+        # FLAC/Ogg without a comment block: add_tags() creates an empty one.
+        audio = MutagenFile(path)
+        if audio is None:
+            return False
+        try:
+            audio.add_tags()
+        except Exception:  # noqa: BLE001 - tags may already exist; fall through
+            pass
+    dirty = False
+    for fname, raw in fields.items():
+        vk = _VORBIS_KEYS.get(fname)
+        if not vk:
+            continue
+        new_v = _str_value(fname, raw)
+        if not new_v:
+            continue
+        cur = audio.get(vk)
+        cur_v = str(cur[0]) if cur else ""
+        if cur_v == new_v:
+            continue  # idempotent
+        audio[vk] = [new_v]
+        dirty = True
+    if dirty:
+        audio.save()  # FLAC picture blocks + every other comment are preserved
+    return True
+
+
+# --------------------------------------------------------------------------- #
+# Per-track enrichment (identify -> propose -> optional file write)
+# --------------------------------------------------------------------------- #
+
+def enrich_track(track: Any, cfg: Any) -> Dict[str, Any]:
+    """Identify + propose corrections for one track, optionally writing them to the file.
+
+    Returns a result dict::
+
+        {"applied": bool, "changes": {field: new}, "provenance": [...], "canonical": Canonical|None}
+
+    File-vs-library contract (DRY RUN): this function ONLY touches the audio file, and only
+    when ``cfg.enrich_write_files`` is True. ``changes`` + ``provenance`` are computed and
+    returned REGARDLESS of that flag, so a dry run (enrich_write_files False) still reports
+    exactly what WOULD change without modifying a single byte on disk. Persisting the
+    corrected DISPLAY fields + the enrich_version marker to library.json is the CALLER's
+    job (via Library.set_core_tags) — this function never persists to the library itself.
+    ``applied`` is True only when a file write actually happened (write enabled, there were
+    changes, and the write succeeded). NEVER raises.
+    """
+    result: Dict[str, Any] = {"applied": False, "changes": {}, "provenance": [], "canonical": None}
+    try:
+        canonical = identify(track.path, track.artist, track.title, cfg)
+        proposal = propose(_current_fields(track), canonical, cfg)
+        result["canonical"] = canonical
+        result["changes"] = dict(proposal.changes)
+        result["provenance"] = list(proposal.provenance)
+        if proposal.has_changes() and getattr(cfg, "enrich_write_files", False):
+            # write_tags is itself exception-isolated + skips fields the format can't take.
+            result["applied"] = bool(write_tags(track.path, proposal.changes))
+    except Exception as exc:  # noqa: BLE001 - enrichment is best-effort; never raise
+        log_event(log, "enrich.track_error",
+                  path=os.path.basename(getattr(track, "path", "")), error=str(exc))
+    return result
+
+
+def _current_fields(track: Any) -> Dict[str, Any]:
+    """Snapshot the CORE fields off a Track for propose() (missing attrs -> empty)."""
+    return {f: getattr(track, f, None) for f in CORE_FIELDS}
+
+
+# --------------------------------------------------------------------------- #
+# Background backfill worker (mirrors analyzer.Analyzer)
+# --------------------------------------------------------------------------- #
+
+class EnrichmentWorker:
+    """Background, serialized, NON-BLOCKING core-tag enrichment worker (mirrors Analyzer).
+
+    One daemon thread. Each tick pulls a bounded batch of tracks whose
+    ``enrich_version < ENRICH_SCHEMA_VERSION`` (only when ``cfg.enrich_backfill_enabled``)
+    and enriches them ONE AT A TIME off the library lock. The MusicBrainz <=1 req/s throttle
+    is already enforced inside ``identify_text``; we add none. Each processed track is
+    stamped ``enrich_version = ENRICH_SCHEMA_VERSION`` via ``set_core_tags`` so re-runs skip
+    it — even when there were no changes (so an already-resolved track is never re-queried).
+
+    DRY-RUN: the proposal is LOGGED at INFO via log_event every tick, so a dry run
+    (``enrich_write_files`` False) still surfaces exactly what WOULD change. The file is
+    written only when ``enrich_write_files`` is True (handled inside ``enrich_track``); the
+    library.json display fields + marker are written here regardless (the documented
+    file-vs-library split).
+
+    Strictly background — never on the <1s /api/next pull path; every external call is
+    exception-isolated per-track and per-tick so it can never crash the daemon or stall
+    playout.
+    """
+
+    def __init__(self, cfg: Any, library: Any, state: Any, stop_event: threading.Event):
+        self.cfg = cfg
+        self.library = library
+        self.state = state
+        self.stop_event = stop_event
+        self._thread: Optional[threading.Thread] = None
+
+    # -- lifecycle (mirrors Analyzer.start / _loop) ------------------------------
+
+    def start(self) -> None:
+        if not getattr(self.cfg, "enrich_tags_enabled", False):
+            log_event(log, "enrich.disabled")
+            return
+        self._thread = threading.Thread(target=self._loop, name="enrich", daemon=True)
+        self._thread.start()
+        log_event(
+            log, "enrich.started",
+            interval=int(getattr(self.cfg, "analysis_interval_seconds", 30)),
+            backfill=bool(getattr(self.cfg, "enrich_backfill_enabled", False)),
+            write_files=bool(getattr(self.cfg, "enrich_write_files", False)),
+            acoustid=bool(getattr(self.cfg, "acoustid_api_key", "")),
+        )
+
+    def _loop(self) -> None:
+        # Reuse the analysis tick cadence — both are background backfill workers and the
+        # MB throttle (inside identify_text) bounds the actual request rate either way.
+        poll = max(1, int(getattr(self.cfg, "analysis_interval_seconds", 30)))
+        while not self.stop_event.is_set():
+            self.stop_event.wait(poll)
+            if self.stop_event.is_set():
+                break
+            try:
+                self._tick()
+            except Exception as exc:  # noqa: BLE001 - resilience: never crash the loop
+                log_event(log, "enrich.tick_error", error=str(exc))
+
+    # -- the enrichment tick -----------------------------------------------------
+
+    def _tick(self) -> None:
+        """Enrich one bounded batch of tracks, serialized, off the library lock."""
+        if not getattr(self.cfg, "enrich_backfill_enabled", False):
+            return  # on-acquire-only mode: no background backfill pass
+        # THROTTLE: back off while downloads are in flight (mirror Analyzer's B2 rule —
+        # compare the LENGTH of the list, never ``list >= int``). Enrichment is downstream
+        # of acquisition and shares the MB budget, so a download burst pauses it.
+        active = len(self.state.downloading()) if self.state is not None else 0
+        if active >= max(0, int(getattr(self.cfg, "analysis_max_concurrent_downloads", 1))):
+            return
+
+        batch = self._select_batch()
+        if not batch:
+            return
+        enriched = 0
+        for track in batch:
+            if self.stop_event.is_set():
+                break
+            try:
+                if self.enrich_one(track.key):
+                    enriched += 1
+            except Exception as exc:  # noqa: BLE001 - one bad track never stops the batch
+                log_event(log, "enrich.track_failed", path=track.path, error=str(exc))
+        if enriched:
+            log_event(log, "enrich.batch_done", processed=enriched, batch=len(batch))
+
+    def _select_batch(self) -> List[Any]:
+        """Snapshot up to ``analysis_workers`` tracks whose enrich_version is stale.
+
+        A COPY of Track objects taken via the library's locked accessor; the heavy work
+        (identify) then runs OFF the lock. The batch size keeps the worker serialized so it
+        processes at most that many files before the next tick re-checks the throttle +
+        stop_event. The schema gate is idempotent: a track at ENRICH_SCHEMA_VERSION is
+        skipped, so re-runs never re-query an already-resolved track.
+        """
+        batch_size = max(1, int(getattr(self.cfg, "analysis_workers", 1)))
+        out: List[Any] = []
+        for track in self.library.query(limit=None):
+            if self.stop_event.is_set():
+                break
+            if getattr(track, "enrich_version", 0) >= ENRICH_SCHEMA_VERSION:
+                continue
+            out.append(track)
+            if len(out) >= batch_size:
+                break
+        return out
+
+    def enrich_one(self, key: str) -> bool:
+        """Enrich the track identified by ``key`` end-to-end. Returns True if it was processed.
+
+        Exposed for the on-download acquisition hook (acquire.py) as well as the backfill
+        loop. Resolves the current Track copy, runs enrich_track (identify -> propose ->
+        optional file write), LOGS the proposal (so a dry run still shows what WOULD change),
+        then persists the corrected DISPLAY fields + the enrich_version marker via
+        set_core_tags so re-runs skip the track — MARKING it even when there were no changes.
+        Best-effort: a missing track or any error is a logged False, NEVER an exception.
+        """
+        track = self._get_track_copy(key)
+        if track is None:
+            return False
+        try:
+            result = enrich_track(track, self.cfg)
+        except Exception as exc:  # noqa: BLE001 - defence in depth (enrich_track also guards)
+            log_event(log, "enrich.one_error", key=key, error=str(exc))
+            result = {"applied": False, "changes": {}, "provenance": []}
+
+        changes = result.get("changes") or {}
+        provenance = result.get("provenance") or []
+        # DRY-RUN visibility: log the proposal regardless of whether the file was written.
+        canonical = result.get("canonical")
+        log_event(
+            log, "enrich.proposal",
+            key=key, path=os.path.basename(track.path),
+            changes=changes, applied=bool(result.get("applied")),
+            write_files=bool(getattr(self.cfg, "enrich_write_files", False)),
+            source=getattr(canonical, "source", "") if canonical else "",
+            confidence=getattr(canonical, "confidence", 0.0) if canonical else 0.0,
+        )
+
+        # Persist corrected DISPLAY fields (+ provenance) AND the marker. MARK even with no
+        # changes so the idempotent gate skips this track next run (avoids re-querying).
+        payload: Dict[str, Any] = dict(changes)
+        payload["enrich_version"] = ENRICH_SCHEMA_VERSION
+        if provenance:
+            # Append to any prior provenance rather than clobber it.
+            prior = list(getattr(track, "enrich_provenance", []) or [])
+            payload["enrich_provenance"] = prior + list(provenance)
+        try:
+            self.library.set_core_tags(key, payload)
+        except Exception as exc:  # noqa: BLE001 - persistence is best-effort
+            log_event(log, "enrich.persist_error", key=key, error=str(exc))
+            return False
+        return bool(changes)
+
+    def _get_track_copy(self, key: str) -> Optional[Any]:
+        """Best-effort snapshot of one track by key via the library's locked accessor."""
+        for t in self.library.query(limit=None):
+            if t.key == key:
+                return t
+        return None
