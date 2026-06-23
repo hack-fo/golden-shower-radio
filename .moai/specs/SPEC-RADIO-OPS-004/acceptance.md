@@ -1,7 +1,7 @@
 ---
 id: SPEC-RADIO-OPS-004
 artifact: acceptance
-version: 0.9.3
+version: 0.10.0
 status: draft
 created: 2026-06-22
 updated: 2026-06-23
@@ -28,6 +28,16 @@ author: charlie
 > cut-short). AC-OH-007 search-box ownership clarified — the catalog-search REQUEST BOX +
 > typeahead is owned by SPEC-RADIO-REQUEST-011 Group RM; REQ-OB-009 is the separate website
 > FEEDBACK FORM. 97 REQ + 12 NFR = 109, 1:1 REQ↔AC preserved.
+>
+> HISTORY — 2026-06-23 (v0.10.0): Long-form episode enablement synced from spec.md. +2 AC
+> (AC-OA-016 content-driven-duration long-form time-block override — a VARIANT of REQ-OB-005 whose
+> window length is the episode's duration claim, breaks a daypart with time-budgeting, weakens no
+> fixed rail; AC-OY-008 conception-driven segment-type creation — the episode engine may author a
+> bespoke type AS PART OF conception at the per-episode cadence, NOT the Tier-2 structural budget,
+> but still on the one ledger + still FROZEN-split-bound) + 1 new Given-When-Then (Scenario 19).
+> Both forward-reference SPEC-RADIO-LONGFORM-025 (does not exist yet) — it supplies the episode +
+> duration claim; ORCH-005 owns WHEN; OPS-004 owns the override mechanics + registry seam +
+> time-budgeting only. 99 REQ + 12 NFR = 111, 1:1 REQ↔AC preserved.
 
 1:1 REQ ↔ AC mapping: every requirement and NFR in spec.md has exactly one acceptance
 entry here (Section A). Detailed Given-When-Then scenarios for the load-bearing
@@ -240,6 +250,33 @@ no monetization/appeal-optimization; one shared loudness constant.
   (CORE-001 REQ-E-003 / REQ-OB-007) so no listener sees a half-written schedule.
 - Edits are recorded as REQ-OD-007 ledger events; grid-edit frequency is bounded by the
   rarity tiering (REQ-OD-010: routine MOVE/REASSIGN Tier 2, discontinue/relaunch Tier 1).
+
+**AC-OA-016 (REQ-OA-016).**
+- A content-driven-duration long-form episode block is scheduled as a TIME-BLOCK OVERRIDE VARIANT of
+  the REQ-OB-005 override-and-restore discipline: the override window LENGTH equals the episode's
+  DURATION CLAIM (e.g. 73 minutes), not a clock-snapped boundary; the regular slot-based format clock
+  (REQ-OA-002) is suspended across the block's span and the block MAY cross a daypart boundary
+  (verified: a 60-120min block runs end-to-end without snapping to the hour clock).
+- TIME-BUDGETING: the block reserves its content-driven window and the surrounding slot-based schedule
+  absorbs the displacement; [HARD] the 24h no-gap coverage (CORE-001 REQ-B-002/003) and the
+  always-staffed host-availability invariant (REQ-OB-014) hold across the displacement (verified: no
+  scheduled block is left uncovered or hostless by the long-form reservation).
+- [HARD] NO FIXED RAIL is weakened: the top-of-hour station ID (REQ-OE-008) is preserved across the
+  block (placement discretion within the block — woven at the nearest internal segment boundary —
+  never dropped); the daypart boundary (REQ-OA-005) is NOT moved/erased (the daypart clock-set switch
+  is DEFERRED until restore, as REQ-OB-005 special windows already do); the block ends content-driven
+  at a song/segment boundary and never truncates a track (NFR-O-12) or silences the stream
+  (REQ-OA-008); the default clock restores cleanly via REQ-OB-005 (verified). If the actual runtime
+  drifts from the duration claim, restore fires at the next safe boundary AFTER the content ends.
+- The block is a SCHEDULED/CURATED block (REQ-OB-006 association != 'unscheduled'), so the
+  REQ-OA-003d(c) [HARD] off-schedule-variety exemption already covers it — no taste/coherence/anti-
+  drift check applies inside the episode (CORE-001 REQ-D-002 / AC-OA-004 satisfied; no NEW exemption).
+- [Ownership] ORCH-005 owns WHEN the block airs (scheduler discretion); SPEC-RADIO-LONGFORM-025
+  supplies the episode + its duration claim (forward-referenced — does not exist yet); OPS-004 owns
+  ONLY the override VARIANT mechanics + time-budgeting + the rails. The window reservation routes
+  through REQ-OA-015 → ORCH-005 REQ-RA-001(g) → CORE-001 REQ-B-003 (no forked store; verified). Until
+  the LONGFORM-025 seam is coded, no long-form block is scheduled and regular programming is
+  unaffected (graceful degradation).
 
 ### Group OB — Shows & Host Personas
 
@@ -859,6 +896,33 @@ no monetization/appeal-optimization; one shared loudness constant.
   (NFR-O-6 / CORE-001 health/status); no new observability subsystem and NO appeal/popularity
   ranking (selection keys only on freshness/recency/use-count/category rotation).
 
+**AC-OY-008 (REQ-OY-008) [HARD].**
+- When an episode-conception flow (SPEC-RADIO-LONGFORM-025, forward-referenced — does not exist yet)
+  requires a segment TYPE not in the registry (e.g. `album-deep-dive-intro` / `track-breakdown-mini` /
+  `era-retrospective-outro`), the AI may author that type AS PART OF conception — verified: a bespoke
+  type appears in the registry at conception time without waiting on a Tier-2 structural change.
+- [HARD] The type carries a PROVENANCE/SCOPE flag (`conception-scoped` vs `durable-roster`); a
+  `conception-scoped` type is NOT charged the scarce Tier-2 structural budget (verified: authoring N
+  conception-scoped types for one episode is NOT throttled the way a Tier-2 roster change is — it
+  rides the per-episode production cadence like a Group OX topic INSTANCE), while structural roster
+  changes (REQ-OY-002) remain Tier-2-throttled (REQ-OD-010).
+- [HARD] A conception-scoped type is STILL bound by the same rails: it is a `segment_type_created`
+  event on the EXISTING REQ-OD-007 ledger (no new store — a grep confirms the same VIEW as AC-OY-001);
+  it inherits a FULL fact-check-level by DEFAULT and can NEVER be born partisan (REQ-OF-004) or opt out
+  of the never-ship-a-FAIL gate (REQ-OY-006 / REQ-PG-005) (verified: an attempt to author a
+  conception-scoped type that is partisan or gate-exempt is rejected by the REQ-OY-003 FROZEN split);
+  it carries recipe pointers like any type, and a produced instance runs the same REQ-OY-005 pipeline +
+  REQ-OY-006 gate.
+- [HARD] PROMOTION of a `conception-scoped` type to `durable-roster` IS a Tier-2 structural change
+  (REQ-OY-002 / REQ-OD-010), bounded by the measured-change rails (verified: a provisional type
+  becomes a permanent station format only through the slow structural gate — the non-Tier-2 cadence is
+  for provisional, episode-tied creation only, never a permanent-format back door).
+- The editorial CONTENT behind the recipe pointers stays owned by PROGRAMMING-007 (REQ-PC-008);
+  OPS-004 owns the store + the provenance distinction + the non-Tier-2 conception cadence. The episode
+  engine that conceives the type is owned by LONGFORM-025 (referenced, not re-owned). Until the
+  LONGFORM-025 seam is coded, no conception-driven type is authored and the hand-seeded /
+  Tier-2-authored types (REQ-OY-002/004) are unaffected (graceful degradation).
+
 ### Non-Functional
 
 **AC-NFR-O-1 (NFR-O-1).** The brain uses Claude via the MAX subscription through
@@ -1123,17 +1187,49 @@ gate (REQ-OY-001/002/003/005/006).**
   and logs it (REQ-OA-003b, continuity wins) — the soft layers never stall the queue, never ban a
   track, and never override the hard rails; no new store and no Liquidsoap change.
 
+**Scenario 19 — Long-form episode: conception-driven types + content-driven-duration block
+(REQ-OY-008, REQ-OA-016; CORE-001 REQ-B-002/003, REQ-OE-008, NFR-O-12; forward-ref LONGFORM-025).**
+- GIVEN the episode engine (SPEC-RADIO-LONGFORM-025, forward-referenced) conceives a 73-minute
+  long-form episode that needs an `album-deep-dive-intro` segment type not in the registry, and the
+  segment-type registry is a VIEW over the OPS-004 REQ-OD-007 ledger with the rarity tiering active
+- WHEN the episode is conceived (authoring the bespoke type) and then scheduled to air, breaking a
+  daypart, and the block runs to its content-driven end
+- THEN (OY-008) the bespoke type is authored AS PART OF conception, marked `conception-scoped`,
+  recorded as a `segment_type_created` event on the one ledger (no new store), NOT charged the scarce
+  Tier-2 structural budget (so three such types for one episode are not throttled), yet [HARD]
+  inheriting FULL fact-check by default and unable to be born partisan or gate-exempt (REQ-OY-003
+  FROZEN split) — and PROMOTION to durable-roster, if it ever happens, IS a Tier-2 change; AND
+  (OA-016) the block airs as a content-driven-duration TIME-BLOCK OVERRIDE VARIANT of REQ-OB-005 whose
+  window length is the episode's 73-minute duration claim, suspending the slot-based clock and crossing
+  the daypart boundary, with [HARD] time-budgeting preserving 24h no-gap (CORE-001 REQ-B-002/003) and
+  always-staffed (REQ-OB-014); AND [HARD] NO fixed rail is weakened — the top-of-hour ID (REQ-OE-008)
+  is preserved (placement discretion, never dropped), the daypart boundary (REQ-OA-005) is deferred not
+  moved, the block ends at a song/segment boundary (never-cut-short NFR-O-12, never-silence REQ-OA-008)
+  and restores the default clock cleanly; AND the curated block is exempt from the off-schedule variety
+  layers (REQ-OA-003d(c), already covered); AND ORCH-005 owned WHEN (scheduler discretion) while
+  LONGFORM-025 supplied the episode + duration claim and OPS-004 owned only the override mechanics +
+  registry seam + time-budgeting (the reservation routed through REQ-OA-015 → ORCH-005 REQ-RA-001(g) →
+  CORE-001 REQ-B-003, no forked store).
+
 The SPEC is implementation-complete when:
 
 - [ ] Every requirement (REQ-OA-*, REQ-OB-*, REQ-OC-*, REQ-OD-*, REQ-OE-*, REQ-OF-*,
       REQ-OG-*, REQ-OH-*, REQ-OX-*, REQ-OY-*) and NFR (NFR-O-*) has its acceptance criteria
       met with evidence (test output, logs, or runtime observation).
-- [ ] All 18 Given-When-Then scenarios pass.
+- [ ] All 19 Given-When-Then scenarios pass.
 - [ ] Editorial self-expansion writes to DATA only; no autonomous-loop path edits code or
       critical runtime config (REQ-OD-009 verified).
 - [ ] The segment-type registry (Group OY) is a VIEW over the REQ-OD-007 ledger — no forked
       store, no new gate/research-engine/playout-kind; the per-segment pipeline composes the
       existing fact-check gate and never ships a FAIL (REQ-OY-001/005/006 verified).
+- [ ] Long-form episode enablement is forward-referenced and rail-preserving: a conception-scoped
+      segment type (REQ-OY-008) lands on the one ledger, skips the Tier-2 budget yet inherits the
+      FROZEN fact-check split, and only becomes a permanent format via Tier-2 promotion; a
+      content-driven-duration long-form block (REQ-OA-016) airs as a REQ-OB-005 override variant that
+      breaks a daypart with time-budgeting while preserving no-gap/always-staffed, the top-of-hour ID,
+      never-cut-short, and never-silence; ORCH-005 owns WHEN and LONGFORM-025 supplies the episode +
+      duration claim (referenced, not re-owned); graceful degradation until the LONGFORM-025 seam is
+      coded (verified).
 - [ ] The always-staffed invariant holds across every lifecycle transition — no observer ever
       reads a hostless/retired-named scheduled block; voice quarantine and the rarity tier hold
       (REQ-OB-013/014, REQ-OD-010 verified); the news anchor is exempt (REQ-PI-005).

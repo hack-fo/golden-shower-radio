@@ -2,7 +2,7 @@
 
 Acceptance criteria for SPEC-RADIO-PROGRAMMING-007 (Hosts, Personas, Radio Craft &
 Show Formats). Section A gives one acceptance entry per requirement (1:1 with the
-spec's traceability index: 71 REQ + 9 NFR = 80). Section B gives detailed
+spec's traceability index: 78 REQ + 10 NFR = 88). Section B gives detailed
 Given-When-Then scenarios for the load-bearing requirements. Section C is the
 Definition of Done.
 
@@ -29,6 +29,18 @@ logic), replacing the prior "threaded into REQ-PL-001 `acquired_context` / no ne
 wording; semantics unchanged. The six spec.md EARS-header relabels ("Unwanted" → "Ubiquitous":
 PC-004, PT-005, PG-002, PG-004, PV-006, PV-017) are header-only and do not affect any AC. 1:1
 REQ ↔ AC preserved (71 REQ + 9 NFR = 80).
+
+(2026-06-23, v0.8.0 — long-form episode-craft extension, matches spec.md v0.8.0:) Added eight
+acceptance entries — AC-PT-009 (long-form format instances inherit the rails), AC-PG-007 (episode-level
+Tier-3 coherence gate), AC-PG-008 (quote-sourcing lint), AC-PC-011 (extended-monologue + track-interleave
+craft), AC-PV-018 (long-form delivery voice model), AC-PV-019 (episode-persona-state threading),
+AC-PI-006 (frozen-anchor audit across episodes), AC-NFR-P-10 (long-form episode integrity) — plus one
+Section B GWT block (B-24 long-form episode integrity) and a Section C item 9 (long-form episode craft).
+All ADDITIVE; the FROZEN invariants are inherited unchanged (fictional-persona guardrail REQ-PT-005,
+open/close disclaimer REQ-PT-006, fact contract REQ-PG-001, grounding REQ-PG-002, per-break two-tier
+gate REQ-PG-005, anti-convergence REQ-PR-004, anchor freeze REQ-PI-002). PIVOT-CONSISTENT: REQ-PG-008
+gates ATTRIBUTED-SPEECH quotes for TRUTH, never lyric usage (lyrics ungated). 1:1 REQ ↔ AC preserved
+(78 REQ + 10 NFR = 88).
 
 ---
 
@@ -180,6 +192,16 @@ judgment is AI-made (informed by taste charter + energy arc); (c) the open front
 the hook rather than easing in; (d) applies to recurring shows (REQ-PT-002) and the
 Solstice Hour open (REQ-PT-004).
 
+**AC-PC-011 (REQ-PC-011 — extended-monologue + track-interleave craft).** Verify a long-form
+episode (REQ-PT-004 / REQ-PT-009): (a) is written as ~5-15-minute (tunable) ducked-music-bed
+monologue BLOCKS, each with its own block-scale Hook→Body→Exit, NOT a string of 30s links;
+(b) [HARD] long-form BACKTIMES each interwoven track entry — the lead-in is sized to hand off
+into the track's cue-in/instrumental intro (ANALYSIS-006 REQ-AT-*), the ducked bed RAMPS up to
+the track, and the track is BACKSOLD when narration resumes; (c) [HARD] never talks over a vocal
+at any interleave (REQ-PC-003 rail holds; safe fallback ladder per transition); (d) the block
+size + interleave count are tunable; this owns the long-form CRAFT (VOICE-002 owns ducking,
+ANALYSIS-006 owns cues, REQ-PV-018 owns the delivery voice). See Section B for the GWT.
+
 ### Group PS — Script-Side Ear-Writing
 
 **AC-PS-001 (REQ-PS-001 — one thought, ≤20 words).** Verify: (a) generated script
@@ -257,6 +279,21 @@ within the max-2 cap and under the same guardrail + disclaimers (PT-005/006); (b
 Faroese long-form stays single-host (REQ-PR-007); (c) the format-study capability studies
 public formats from transcripts/press/RSS descriptions to inform craft, NEVER to copy a
 real episode's content; (d) both are optional/advanced and respect source terms.
+
+**AC-PT-009 (REQ-PT-009 — long-form format instances inherit the long-form rails).** Verify a
+LONGFORM-025-conceived long-form instance (album-doc / artist-retrospective / era-spotlight):
+(a) is single-narrator (or the optional 2-voice variant strictly within the max-2 cap,
+REQ-PT-008/REQ-PR-002), interweaves narratively-motivated library tracks, and is carried by
+ear-writing (Group PS) + pauses + a ducked bed (REQ-PV-018); (b) [HARD] is pre-rendered to ONE
+loudness-normalized file and queued via the OPS-004 ready buffer (REQ-PT-007), zero live assembly;
+(c) [HARD] passes the episode-level grounding gate (REQ-PG-007 Tier-3 coherence + REQ-PG-008
+quote-sourcing); (d) [HARD] when it voices an INVENTED character it carries the fictional-persona
+guardrail (REQ-PT-005) + the mandatory open-AND-close disclaimer (REQ-PT-006) and never
+impersonates / attributes fabricated testimony to a real person and never carries politics;
+(e) [HARD] for a REAL-SUBJECT episode the truth load is carried by the grounding rule (REQ-PG-002)
++ quote-sourcing (REQ-PG-008), never by fabricating the real subject's biography/testimony;
+(f) LONGFORM-025 Group LB owns the instance conception (topic/segment-plan/sourcing), referenced
+not re-owned. See Section B for the GWT.
 
 ### Group PL — Taste Self-Learning, Provenance & Feedback (added v0.2.0)
 
@@ -398,6 +435,27 @@ injected into EVERY talk-generation call; (b) the SAME card is used each call fo
 persona (consistency); (c) [HARD] the card has a hard length cap and confines opinion to the
 AUDIBLE; (d) traits are tunable config and coordinate with the Group PR persistent POV
 (REQ-PR-005) + Group PC craft.
+
+**AC-PG-007 (REQ-PG-007 — episode-level Tier-3 coherence gate).** Verify a whole long-form
+episode script (REQ-PT-004 / REQ-PT-009) before pre-render: (a) [HARD] runs an ARC-BEATS-IN-ORDER
+check (beats appear in the planned order, none missing/duplicated); (b) [HARD] runs a CROSS-SEGMENT
+NON-CONTRADICTION check (no segment contradicts another segment or the fact contract REQ-PG-001);
+(c) [HARD] runs a PERSONA-CHARTER CONSISTENCY check (the narrator stays consistent with its frozen
+anchor REQ-PI-001 + persistent POV REQ-PR-005 across segments, coordinating with REQ-PV-019);
+(d) [HARD] on FAIL the failing segment regenerates once, on a second FAIL the WHOLE episode is
+DEFERRED (falls back to regular programming) and NEVER airs incoherent; (e) the Tier-3 gate is
+ABOVE the UNCHANGED per-break Tier-1/Tier-2 gate (REQ-PG-005), which still runs on every segment;
+(f) the deferral preserves never-stops (NFR-P-5/P-10). See Section B for the GWT.
+
+**AC-PG-008 (REQ-PG-008 — quote-sourcing lint).** Verify: (a) [HARD] a quoted INTERVIEW or
+LINER/PRESS phrase attributed to a person/source ("X said …") requires `source_url` + `speaker`
++ `date` in the fact contract or it is a FAIL; (b) [HARD] on FAIL the quote is DROPPED (or the
+break/segment regenerated-once-then-skipped per REQ-PG-005 / deferred per REQ-PG-007), so an
+unsourced attributed quote NEVER airs (a fabricated "X said Y" never airs); (c) it EXTENDS the
+REQ-PG-005 Tier-1 forbidden-fact scan to quotes (a quote = a fact-with-attribution, governed like
+REQ-PG-002); (d) [HARD] PIVOT-CONSISTENT — verbatim song LYRICS are NOT gated (no lyric source/
+legal gate; the lyric is the on-air song, not an external attributed claim); a contested single-
+source READING is HEDGED, not banned (KNOWLEDGE-008 REQ-KS-006). See Section B for the GWT.
 
 ### Group PV — Host-Voice Persona-Awareness, Delivery Craft & Continual Improvement (added v0.4.0)
 
@@ -587,6 +645,28 @@ not advisory; (e) the banned-term list is tunable (slang dates), each persona's 
 vocabulary is its own (disjoint REQ-PV-009/010), and the news anchor is unaffected (excluded by
 construction REQ-PI-005). See Section B for the GWT.
 
+**AC-PV-018 (REQ-PV-018 — long-form delivery voice model).** Verify a long-form episode
+(REQ-PT-004 / REQ-PT-009) delivery: (a) each monologue block is delivered over a DUCKED MUSIC BED in
+the persona's voice-card register (REQ-PV-009), warmth/energy carried by ear-writing + pauses + bed
+(designed quiet/measured/reflective per the honest TTS limit R-P-2, never weeping/comic timing);
+(b) [HARD] the delivery RAMPS into and out of each interwoven track (measured wind-down / pick-up,
+coordinating with REQ-PC-011 backtiming/ramp/backsell); (c) the daypart-calibrated energy band
+(REQ-PV-003) is sustained as a WRITING property across the episode, never via exclamation/hype (the
+REQ-PC-004/REQ-PV-006 bans hold); (d) [HARD] the warmth-in-delivery / restraint-in-content spine
+(REQ-PV-005) is PRESERVED at long-form scale — no new claim-making latitude, grounding (REQ-PG-002)
+unchanged; this owns the delivery voice (VOICE-002 owns the render, REQ-PC-011 owns the craft).
+
+**AC-PV-019 (REQ-PV-019 — episode-persona-state threading).** Verify each segment of a multi-segment
+long-form episode: (a) [HARD] carries the persona's FROZEN temperament + voice signature (the
+REQ-PI-001 anchor block) UNCHANGED into every per-segment voice-card call (the same frozen identity
+start to finish, never re-rolled); (b) [HARD] has the current ARC-PHASE context (origins/turn/
+vocation/reflection for Solstice, or the conceived segment role for a LONGFORM-025 instance) injected
+into that voice-card call so delivery is phase-aware WITHOUT changing WHO the persona is; (c) [HARD]
+the frozen anchor (REQ-PI-002) is never mutated by arc-phase threading — only evolvable delivery
+colour responds; (d) the per-segment calls stay ONE persona (enforced at assembly by the REQ-PG-007
+persona-charter-consistency check); this extends the REQ-PG-006/REQ-PV-009 per-call card to the
+episode axis. See Section B for the GWT.
+
 ### Group PI — Persona Identity (Anchors) (added v0.5.0)
 
 **AC-PI-001 (REQ-PI-001 — per-persona frozen-anchor identity contract).** Verify: (a) every curator
@@ -632,6 +712,16 @@ ungroundable, and NEVER opinion/advocacy/viewpoint/normative judgment — it TIG
 OPS-004 REQ-OF-004; (d) the banter recalibration (bluntness/humour/self-disclosure) applies ONLY to
 curator personas and never reaches the news anchor; the carve-out + its forbidden-normative-token
 lint + its rubric are OPS-004/ORCH-005 amendments referenced not re-owned here. See Section B for the
+GWT.
+
+**AC-PI-006 (REQ-PI-006 — frozen-anchor audit across episodes).** Verify: (a) [HARD] a cross-episode
+audit compares a persona's persisted ANCHOR BLOCK (REQ-PI-001: ≥2 anchor focuses + core temperament +
+voice signature) at each episode boundary against its baseline anchor; (b) [HARD] a drifted anchor
+field is REVERTED to the baseline (the anchor is human-only / out-of-band, REQ-PI-002/003) and the
+attempt is logged; (c) the continual-improvement loop (REQ-PV-011) + taste loop (REQ-PL-006) may
+evolve only the EVOLVABLE layer between episodes, never the anchor; (d) this is the TIME-AXIS net under
+the per-persona frozen guard (REQ-PI-003 intake block) — together PV-019 keeps one episode coherent and
+PI-006 keeps the persona coherent ACROSS episodes; the audit cadence is tunable. See Section B for the
 GWT.
 
 ### Non-Functional Acceptance
@@ -705,6 +795,21 @@ REQ-PV-013, fenced three-class taxonomy REQ-PV-014) lands ENTIRELY on the EVOLVA
 (REQ-PI-004; profanity/humour/self-disclosure/praise fields disjoint REQ-PV-009/010; blunt praise
 never reintroduces a banned phrase REQ-PV-012/016). Axis (d) encodes the two non-refuted v0.5.0
 verdicts.
+
+**AC-NFR-P-10 (NFR-P-10 — long-form episode integrity).** Verify every long-form episode (REQ-PT-004
+/ REQ-PT-009) before it airs, on four axes: (a) the episode-level Tier-3 coherence gate (REQ-PG-007:
+arc-beats-in-order + cross-segment non-contradiction + persona-charter consistency) runs on the whole
+assembled script before pre-render, and an episode failing it twice is DEFERRED, never aired; (b) the
+quote-sourcing lint (REQ-PG-008) runs on every attributed interview/liner quote and a quote missing
+`source_url` + `speaker` + `date` is DROPPED, never aired (a fabricated "X said Y" never airs), while
+verbatim song lyrics are unaffected (PIVOT: lyrics need no source gate); (c) the per-persona ANCHOR
+BLOCK is provably stable BOTH within an episode (REQ-PV-019 threading) and ACROSS episodes (REQ-PI-006
+audit reverts + logs any drift); and (d) long-form NEVER silences the stream — the episode is
+pre-rendered to one loudness-normalized file (REQ-PT-007) and a coherence-deferred / quote-failed
+episode falls back to regular programming (inherits NFR-P-5). The per-break two-tier gate (REQ-PG-005)
+is UNCHANGED and still runs on every segment; this NFR adds the episode-scale guarantees on top.
+Generated episode scripts + gate verdicts are logged so a long-form integrity violation is detectable
+after the fact (inherits NFR-P-4 / OPS-004 NFR-O-7).
 
 ---
 
@@ -1355,6 +1460,54 @@ Scenario: The dated-slang term-class is per-persona register-true and tunable
 
 ---
 
+### B-24 — Long-form episode integrity: Tier-3 coherence, quote-sourcing, real-vs-fictional, cross-episode anchor (REQ-PT-009, REQ-PG-007, REQ-PG-008, REQ-PI-006 / AC-PT-009, AC-PG-007, AC-PG-008, AC-PI-006)
+
+```gherkin
+Scenario: A self-contradicting long-form episode is deferred, not aired
+  Given a LONGFORM-025-conceived artist-retrospective episode assembled from 5 segments
+    And segment 2 states the debut album year as "1991" and segment 4 states it as "1989"
+  When the episode-level Tier-3 coherence gate runs before pre-render (REQ-PG-007)
+  Then the cross-segment non-contradiction check FAILS (the year tokens disagree)
+    And the failing segment regenerates once
+    And on a second FAIL the WHOLE episode is DEFERRED (held back from the slot)
+    And regular programming keeps playing (never a silence, NFR-P-5/P-10)
+    And the per-break Tier-1/Tier-2 gate (REQ-PG-005) is unchanged and still ran on each segment
+
+Scenario: An out-of-order arc fails the beat-order check
+  Given a Solstice Hour episode whose planned 3-act arc is origins -> turn -> vocation -> reflection
+    And the assembled script places "reflection" before "vocation"
+  When the Tier-3 gate runs (REQ-PG-007)
+  Then the arc-beats-in-order check FAILS
+    And the episode is regenerated/deferred, never aired out of arc order
+
+Scenario: An unsourced attributed interview quote is dropped; verbatim lyrics are not gated
+  Given a documentary segment containing the line: the producer said "we cut it live in one take"
+    And the fact contract carries NO source_url/speaker/date for that quote
+  When the quote-sourcing lint runs (REQ-PG-008)
+  Then the attributed quote FAILS and is DROPPED (a fabricated "X said Y" never airs)
+  Given the same segment quotes two verbatim lines of the song's own lyrics
+  When the lint runs
+  Then the lyric quote is NOT gated (PIVOT: lyrics need no source; the lyric is the on-air song itself)
+
+Scenario: A real-subject retrospective speaks only grounded sourced facts, never fabricates a biography
+  Given an artist-retrospective about a real artist
+  When the host narrates the artist's history
+  Then every named fact (year/label/personnel/chart) is present in the fact contract or is unspoken (REQ-PG-002)
+    And every attributed quote carries source_url + speaker + date (REQ-PG-008)
+    And the host never fabricates the real artist's biography or testimony
+    And the fictional-persona guardrail (REQ-PT-005) + disclaimer (REQ-PT-006) apply only where an INVENTED character is voiced
+
+Scenario: A persona's frozen anchor never drifts across episodes
+  Given a curator persona whose baseline anchor primary genre is "ambient/drone" (the REQ-PR-004 firewall key)
+    And the persona has narrated 6 episodes over several weeks with evolvable-layer refinement between them
+  When the cross-episode frozen-anchor audit runs at each episode boundary (REQ-PI-006)
+  Then the persisted anchor block is identical to baseline every episode
+    And IF a loop change ever drifted an anchor field, that field is REVERTED to baseline and the attempt is logged
+    And only the evolvable layer (secondary tastes, tic wording, register colour) changed between episodes
+```
+
+---
+
 ## Section C — Definition of Done
 
 The SPEC-RADIO-PROGRAMMING-007 editorial layer is DONE when:
@@ -1517,7 +1670,28 @@ The SPEC-RADIO-PROGRAMMING-007 editorial layer is DONE when:
      ungroundable, never opinion/advocacy/normative) TIGHTENS the apolitical rail and is referenced,
      not re-owned (R-P-20 records the contested checkability).
 
-9. **Cross-cutting.**
+9. **Long-form episode craft (added v0.8.0).**
+   - A LONGFORM-025-conceived long-form instance (album-doc / artist-retrospective / era-spotlight)
+     inherits the long-form rails UNCHANGED (REQ-PT-009): single-narrator-or-max-2, ear-writing +
+     pauses + ducked bed, pre-rendered to one loudness-normalized file via the OPS-004 ready buffer.
+   - The fictional-persona guardrail (REQ-PT-005) + mandatory open/close disclaimer (REQ-PT-006) apply
+     wherever an invented character is voiced; a real-subject episode carries the truth load via
+     grounding (REQ-PG-002) + quote-sourcing (REQ-PG-008), never by fabricating a real biography.
+   - Long-form is written as 5-15-minute ducked-bed monologue blocks with long-form backtiming / ramp /
+     backsell (REQ-PC-011), delivered in the persona's register on the warmth-in-delivery /
+     restraint-in-content spine at long-form scale (REQ-PV-018), never talking over a vocal.
+   - An EPISODE-LEVEL Tier-3 coherence gate (REQ-PG-007: arc-beats-in-order + cross-segment
+     non-contradiction + persona-charter consistency) runs on the whole script before pre-render, ABOVE
+     the UNCHANGED per-break Tier-1/Tier-2 gate; a twice-failing episode is DEFERRED, never aired.
+   - A quote-sourcing lint (REQ-PG-008) drops any attributed interview/liner quote missing source_url +
+     speaker + date so a fabricated "X said Y" never airs; verbatim song lyrics are NOT gated (PIVOT).
+   - Episode-persona-state threading (REQ-PV-019) carries the frozen temperament/signature + injects the
+     arc-phase into every segment voice-card call (one coherent persona within an episode); the
+     cross-episode frozen-anchor audit (REQ-PI-006) reverts + logs any anchor drift episode-to-episode.
+   - Every long-form episode is integrity-checked before air on four axes and never silences the stream
+     (NFR-P-10); LONGFORM-025 Group LB owns the instance conception, referenced not re-owned.
+
+10. **Cross-cutting.**
    - No editorial decision silences the stream (NFR-P-5); a failing script is dropped
      (graceful-skip) via the OPS-004 buffer/gate.
    - The layer adds no new service/store/playout seam (NFR-P-6); it consumes CORE-001's
@@ -1528,5 +1702,5 @@ The SPEC-RADIO-PROGRAMMING-007 editorial layer is DONE when:
      (REQ-OF-006), the no-self-imitation rule (REQ-OC-006), and the apolitical rail
      (REQ-OF-004); taste evolution obeys the anti-appeal rule (NFR-O-7); host facts obey the
      grounded-never-fabricated rail (REQ-OC-005) via the Group PG fact contract + gate.
-   - Every requirement (71 REQ + 9 NFR = 80) has a passing acceptance entry; the 1:1 REQ↔AC
+   - Every requirement (78 REQ + 10 NFR = 88) has a passing acceptance entry; the 1:1 REQ↔AC
      mapping holds against the spec's traceability index.

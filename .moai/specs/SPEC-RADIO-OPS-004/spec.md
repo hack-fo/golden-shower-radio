@@ -1,6 +1,6 @@
 ---
 id: SPEC-RADIO-OPS-004
-version: 0.9.3
+version: 0.10.0
 status: draft
 created: 2026-06-22
 updated: 2026-06-23
@@ -349,6 +349,48 @@ issue_number: null
   owned by SPEC-RADIO-REQUEST-011 Group RM, NOT OPS-004; REQ-OB-009 is the separate website
   FEEDBACK FORM channel (a distinct listener signal), not the request search-box. Both AC files
   updated in lockstep with their REQs; spec.md and acceptance.md frontmatter versions matched.
+- 2026-06-23 (v0.10.0): LONG-FORM EPISODE ENABLEMENT — two additive requirements that let the
+  forthcoming episode engine (SPEC-RADIO-LONGFORM-025, forward-referenced — DOES NOT EXIST YET, a
+  code-seam) author bespoke segment types AND air content-driven-duration long-form blocks, while
+  OPS-004 re-owns nothing of the episode engine or the scheduler. (1) EXTEND Group OY with a
+  CONCEPTION-DRIVEN type-creation path. REQ-OY-002 already grants the brain create/extend/rewrite/
+  retire of segment types, but on the SLOW Tier-2 structural cadence (REQ-OD-010) — which would
+  throttle an episode that needs three bespoke sub-segment types tonight (e.g. album-deep-dive-intro,
+  track-breakdown-mini, era-retrospective-outro). NEW REQ-OY-008 (Event-driven): when episode
+  conception requires a segment type not in the registry, the AI MAY author it AS PART OF conception,
+  marked with a provenance/scope flag (conception-scoped/provisional vs durable-roster). A
+  conception-scoped type is NOT charged the scarce Tier-2 structural budget — it rides the
+  per-episode production cadence (like a Group OX topic INSTANCE, not a structural roster change) —
+  but it STILL (a) is a `segment_type_created` event on the one REQ-OD-007 ledger (no new store), (b)
+  obeys the REQ-OY-003 FROZEN/EVOLVABLE split (inherits FULL fact-check by default, can never be born
+  partisan or opt out of the never-ship-a-FAIL gate), (c) carries recipe pointers like any type, and
+  (d) may later be PROMOTED to durable-roster status, which IS a Tier-2 change. This keeps the
+  rarity-tier rationale intact (durable identity/structure stays rare) while letting the episode
+  engine compose freely. (2) EXTEND Group OA / the REQ-OB-005 special-event override to permit
+  CONTENT-DRIVEN-DURATION long-form blocks. NEW REQ-OA-016 (Event-driven): a TIME-BLOCK OVERRIDE
+  VARIANT of the REQ-OB-005 override-and-restore discipline whose window length is the EPISODE'S OWN
+  duration claim (content-driven — a 60-120min episode, 73 minutes if that is the episode's length —
+  not snapped to the hour clock), which MAY suspend the regular slot-based format clock across its
+  span and MAY cross a daypart boundary, with TIME-BUDGETING: the block reserves its content-driven
+  window and the surrounding slot-based schedule absorbs the displacement while preserving the 24h
+  no-gap (CORE-001 REQ-B-002/003) and always-staffed (REQ-OB-014) invariants. [HARD] It WEAKENS NO
+  FIXED RAIL: the top-of-hour station ID (REQ-OE-008) is PRESERVED (placement discretion within the
+  block — woven at the nearest internal segment boundary, never dropped); the daypart boundary
+  (REQ-OA-005) is not moved/erased — the daypart clock-set switch is merely DEFERRED until restore
+  (exactly as REQ-OB-005 special windows already override the active clock for their window); the
+  block ends content-driven at a SONG/SEGMENT boundary (never-cut-short NFR-O-12, never-silence
+  REQ-OA-008) and restores the default clock cleanly via the REQ-OB-005 discipline. Boundary
+  ownership: ORCH-005 owns WHEN the block airs (scheduler discretion, REQ-RA seam); LONGFORM-025
+  supplies the EPISODE + its DURATION CLAIM and rides scheduler discretion; OPS-004 owns the override
+  VARIANT mechanics + the time-budgeting + the rails-it-must-honor. The schedule mutation that
+  reserves the window routes through the existing REQ-OA-015 -> ORCH-005 REQ-RA-001(g) -> CORE-001
+  REQ-B-003 (no forked store). A long-form block is a SCHEDULED/CURATED block (REQ-OB-006 association
+  != 'unscheduled'), so the REQ-OA-003d(c) [HARD] off-schedule-variety EXEMPTION already covers it (no
+  new exemption). Both new REQs are forward-referenced against LONGFORM-025 (does not exist yet) and
+  degrade gracefully until the episode-engine seam is coded: with no episode engine present, no
+  conception-driven type is authored and no long-form block is scheduled — the regular slot-based
+  programming is unaffected. No new datastore, no new playout kind, no Liquidsoap change, brain-only.
+  Net: +2 REQ (OA-016, OY-008), +0 NFR. Total: 99 REQ + 12 NFR = 111, 1:1 REQ↔AC preserved.
 
 ---
 
@@ -583,6 +625,10 @@ seams/scheduling they will attach to. Full design notes are in the Section 17 ro
 | **Voice quarantine** | The [HARD] policy (REQ-OB-013) that a retired persona's frozen 1:1 voice (PROGRAMMING-007 REQ-PI-001 / REQ-PR-003) is never re-bound to a DIFFERENT identity; it is re-issuable only as a brand-new persona after the REQ-OD-010 Tier-1 rarity cooldown. A launch always draws a NEW unused voice from the pool; if the pool is exhausted, the launch is rejected (no reuse). Protects the listener voice-recognition contract. |
 | **Rarity tier** | The [HARD] change-tiering (REQ-OD-010) partitioning REQ-OD-006's single measured-change budget into ordered tiers: Tier 1 (RAREST) = identity/existence changes (persona retire/launch, show discontinue/relaunch, voice-bearing swap) with the tightest rate cap + longest cooldown, strictly below; Tier 2 = structural (format-clock defaults, dayparting, segment roster, persona reassign); Tier 3 = evolvable drift (voice-card EVOLVABLE wording, taste-profile, register colour). Rationale: consistency is a listener obligation. |
 | **Schedule-grid CRUD** | The enumerated PD grid operations (REQ-OA-015): ADD slot/show, REMOVE slot/show, MOVE slot (re-time) — mapping to CORE-001 REQ-B-003 insert/replace/move-show — PLUS the first-class ASSIGN / REASSIGN-persona-to-slot operation. Dispatched through ORCH-005 REQ-RA-001(g) into CORE-001 REQ-B-003 (reference, never fork the schedule store); edits take effect for FUTURE blocks without interrupting the current stream and preserve the no-gap + always-staffed invariants. |
+| **Long-form episode** | A 60-120-minute CONTENT-DRIVEN-DURATION block — an episode whose runtime is the EPISODE'S OWN length (e.g. 73 minutes), not snapped to the hour clock — composed of multiple named sub-segments, that may BREAK a daypart and suspend the regular slot-based format clock for its span. The EPISODE itself and its DURATION CLAIM are SUPPLIED BY SPEC-RADIO-LONGFORM-025 (forward-referenced, does not exist yet); ORCH-005 owns WHEN it airs (scheduler discretion); OPS-004 owns the time-block override VARIANT mechanics + time-budgeting (REQ-OA-016). |
+| **Time-block override variant** | The content-driven-duration VARIANT (REQ-OA-016) of the REQ-OB-005 special-event override-and-restore discipline: the override window length comes from the episode's duration CLAIM rather than a clock-snapped boundary; it MAY suspend the slot-based format clock across its span and MAY cross a daypart boundary, restoring the default clock cleanly at a song/segment boundary after the content ends. It WEAKENS NO FIXED RAIL — the top-of-hour ID (REQ-OE-008) is preserved with in-block placement discretion (never dropped), the daypart boundary (REQ-OA-005) is not moved (its clock-set switch is merely DEFERRED until restore), and never-cut-short (NFR-O-12) / never-silence (REQ-OA-008) hold. |
+| **Time-budgeting** | The PD's reasoning (REQ-OA-016) that a content-driven-duration long-form block DISPLACES the slot-based programming it overlaps: the block reserves its content-driven window and the surrounding slot-based schedule absorbs the displacement while preserving the 24h no-gap (CORE-001 REQ-B-002/003) and always-staffed (REQ-OB-014) invariants. The reservation is a schedule-grid mutation routed through REQ-OA-015. |
+| **Conception-scoped segment type** | A segment-TYPE definition authored AS PART OF conceiving one long-form episode (REQ-OY-008) — e.g. album-deep-dive-intro / track-breakdown-mini / era-retrospective-outro — flagged provisional/conception-scoped (provenance/scope field) rather than durable-roster. It is created at the per-episode production cadence (NOT charged the scarce Tier-2 structural budget, like a Group OX topic INSTANCE, not a roster change), but it is STILL a `segment_type_created` event on the one REQ-OD-007 ledger, STILL obeys the REQ-OY-003 FROZEN/EVOLVABLE split (inherits FULL fact-check, never born partisan or gate-exempt), and MAY later be PROMOTED to durable-roster (a Tier-2 change). Distinct from a durable-roster type, which is a deliberate structural addition (REQ-OY-002, Tier-2). |
 
 ---
 
@@ -597,7 +643,11 @@ seams/scheduling they will attach to. Full design notes are in the Section 17 ro
   balance, imaging cadence direction, editorial run-mode selection, context-aware
   transition/mixing style, an enumerated SCHEDULE-GRID CRUD set (add/remove/move slot +
   assign/reassign-persona-to-slot, REQ-OA-015) dispatched through ORCH-005 into the
-  CORE-001 schedule store, never-single-point-of-silence above the inherited failover.
+  CORE-001 schedule store, a CONTENT-DRIVEN-DURATION long-form time-block override variant
+  (REQ-OA-016) that lets a 60-120min episode break a daypart with time-budgeting against the
+  slot-based shows (the episode + its duration claim SUPPLIED BY SPEC-RADIO-LONGFORM-025, the
+  WHEN owned by ORCH-005 — referenced, not re-owned), never-single-point-of-silence above the
+  inherited failover.
 - **Group OB — Shows & Host Personas.** Themed shows, hosts with character, show
   construction, persona-register switching, named recurring segments, a persisted
   timestamped play-history rendered on the website (per-show tracklists + unscheduled
@@ -655,7 +705,11 @@ seams/scheduling they will attach to. Full design notes are in the Section 17 ro
   inventory that REQ-OB-004's ephemeral segment-roster authority was missing. The brain may
   add/extend/rewrite/retire types bounded by REQ-OD-006 measured-change and a FROZEN/EVOLVABLE
   split (REQ-OY-003) that protects the fact contract + never-ship-a-FAIL gate + the
-  news-anchor factual stance. Plus the PER-SEGMENT PRODUCTION PIPELINE (REQ-OY-005): a
+  news-anchor factual stance — and may also AUTHOR a bespoke type AS PART OF conceiving a
+  long-form episode (REQ-OY-008, conception-scoped/provisional, NOT charged the scarce Tier-2
+  structural budget but still a ledger event obeying the REQ-OY-003 FROZEN split; the episode
+  engine that conceives it is SPEC-RADIO-LONGFORM-025, referenced not re-owned). Plus the
+  PER-SEGMENT PRODUCTION PIPELINE (REQ-OY-005): a
   first-class flow research→write→FACT-CHECK gate→assemble→schedule, pure composition
   REFERENCING each owning SPEC (KNOWLEDGE-008 KR/KS-006/KF-003/KI-001, PROGRAMMING-007
   PC/PS/PV + PG-005 gate, IMAGING-010 IH/IP + OE furniture, VOICE-002 TTS, ORCH-005 RA +
@@ -1077,6 +1131,48 @@ store; the ORCH-005 RA action-surface clarification and any CORE-001 assign-op r
 authored in their own passes (coordination notes only here).
 
 **Acceptance criteria:** see acceptance.md AC-OA-015.
+
+### REQ-OA-016 — Content-driven-duration long-form time-block override (Event-driven) — content-driven VARIANT of REQ-OB-005
+
+When the program director schedules a CONTENT-DRIVEN-DURATION long-form episode block — a 60-120
+minute episode whose runtime is the EPISODE'S OWN length (e.g. 73 minutes), not a clock-snapped
+boundary — the system shall apply a TIME-BLOCK OVERRIDE VARIANT of the REQ-OB-005 special-event
+override-and-restore discipline (referenced, not forked): an override window whose LENGTH is the
+episode's DURATION CLAIM, which MAY suspend the regular slot-based format clock (REQ-OA-002) across
+its span and MAY cross a daypart boundary (REQ-OA-005). The system shall perform TIME-BUDGETING for
+the block: it reserves its content-driven window and the surrounding slot-based schedule absorbs the
+displacement while [HARD] preserving the 24h no-gap coverage (CORE-001 REQ-B-002/003) and the
+always-staffed host-availability invariant (REQ-OB-014).
+
+[HARD] The variant WEAKENS NO FIXED RAIL:
+- The top-of-hour station ID (REQ-OE-008) is PRESERVED across the block — the AI gets PLACEMENT
+  discretion within the block (woven at the nearest internal segment boundary to top-of-hour) but
+  shall NOT drop the ID; the identity rail holds.
+- The daypart boundary (REQ-OA-005) is NOT moved or erased — when the block spans a boundary, the
+  daypart clock-set switch is merely DEFERRED until the block restores, exactly as REQ-OB-005 special
+  windows already override the active clock for their window. The boundary still exists.
+- The block ends CONTENT-DRIVEN at a song/segment boundary; it never truncates a track (never-cut-
+  short NFR-O-12) and never silences the stream (REQ-OA-008), and it restores the default clock
+  cleanly via the REQ-OB-005 restore discipline. If the episode's actual runtime drifts from its
+  duration CLAIM, the restore fires at the next safe boundary AFTER the content ends (never-cut-short
+  wins over snapping to a planned restore time).
+
+Because a long-form block is a SCHEDULED/CURATED block (its REQ-OB-006 association
+`show_or_episode_id != 'unscheduled'`), the REQ-OA-003d(c) [HARD] off-schedule-variety EXEMPTION
+already covers it — NO new exemption is added and no taste/coherence/anti-drift check is applied
+inside the episode (the episode legitimately holds whatever style/sequence its engine specifies,
+satisfying CORE-001 REQ-D-002 / AC-OA-004).
+
+[Ownership] ORCH-005 owns WHEN the block airs (scheduler discretion, the REQ-RA seam);
+SPEC-RADIO-LONGFORM-025 supplies the EPISODE itself and its DURATION CLAIM and rides scheduler
+discretion (forward-referenced — LONGFORM-025 does not exist yet, a code-seam; referenced, NOT
+re-owned). OPS-004 owns ONLY the override VARIANT mechanics, the time-budgeting, and the rails-it-
+must-honor. The schedule mutation that reserves the window routes through the existing REQ-OA-015 →
+ORCH-005 REQ-RA-001(g) → CORE-001 REQ-B-003 (no forked schedule store). Until the LONGFORM-025 seam
+is coded, no long-form block is scheduled and regular slot-based programming is unaffected (graceful
+degradation).
+
+**Acceptance criteria:** see acceptance.md AC-OA-016.
 
 ---
 
@@ -2217,6 +2313,47 @@ NFR-O-7).
 
 **Acceptance criteria:** see acceptance.md AC-OY-007.
 
+### REQ-OY-008 — Conception-driven segment-type creation as part of episode conception (Event-driven) [HARD]
+
+When an episode-conception flow (SPEC-RADIO-LONGFORM-025, forward-referenced — does not exist yet, a
+code-seam; referenced, NOT re-owned) conceives a long-form episode that requires a segment TYPE not
+present in the registry (e.g. `album-deep-dive-intro`, `track-breakdown-mini`,
+`era-retrospective-outro`), the system shall let the AI AUTHOR that segment type AS PART OF
+conception — rather than only on the slow Tier-2 structural cadence (REQ-OY-002 / REQ-OD-010) — so the
+episode engine can compose bespoke sub-segments freely instead of being throttled to a crawl.
+
+[HARD] A conception-authored type is marked with a PROVENANCE / SCOPE flag distinguishing
+`conception-scoped` (provisional, tied to the conceiving episode's production) from `durable-roster`
+(a deliberate recurring format). A `conception-scoped` type is NOT charged the scarce Tier-2
+structural change budget — it rides the PER-EPISODE production cadence, the same way a Group OX topic
+INSTANCE is created freely (theme invention is not rate-limited the way identity/structure is), NOT
+the structural-roster change rate (REQ-OD-010 Tier-2). This keeps the rarity-tier rationale intact:
+durable identity/structure stays rare; episode-local composition stays free.
+
+[HARD] A conception-scoped type is STILL a first-class registry entry and is bound by the SAME rails
+as any type:
+- it is recorded as a `segment_type_created` event on the EXISTING REQ-OD-007 append-only ledger
+  (idempotent ID) — NO new datastore (it is the same VIEW as REQ-OY-001);
+- it OBEYS the REQ-OY-003 FROZEN/EVOLVABLE split — it inherits a FULL fact-check-level by DEFAULT,
+  can NEVER be born partisan (REQ-OF-004), can NEVER opt out of the never-ship-a-FAIL gate
+  (REQ-OY-006 / PROGRAMMING-007 REQ-PG-005), and inherits the apolitical + no-self-imitation +
+  no-pandering invariants; a conception-scoped type cannot be a back door around any FROZEN rail;
+- it carries RECIPE POINTERS (research / write / fact-check-level / assemble / schedule, REQ-OY-001)
+  like any type, and a produced instance of it runs the same REQ-OY-005 pipeline + REQ-OY-006 gate;
+- it MAY later be PROMOTED to `durable-roster` status — and that PROMOTION IS a Tier-2 structural
+  change (REQ-OY-002 / REQ-OD-010), bounded by the measured-change rails, so a provisional type only
+  becomes a permanent station format through the normal slow structural gate.
+
+The editorial CONTENT behind the type's recipe pointers remains owned by PROGRAMMING-007 (REQ-PC-008
+seam); OPS-004 owns the registry STORE + the conception-scoped/durable provenance distinction + the
+non-Tier-2 cadence for conception-scoped creation. Which types the episode engine conceives is its
+creative call (owned by LONGFORM-025); that a conception-scoped type still lands on the one ledger,
+still obeys the FROZEN split, and does not consume the structural budget are the rails. Until the
+LONGFORM-025 seam is coded, no conception-driven type is authored (graceful degradation;
+hand-seeded + Tier-2-authored types REQ-OY-002/004 are unaffected).
+
+**Acceptance criteria:** see acceptance.md AC-OY-008.
+
 ---
 
 ## 13. Exclusions (What NOT to Build)
@@ -2276,7 +2413,34 @@ NFR-O-7).
 - **A segment type that opts out of the FROZEN gate** — no registry edit may lower a type's
   fact-check-level, relax consensus/freshness, make a type partisan, or weaken the
   news-anchor factual stance (REQ-OY-003); the never-ship-a-FAIL gate is FROZEN for every
-  type, existing or newly created.
+  type, existing or newly created. This includes CONCEPTION-SCOPED types (REQ-OY-008): a
+  type authored as part of episode conception inherits FULL fact-check by default and can
+  NEVER be born partisan or gate-exempt — conception-scoped creation is a CADENCE relaxation
+  (it skips the Tier-2 structural budget), never a RAILS relaxation.
+- **The episode engine, its episode-conception logic, or its duration claim** — the long-form
+  EPISODE itself, the logic that conceives it, the named sub-segments it composes, and its
+  content-driven DURATION claim are SUPPLIED BY SPEC-RADIO-LONGFORM-025 (forward-referenced,
+  does not exist yet — a code-seam). OPS-004 owns ONLY the registry seam a conceived type is
+  written through (REQ-OY-008), the time-block override VARIANT mechanics + time-budgeting
+  (REQ-OA-016), and the rails-it-must-honor — never the episode engine. REQ-OA-016 / REQ-OY-008
+  reference LONGFORM-025; they do not author or fork it.
+- **Owning WHEN a long-form block airs** — ORCH-005 owns scheduler discretion (the REQ-RA seam);
+  the long-form block rides that discretion. OPS-004's REQ-OA-016 owns the override-window
+  MECHANICS and time-budgeting, not the air-time decision; the schedule mutation that reserves
+  the window routes through the EXISTING REQ-OA-015 → ORCH-005 REQ-RA-001(g) → CORE-001 REQ-B-003
+  (no forked schedule store).
+- **A long-form block that breaks a FIXED rail** — REQ-OA-016 [HARD] never drops the top-of-hour
+  station ID (REQ-OE-008; it gets only in-block placement discretion), never moves/erases a
+  daypart boundary (REQ-OA-005; it merely DEFERS the daypart clock-set switch until restore, as
+  REQ-OB-005 special windows already do), never truncates a track (NFR-O-12) or silences the
+  stream (REQ-OA-008), and never applies a taste/coherence check inside the curated block
+  (the REQ-OA-003d(c) [HARD] exemption already covers a scheduled block — no new exemption, no new
+  playout kind, no Liquidsoap change, no forked store).
+- **Conception-scoped types as a permanent-format back door** — a `conception-scoped` type
+  becomes a permanent station FORMAT only by PROMOTION to `durable-roster`, which IS a Tier-2
+  structural change (REQ-OY-002 / REQ-OD-010); the non-Tier-2 cadence is for provisional,
+  episode-tied creation ONLY and does not let the brain mint permanent formats outside the
+  measured-change rails.
 - **Re-binding a retired persona's voice to a different identity, or any intermediate
   hostless schedule state** — REQ-OB-013 [HARD] quarantines a retired 1:1 voice (re-issuable
   only as a brand-new persona after the Tier-1 cooldown; launch is rejected if the pool is
@@ -2654,6 +2818,27 @@ AC-NFR-O-12.
   first version or deferred to keep the hot path clean (default: deferred — hot path stays clean).
   All thresholds are TUNABLE/AI-evolvable; the only [HARD] sub-clause is the scheduled-show
   exemption (protecting REQ-D-002). Design-dossier extension; confirm with the user.
+- **R-O-33 — Long-form episode enablement: conception-driven types + content-driven-duration
+  blocks (Medium, relayed; forward-ref).** REQ-OY-008 lets the forthcoming episode engine
+  (SPEC-RADIO-LONGFORM-025, does not exist yet) author bespoke segment types
+  (album-deep-dive-intro / track-breakdown-mini / era-retrospective-outro) AS PART OF conceiving
+  an episode, at the per-episode cadence (NOT the scarce Tier-2 structural budget) but still on the
+  one REQ-OD-007 ledger and still bound by the REQ-OY-003 FROZEN split. REQ-OA-016 adds a
+  content-driven-duration time-block override VARIANT of REQ-OB-005 so a 60-120min episode can break
+  a daypart, with time-budgeting against the slot-based shows, weakening no fixed rail. Build
+  concerns / open questions: (a) the conception-scoped vs durable-roster provenance flag and the
+  PROMOTION path (when a provisional type graduates to a permanent format — Tier-2) — confirm the
+  default lifetime of a conception-scoped type (does it persist/get garbage-collected after its
+  episode, or live indefinitely until promoted/retired?); (b) the time-budgeting policy when a
+  long-form block displaces hosted slot-based shows — does the PD reassign/relaunch displaced shows
+  (always-staffed REQ-OB-014) or simply absorb the gap by extending neighbours? (c) duration-claim
+  drift — how far the actual runtime may diverge from the claim before the PD re-plans the rest of
+  the day (never-cut-short NFR-O-12 always wins on the end boundary); (d) top-of-hour ID placement
+  inside a long block — confirm the "nearest internal segment boundary" heuristic is acceptable vs a
+  hard top-of-hour insert. The episode engine + its duration claim are SUPPLIED BY LONGFORM-025
+  (referenced); ORCH-005 owns WHEN (scheduler discretion); OPS-004 owns the override mechanics +
+  registry seam + time-budgeting only. Forward-referenced (LONGFORM-025 does not exist yet);
+  graceful degradation until that seam is coded. Relayed during authoring; confirm with the user.
 
 ---
 
@@ -2683,6 +2868,16 @@ AC-NFR-O-12.
   regular newscasting moves into OPS-004.
 - **SPEC-RADIO-INGEST** — concrete seed ingestion (mostly delivered in CORE-001
   v0.3.0).
+- **SPEC-RADIO-LONGFORM-025 — long-form episode engine (forward-referenced by OPS-004
+  v0.10.0; does not exist yet).** Owns the EPISODE itself: the logic that conceives a
+  60-120min long-form episode, the named sub-segments it composes, and the episode's
+  content-driven DURATION CLAIM. It rides ORCH-005 scheduler discretion (WHEN) and writes
+  any bespoke segment types it conceives through the OPS-004 Group OY registry seam
+  (REQ-OY-008, conception-scoped), and its block airs via the OPS-004 REQ-OA-016 time-block
+  override variant. OPS-004 owns ONLY those two seams + the time-budgeting + the rails — the
+  episode engine itself is LONGFORM-025's SPEC, authored at that phase. Until it lands, no
+  conception-driven type is authored and no long-form block is scheduled (graceful
+  degradation).
 - **SPEC-RADIO-SOCIAL — autonomous Instagram + messaging management (expands CORE-001's
   deferred "Instagram read/reply" into FULL autonomous social management).** Confirmed
   design notes (coordinator-relayed during OPS-004 authoring — to be user-confirmed
@@ -2736,6 +2931,7 @@ are in acceptance.md Section B).
 | REQ-OA-013 | Program Director & Scheduling | Medium | Event | AC-OA-013 |
 | REQ-OA-014 | Program Director & Scheduling | Medium | Event | AC-OA-014 |
 | REQ-OA-015 | Program Director & Scheduling | High | Event | AC-OA-015 |
+| REQ-OA-016 | Program Director & Scheduling | Medium | Event | AC-OA-016 |
 | REQ-OB-001 | Shows & Host Personas | High | Event | AC-OB-001 |
 | REQ-OB-002 | Shows & Host Personas | High | State | AC-OB-002 |
 | REQ-OB-003 | Shows & Host Personas | High | Ubiquitous | AC-OB-003 |
@@ -2814,6 +3010,7 @@ are in acceptance.md Section B).
 | REQ-OY-005 | Segment-Type Registry & Pipeline | High | Event | AC-OY-005 |
 | REQ-OY-006 | Segment-Type Registry & Pipeline | High | Ubiquitous | AC-OY-006 |
 | REQ-OY-007 | Segment-Type Registry & Pipeline | High | Ubiquitous | AC-OY-007 |
+| REQ-OY-008 | Segment-Type Registry & Pipeline | High | Event | AC-OY-008 |
 | NFR-O-1 | Non-Functional | High | Ubiquitous | AC-NFR-O-1 |
 | NFR-O-2 | Non-Functional | High | Ubiquitous | AC-NFR-O-2 |
 | NFR-O-3 | Non-Functional | High | Ubiquitous | AC-NFR-O-3 |

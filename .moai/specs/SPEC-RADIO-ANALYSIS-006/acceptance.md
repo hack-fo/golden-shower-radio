@@ -1,6 +1,6 @@
 ---
 id: SPEC-RADIO-ANALYSIS-006
-version: 0.4.2
+version: 0.5.0
 updated: 2026-06-23
 ---
 
@@ -81,6 +81,34 @@ extended in place (no fork); the only playout contract is per-request `annotate:
   and the no-network DSP path does not make an LLM/network call. The LLM description is
   optional enrichment, never a precondition of analysis.
 - The profile feeds the data model (AC-AD-001) and per-persona separability (AC-AD-003).
+
+**AC-AE-007 (REQ-AE-007) [HARD].**
+- [HARD] When a track has a SOURCED production fact in KNOWLEDGE-008 (gear / recording location /
+  production technique) AND the extracted features support it, analysis derives a PRODUCTION
+  OBSERVATION that LINKS the sourced fact to an audible result from the feature record (e.g. the
+  sourced "close-mic'd, damped kit" technique linked to the analysis's low-reverb / short-decay /
+  tight-dynamics reading → the audible "dry drum tone") — grounded in BOTH legs.
+- [HARD] Two-leg rule: the observation is recorded ONLY when BOTH legs are present and agree — a
+  sourced production fact with NO corroborating audible feature yields NO production observation
+  (it remains a KNOWLEDGE-008 fact), and an audible feature reading with NO sourced production fact
+  yields NO production observation (it remains a sonic-character descriptor, AC-AE-006). Verified:
+  feeding only one leg produces no production observation.
+- [HARD] Grounding: the audible-result claim does NOT assert a result the features contradict
+  (verified: it does not claim an audible reverb tail when the features read dry); and the
+  production-fact leg carries KNOWLEDGE-008's consensus state unchanged — a single-source /
+  unconfirmed production fact yields a HEDGED observation ("reportedly recorded with…"), not a
+  confident one (verified: ANALYSIS-006 does not re-run consensus on the fact; REQ-KS-006 owns it).
+- [HARD] Rail scoping: the feature leg is CPU-only / offline (AC-NFR-A-1, AC-AE-003); the link
+  reasoning uses the brain's EXISTING LLM access OFF the `/api/next` path, cached + idempotent with
+  the feature record (AC-AE-002) — verified: a track with no production fact (or that skips the link
+  step) still has its complete CPU-derived feature/sonic-character record, and the production
+  observation is never a precondition of analysis or playout.
+- The production observation is stored alongside the sonic-character profile (AC-AD-001) with its
+  own confidence and a REFERENCE to the KNOWLEDGE-008 fact (provenance + consensus state), not a
+  re-owned copy.
+- The reveal / presentation cue (solo-the-stem / isolate-the-track) is SPEC-RADIO-LONGFORM-025 Group
+  LN's (forward-ref); ANALYSIS-006 supplies only the grounded substrate (verified: no
+  reveal/presentation logic here).
 
 ### Group AT — Transition Intelligence (Q3)
 
@@ -532,11 +560,51 @@ Given a file discovered by the library-watch stat scan (REQ-AP-007) with no expl
 Then requested_by = "ingest-scan"
 ```
 
+### B12 — REQ-AE-007 (production observation: two-leg grounded link; reveal deferred to LONGFORM-025)
+
+```
+Given KNOWLEDGE-008 holds a SOURCED, consensus-passed production fact for the track:
+      "drums close-mic'd on a damped kit in a dry room" (provenance + as-of recorded)
+And the extracted features read: low reverberance / short decay tail, tight transient dynamics,
+      drum-band timbre present
+When the production-observation step runs (link reasoning over the verified feature record)
+Then a PRODUCTION OBSERVATION is recorded linking the sourced "dry close-mic" fact to the
+     audible "dry drum tone" feature reading — grounded in BOTH legs
+And it is stored alongside the sonic-character profile with its own agreement-confidence and a
+    REFERENCE to the KNOWLEDGE-008 fact (provenance + consensus state), not a re-owned copy
+And the audible-result claim does not assert anything the features contradict (no "reverb tail")
+
+Given the SAME sourced fact but features that read LONG reverb tail / wet ambience (contradicting)
+When the step runs
+Then NO production observation is recorded (the two legs do not agree)
+And the track keeps its full sonic-character record regardless (AC-AE-006)
+
+Given a sourced production fact exists but NO supporting audible feature (one leg only)
+Then NO production observation is recorded (a bare KNOWLEDGE-008 fact is not an observation)
+
+Given an audible "dry" feature reading but NO sourced production fact (one leg only)
+Then NO production observation is recorded (a bare sonic descriptor is not an observation)
+
+Given the production fact is SINGLE-SOURCE / not consensus-passed in KNOWLEDGE-008 (REQ-KS-006)
+When an observation is derived
+Then it is HEDGED ("reportedly recorded with…"), not stated as confident
+And ANALYSIS-006 does NOT re-run consensus on the fact (KNOWLEDGE-008 owns REQ-KS-006)
+
+Given a track with no production fact at all
+When it is served on the playout pull
+Then it plays normally on its CPU-derived features / safe defaults; the production observation
+    was never a precondition of analysis or playout, and the link step made no /api/next call
+
+Note: the REVEAL of a production observation to the listener (solo-the-stem / isolate-the-track)
+is SPEC-RADIO-LONGFORM-025 Group LN's content mechanic — ANALYSIS-006 supplies only this grounded
+substrate, never the presentation.
+```
+
 ---
 
 ## Section C — Definition of Done
 
-- All 31 REQ + 7 NFR have a passing acceptance check (Section A), with Section B scenarios
+- All 32 REQ + 7 NFR have a passing acceptance check (Section A), with Section B scenarios
   green for the load-bearing requirements.
 - The analysis engine runs CPU-only/offline, is idempotent + cached (never re-analyzes),
   and never blocks the sub-1s `/api/next` pull (NFR-A-1/2/3).
@@ -553,6 +621,14 @@ Then requested_by = "ingest-scan"
 - A sonic-character "how it sounds" profile (mood/timbre/production/instrumentation/vocal/
   acoustic/dynamics +/- embedding +/- grounded LLM description) is produced under the AE
   rails, the LLM description grounded strictly in the extracted features (REQ-AE-006).
+- A PRODUCTION OBSERVATION links a SOURCED production fact (gear/location/technique from
+  KNOWLEDGE-008, with its provenance + consensus state) to an audible feature result under the
+  TWO-LEG rule — valid only when both legs are present and agree, neither leg alone airable;
+  the audible-result claim never contradicts the features, a single-source production fact yields
+  a hedged observation, and ANALYSIS-006 never re-runs the fact's consensus (KNOWLEDGE-008 owns
+  REQ-KS-006); the observation rides the AE rails (cached/idempotent, link step off the playout
+  path) and the reveal/presentation mechanic is referenced to LONGFORM-025 Group LN, not built
+  here (REQ-AE-007).
 - Genre/mood/tags reach multi-source CONSENSUS (verified-source allowlist + threshold +
   confidence); single-source/low-consensus values are flagged, never stated as certain;
   artist-fact consensus is deferred to KNOWLEDGE-008; tag correction is referenced to OPS-004

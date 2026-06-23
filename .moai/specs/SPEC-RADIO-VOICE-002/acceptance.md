@@ -1,10 +1,10 @@
 ---
 id: SPEC-RADIO-VOICE-002
 type: acceptance
-version: 0.1.0
+version: 0.2.0
 status: draft
 created: 2026-06-22
-updated: 2026-06-22
+updated: 2026-06-23
 author: charlie
 ---
 
@@ -57,6 +57,27 @@ traceability index in spec.md Section 16 and Section 5 below).
   configured limit (reference ≤3 workers); transient failures retry with backoff up
   to a configured bound; exhausting retries skips the segment (no stream block); the
   concurrency cap and retry policy are configurable.
+- **AC-V-A-009 (REQ-V-A-009):** Each registered provider (Kokoro, Piper, ElevenLabs,
+  teldutala.fo, future Qwen/Chatterbox) exposes a readable capability descriptor with
+  five fields — optimal chunk token count, native sample rate (Hz), inter-chunk
+  silence capability, deterministic-seed support, optional `validate(audio, text)`
+  ASR hook — without invoking synthesis; declared native rates match the engines
+  (Kokoro/Qwen 24000, Chatterbox/Piper 22050) and Kokoro's optimal chunk count is
+  ~100-200 tokens; [HARD] seed and ASR-hook are OPTIONAL — a provider may declare them
+  absent and the system still operates (no seed → valid non-reproducible render; no
+  ASR hook → no verification available for that engine), absence never an error; the
+  descriptor is the only surface for these capabilities (no caller branches on a
+  hardcoded engine name).
+- **AC-V-A-010 (REQ-V-A-010):** After switching the configured engine for a language,
+  the chunk-token budget is re-clamped to the new descriptor's optimal range and the
+  inter-arc/paragraph/chunk silence is re-computed in frames at the new native sample
+  rate — both read from the descriptor, not a hardcoded caller table; the switch
+  needs no change to assembly or the script generator (per NFR-V-5); a switch to a
+  provider whose descriptor lacks a required field (e.g. no sample rate) is detected,
+  logged as a config error, and falls back to a known-good provider rather than
+  emitting broken audio; the re-derivation and any incompatibility are logged. (This
+  IS the explicit sample-rate/token compatibility check — there is no PS-004-style
+  pacing-contract object in this SPEC.)
 
 ### Group V-B — Script → Speech Generation
 
@@ -108,6 +129,39 @@ traceability index in spec.md Section 16 and Section 5 below).
 - **AC-V-C-007 (REQ-V-C-007):** Health/status reports active providers per language,
   last talk air/skip outcome, last TTS failure, and Faroese availability; a degraded
   voice state is visible without affecting the music-stream liveness indicator.
+- **AC-V-C-008 (REQ-V-C-008):** Given an ordered set of rendered episode segments,
+  the assembled episode audio plays them in exact narrative order (arc→paragraph→
+  chunk) with no reordering; assembly operates only on already-rendered audio + the
+  supplied order and does NOT decide chunk/arc structure (that is LONGFORM-025
+  Group LT); a missing/failed segment is handled per AC-V-C-011, not by silent
+  reordering.
+- **AC-V-C-009 (REQ-V-C-009):** The assembled episode has a longer silence at arc
+  boundaries than at paragraph boundaries, and the smallest (or zero) at chunk
+  boundaries; the three gaps are configurable in milliseconds and materialized as
+  silence frames at the active provider's native sample rate (24000 Kokoro/Qwen,
+  22050 Chatterbox/Piper) so the wall-clock duration is engine-independent; switching
+  engines re-computes frame counts (per AC-V-A-010) without changing the millisecond
+  values; engines that declare inline pause-tag support MAY use them for intra-chunk
+  pauses while inter-unit gaps stay externally calibrated.
+- **AC-V-C-010 (REQ-V-C-010):** With a stateless provider, segments may render
+  concurrently and the assembled episode is still correctly ordered; with an
+  order-sensitive provider, rendering preserves the required order; parallel-vs-serial
+  is chosen from the provider's declared capabilities (AC-V-A-009), not a hardcoded
+  engine name; parallel episode rendering runs off the playout path with no music
+  underruns.
+- **AC-V-C-011 (REQ-V-C-011) [HARD]:** A single failed/timed-out segment is dropped
+  (or its arc, per configured policy) while the rest of the episode is still assembled
+  and aired (skip + reason logged); the skip-segment-vs-skip-arc behavior and a
+  minimum-coherence threshold are configurable, and below the threshold the episode is
+  abandoned and music continues; [HARD] no per-segment timeout, skip, or episode
+  abandonment ever blocks or silences the music stream (a wholly-failed episode
+  degrades to music per AC-V-C-005).
+- **AC-V-C-012 (REQ-V-C-012):** Episode rendering + assembly run on a separate worker
+  off the playout control path and land the finished episode in the ready buffer
+  before its air window; an episode not ready by its window is skipped (music
+  continues at full level, no gap), not aired disruptively late; concurrent episode
+  rendering raises no music underruns under load (consistent with AC-V-C-006,
+  AC-NFR-V-1).
 
 ### Group V-D — Language Routing
 
@@ -285,6 +339,35 @@ traceability index in spec.md Section 16 and Section 5 below).
 - **Then** no speech is aired for that slot and music continues normally; no
   minimum-talk rule forces a canned segment.
 
+### Scenario 12 — Provider switch re-derives chunk/silence from the descriptor (REQ-V-A-009/010)
+- **Given** an episode assembly configured for Kokoro (descriptor: ~100-200 token
+  chunks, native 24000 Hz) with inter-arc silence set to 800 ms,
+- **When** the configured English engine is switched to Chatterbox (descriptor: its
+  own optimal chunk count, native 22050 Hz),
+- **Then** the chunk-token budget is re-clamped to Chatterbox's declared optimal
+  range and the 800 ms inter-arc gap is re-materialized as silence frames at 22050 Hz
+  (so the gap is still 800 ms of wall-clock), both read from the descriptor with no
+  change to the assembly code;
+- **And when** a provider is configured whose descriptor is missing its native sample
+  rate,
+- **Then** the incompatibility is detected and logged as a config error and the
+  system falls back to a known-good provider rather than emitting broken audio.
+
+### Scenario 13 — Episode assembly with calibrated silence and skip-arc, off the playout path (REQ-V-C-008..012)
+- **Given** a longform episode plan of 3 arcs (each with paragraphs and chunks) whose
+  segments have been rendered, with inter-arc/paragraph/chunk silence configured and
+  one segment in arc 2 failing its per-segment timeout,
+- **When** the assembly worker assembles the episode ahead of its air window,
+- **Then** the segments are concatenated in exact narrative order with the longer
+  inter-arc gap, shorter inter-paragraph gap, and shortest/no inter-chunk gap (each
+  at the provider's native sample rate); the failed segment (or its arc, per policy)
+  is skipped while the rest of the episode is assembled and the skip is logged; the
+  finished episode lands in the ready buffer off the playout path with no music
+  underrun;
+- **And** if skipping would breach the configured minimum-coherence threshold, the
+  episode is abandoned and music continues at full level — in no case is the music
+  stream blocked, stalled, or silenced.
+
 ## 3. Edge Cases
 
 - **Slow-but-eventually-ready synthesis:** if audio readies after the air window
@@ -315,6 +398,21 @@ traceability index in spec.md Section 16 and Section 5 below).
   any such script is rejected/normalized to ≤2 speakers — REQ-V-B-003.
 - **TTS engine produces a corrupt/empty audio buffer:** treated as a render failure
   → skip talk, keep music — REQ-V-C-005.
+- **Provider descriptor missing a required field (e.g. no native sample rate):**
+  detected on switch, logged as a config error, fall back to a known-good provider —
+  REQ-V-A-010.
+- **Engine with no deterministic-seed / no ASR hook:** descriptor declares them
+  absent; assembly + render still work (non-reproducible but valid; no per-engine
+  verification) — REQ-V-A-009.
+- **Single episode segment times out:** skip that segment (or its arc, per policy),
+  keep assembling the rest of the episode — REQ-V-C-011.
+- **Episode falls below the minimum-coherence threshold after skips:** abandon the
+  episode, music continues — REQ-V-C-011, REQ-V-C-005.
+- **Episode not rendered/assembled by its air window:** skipped, music continues at
+  full level (no late disruptive air) — REQ-V-C-012, REQ-V-C-005.
+- **Stateless vs. order-sensitive provider for episode render:** parallel render when
+  the descriptor says stateless, serial when state/seed continuity matters; assembled
+  output always in correct order — REQ-V-C-010, REQ-V-A-009.
 
 ## 4. Quality Gates / Definition of Done
 
@@ -351,6 +449,18 @@ Voice-layer Definition of Done:
       reverts cleanly when removed.
 - [ ] The call-in seam is a typed, documented, stubbed insertion point with NO
       telephony/STT/two-way/mixing implemented.
+- [ ] Each registered provider exposes a capability descriptor (optimal chunk tokens,
+      native sample rate, inter-chunk silence capability, deterministic-seed support,
+      optional `validate(audio,text)` ASR hook); seed + ASR hook are optional and the
+      system runs when they are absent; switching engines re-derives chunk budget +
+      silence frames from the descriptor with no assembly code change.
+- [ ] Episode-level assembly concatenates rendered segments in narrative order with
+      calibrated inter-arc/paragraph/chunk silence at the provider's native sample
+      rate, renders parallel-or-serial per provider state, skips a failed
+      segment/arc (or abandons the episode below a coherence threshold) without ever
+      blocking the music, and pre-renders whole episodes to the ready buffer off the
+      playout path. The longform ORCHESTRATION (chunking strategy, ASR-gate, regen,
+      drift, episode loudness policy) is SPEC-RADIO-LONGFORM-025, NOT built here.
 - [ ] Provider secrets are env/secrets-file sourced, never logged or committed.
 - [ ] Structured logs + health/status cover script gen, synthesis, injection/
       ducking, and skips.
@@ -372,6 +482,8 @@ Voice-layer Definition of Done:
 | REQ-V-A-006 | AC-V-A-006 | Scenario 5, 6 |
 | REQ-V-A-007 | AC-V-A-007 | — |
 | REQ-V-A-008 | AC-V-A-008 | Scenario 6 |
+| REQ-V-A-009 | AC-V-A-009 | Scenario 12, 13 |
+| REQ-V-A-010 | AC-V-A-010 | Scenario 12 |
 | REQ-V-B-001 | AC-V-B-001 | — |
 | REQ-V-B-002 | AC-V-B-002 | — |
 | REQ-V-B-003 | AC-V-B-003 | Scenario 3 |
@@ -386,6 +498,11 @@ Voice-layer Definition of Done:
 | REQ-V-C-005 | AC-V-C-005 | Scenario 2 |
 | REQ-V-C-006 | AC-V-C-006 | — |
 | REQ-V-C-007 | AC-V-C-007 | — |
+| REQ-V-C-008 | AC-V-C-008 | Scenario 13 |
+| REQ-V-C-009 | AC-V-C-009 | Scenario 13 |
+| REQ-V-C-010 | AC-V-C-010 | Scenario 13 |
+| REQ-V-C-011 | AC-V-C-011 | Scenario 13 |
+| REQ-V-C-012 | AC-V-C-012 | Scenario 13 |
 | REQ-V-D-001 | AC-V-D-001 | — |
 | REQ-V-D-002 | AC-V-D-002 | Scenario 5 |
 | REQ-V-D-003 | AC-V-D-003 | Scenario 5 |

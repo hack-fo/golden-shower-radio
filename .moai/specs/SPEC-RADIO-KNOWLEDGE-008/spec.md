@@ -1,9 +1,9 @@
 ---
 id: SPEC-RADIO-KNOWLEDGE-008
-version: 0.2.0
+version: 0.3.0
 status: draft
 created: 2026-06-22
-updated: 2026-06-22
+updated: 2026-06-23
 author: charlie
 priority: High
 issue_number: null
@@ -64,6 +64,52 @@ issue_number: null
   per-track FEATURES; KNOWLEDGE-008 REQ-KS-006 owns consensus for researched EDITORIAL FACTS
   (bio / members / discography / labels / releases / news) — same discipline, distinct domains,
   no fork. Net: +1 REQ (KS-006). Total: 25 REQ + 7 NFR = 32, 1:1 REQ↔AC preserved.
+- 2026-06-23 (v0.3.0): CONVERGENCE of three plans into one coherent additive pass — deepening the
+  knowledge layer from artist/release editorial knowledge to PER-TRACK editorial DEPTH, broadening the
+  research SOURCES into a RELIABILITY-RANKED set (incl. Discogs + reputable press + open archives), and
+  adding release-scoped grounding. **(A) Per-track editorial depth.** Group KS gains per-TRACK editorial
+  fields — `recording_session`, `writing_story`, `lyrical_meaning(s)` (plural, each with its own
+  source + confidence), `production_notes`, `era_context` (REQ-KS-007) — plus a `subjectivity_class`
+  {FACTUAL | INTERPRETED | EDITORIAL-OPINION} with a CONFIDENCE-GRADE for subjective editorial claims
+  (HIGH = 3+ authoritative concur / MODERATE = 2 with disagreement noted / LOW = 1 or strong
+  disagreement) and a per-fact DISAGREEMENT field (REQ-KS-008): FACTUAL claims keep the existing
+  REQ-KS-006 consensus engine UNCHANGED (the SOLE airable-FACT seam); INTERPRETED / EDITORIAL-OPINION
+  claims are aired as MEANING-AS-ATTRIBUTED-SPEECH ("%CRITIC% reads it as…", "the band has said…") with
+  CONTESTED-MEANING a FIRST-CLASS airable outcome ("some hear X, others Y"), MODERATE / LOW always
+  hedged, never stated as the fixed meaning. Group KF gains a per-track currency classification — a
+  THIRD currency class CONTEXTUAL (lyrical-meaning / cultural-context, which accrues + shifts rather
+  than expires by a date) alongside TIMELESS (writing / recording) and TIME-SENSITIVE (REQ-KF-005).
+  Group KR gains per-TRACK + per-ALBUM deep-research job types (REQ-KR-006) and a PRE-SHOW RESEARCH PASS
+  trigger (bounded-timeout deep research that completes before grounding-feed assembly, never blocks,
+  REQ-KR-007). Group KG gains richer track-to-track edges — cover lineage, sample / interpolation,
+  writing / production connections, thematic / musical influence (REQ-KG-006). **(B) Discogs + release
+  grounding.** Group KR gains a Discogs ARTIST-scoped editorial provider (`SRC_DISCOGS`, CROWD-tier
+  weight ~0.25, NOT authoritative): its STRUCTURED fields (credits / companies / labels / styles) CAN
+  reach consensus, but its free-text NOTES are permanently single-source -> ALWAYS hedged ("according to
+  Discogs") (REQ-KR-008). Group KG's `credited_to` / `recorded_at` / `signed_to` edges + ENTITY_PERSON /
+  ENTITY_PLACE nodes are now populated by Discogs (annotated on REQ-KG-002, surfaced in REQ-KG-006);
+  per-release-credit cross-check is DEFERRED to MBMIRROR-017 (referenced, not forked). Group KI gains a
+  release-scoped grounding accessor `grounding_for_release(artist_key, album_title)` (REQ-KI-006) beside
+  the existing artist/track-scoped feed — in-depth shows are release-scoped. **(C) Reliability-ranked
+  sourcing.** The flat REQ-KS-006 verified-source allowlist becomes a RELIABILITY-RANKED tier list
+  (AUTHORITATIVE-STRUCTURED > REPUTABLE-PRESS > EDITORIAL-BLOG > CROWD), declared TUNABLE config, where
+  the tier drives the consensus WEIGHT (REQ-KS-009); and the provider set expands (REQ-KR-009) — The
+  Guardian (Open Platform API, full text), Internet Archive (discovery + public-domain text + Wayback),
+  LoC Chronicling America (public-domain full-text), CritiqueBrainz (open criticism), plus Nardwuar,
+  WhoSampled, Bandcamp Daily, Aquarium Drunkard, The Fader, Stereogum, The Quietus, BBC, and the deep
+  sources Genius / AllMusic / Pitchfork / Songfacts — all reachable by SCRAPING (trafilatura /
+  newspaper4k) where there is no API; AOTY is skip-on-feasibility (Cloudflare bot-block, noted not
+  reachable). [PIVOT — private personal PoC, never public] Sources are ranked by RELIABILITY, NOT by
+  license; no copyright / ToS / CC-vs-NC source-tiering, no scraping ban, no attribution-for-law, no
+  no-store-time rule is added; lyrics may be quoted verbatim for ANALYSIS. The existing multi-source
+  CONSENSUS + confidence + freshness + provenance + grounding engine is REUSED UNCHANGED on the new
+  per-track + interpretation + expanded-source scope — REQ-KS-006 stays the SOLE airable-FACT seam;
+  single / crowd sources stay hedged; the host is never confidently wrong; the per-persona
+  anti-convergence firewall (PROGRAMMING-007 REQ-PR-004 / REQ-PR-009) is untouched. One NFR added
+  (NFR-K-8: subjective / interpreted claims attributed + hedged, never stated as fact; contested-meaning
+  a first-class outcome). Net: +10 REQ (KS-007/008/009, KF-005, KR-006/007/008/009, KG-006, KI-006) + 1
+  NFR (NFR-K-8). Total: 35 REQ + 8 NFR = 43; 1:1 REQ<->AC preserved (group counts KS=9, KF=5, KR=9,
+  KG=6, KI=6).
 
 ---
 
@@ -123,6 +169,51 @@ store.
   LLM (the host speaks ONLY from dated, sourced facts here), to the picker/curation
   (relational + related-music selection + sane transitions), to the website, and to the
   newscaster (Group KI).
+
+### 1.2a Per-track editorial depth + reliability-ranked sourcing (v0.3.0 convergence)
+
+v0.3.0 deepens the same engine from artist/release knowledge to per-TRACK editorial DEPTH, and
+broadens its SOURCES, WITHOUT forking the store or adding a second consensus path:
+
+- **Per-track editorial fields (Group KS).** A song/recording entity now carries the deeper
+  editorial fields a real DJ reads up on before featuring a track: `recording_session` (where /
+  how / with whom it was cut), `writing_story` (how the song came to be), one or more
+  `lyrical_meaning` readings (each with its OWN source + confidence — a song can carry several
+  competing readings), `production_notes` (who produced / engineered / what gear or technique),
+  and `era_context` (what the track meant in its moment) (REQ-KS-007).
+- **Subjectivity is first-class (Group KS).** Not every editorial claim is a fact. Each carries a
+  `subjectivity_class` — FACTUAL (a verifiable claim: recorded at Studio X, written by Y),
+  INTERPRETED (what the lyrics MEAN / how critics read it), or EDITORIAL-OPINION (a critic's
+  evaluative judgment). FACTUAL claims pass through the UNCHANGED REQ-KS-006 consensus engine (the
+  SOLE airable-fact seam). INTERPRETED / EDITORIAL-OPINION claims are aired only as
+  MEANING-AS-ATTRIBUTED-SPEECH ("%CRITIC% reads it as a breakup song", "the band has said it's
+  about…"), carry a confidence-grade (HIGH / MODERATE / LOW) and a DISAGREEMENT record, and a
+  CONTESTED meaning is a FIRST-CLASS airable outcome the host can voice as disagreement itself
+  ("some hear it as X, others as Y") — never collapsed into one false certainty (REQ-KS-008,
+  NFR-K-8). KNOWLEDGE-008 owns the attributed claim + its source + grade; PROGRAMMING-007 owns the
+  host-voice PHRASING (the attributed-speech wording + the bounded personal-musing aside).
+- **A third currency class, CONTEXTUAL (Group KF).** Writing / recording facts are TIMELESS;
+  upcoming releases / tours are TIME-SENSITIVE; lyrical-meaning + cultural-context are CONTEXTUAL —
+  they do not expire on a date but ACCRUE and SHIFT as readings evolve, so they are refreshed on a
+  cadence and may gain disagreement over time, but are never gated stale by a release date
+  (REQ-KF-005).
+- **Deeper + wider research (Group KR).** Per-TRACK + per-ALBUM deep-research jobs (REQ-KR-006) fill
+  the new fields; a PRE-SHOW RESEARCH PASS (REQ-KR-007) runs a bounded-timeout deep pass before a
+  featured artist/release's grounding feed is assembled (and proceeds with whatever is ready on
+  timeout — it never blocks). A Discogs ARTIST-scoped provider (REQ-KR-008) adds credits / labels /
+  styles (structured fields can reach consensus; free-text NOTES are permanently single-source and
+  always hedged). The verified-source allowlist becomes a RELIABILITY-RANKED tier list (REQ-KS-009)
+  and the provider set expands to reputable press, open archives, and editorial deep sources, all
+  reachable by SCRAPING where there is no API (REQ-KR-009).
+- **Release-scoped grounding (Group KI).** Beside the artist/track-scoped feed, a
+  `grounding_for_release(artist_key, album_title)` accessor (REQ-KI-006) serves the release-scoped
+  facts an in-depth album show needs.
+
+[PIVOT — this is a private personal PoC, never public] Sources are ranked by RELIABILITY, NOT by
+license. No copyright / ToS / CC-vs-NC source-tiering, no scraping ban, no attribution-for-law, and
+no no-store-time rule is added in v0.3.0; lyrics may be quoted verbatim for analysis. The
+multi-source CONSENSUS + confidence + freshness + provenance + grounding engine is REUSED as-is on
+the wider scope; reliability simply drives the consensus weight.
 
 ### 1.3 What this SPEC OWNS vs. REFERENCES (boundary discipline)
 
@@ -185,6 +276,20 @@ REFERENCES (consumes / extends / feeds; does not restate):
   LLM CONSUMES KNOWLEDGE-008 as its verified-facts source; PROGRAMMING-007 owns HOW the host
   speaks, KNOWLEDGE-008 owns WHAT (dated, sourced facts) it speaks from. Neither redefines the
   other.
+- **PROGRAMMING-007 Group PG / Group PV + the bounded personal-musing allowance + the
+  anti-convergence firewall (REQ-PR-004 / REQ-PR-009)** — KNOWLEDGE-008 v0.3.0 supplies the
+  ATTRIBUTED editorial claim + its source + its confidence-grade + its disagreement record
+  (REQ-KS-008); PROGRAMMING-007 owns the host-voice PHRASING of that attributed speech ("critics
+  read it as…"), the bounded self-aware first-person MUSING aside (a light curiosity-framed
+  question, the host opinion never authoritative), and the inviolable per-persona anti-convergence
+  firewall. KNOWLEDGE-008 NEVER re-owns or weakens the firewall and NEVER mints a host opinion as a
+  fact — it records WHOSE reading a meaning is, and hands the host an attributed claim to voice.
+- **MBMIRROR-017 (self-hosted MusicBrainz mirror + Discogs/Last.fm cross-check)** — KNOWLEDGE-008's
+  Discogs provider (REQ-KR-008) is the LIGHT, direct artist-scoped editorial path used to fill
+  credits / labels / styles + the credited_to / recorded_at / signed_to graph edges. The heavier
+  PER-RELEASE-CREDIT cross-check (reconciling Discogs credits against the MusicBrainz mirror at
+  release granularity) is DEFERRED to MBMIRROR-017 and referenced by number; KNOWLEDGE-008 does not
+  fork the mirror or re-own its cross-check.
 - **OPS-004 REQ-OD-007 / OD-008 + PROGRAMMING-007 REQ-PL-003** — the append-only ledger +
   diary + acquisition diary memory substrate. The research jobs coordinate with that
   substrate for continuity/audit; KNOWLEDGE-008 does not fork the ledger.
@@ -319,6 +424,17 @@ Consumed CORE-001 concepts:
 | **Grounding feed** | The interface that exposes the dated, sourced, fresh facts + graph edges as the verified-facts source the talk-script LLM, curation, website, and newscaster read from. |
 | **Sane transition** | A segue grounded in a real graph edge ("speaking of X, here's their side-project Y"), as opposed to a free-associated or arbitrary jump. |
 | **Related music** | Tracks selected because a real graph edge or shared dimension connects them to the current track's artist (same genre/era/style/network/label), not by free LLM association. |
+| **Per-track editorial fields** | The deeper editorial attachments on a song/recording entity (v0.3.0): `recording_session`, `writing_story`, one or more `lyrical_meaning` readings (each source+confidence), `production_notes`, `era_context` (REQ-KS-007). |
+| **Subjectivity class** | A per-fact label on every editorial claim: FACTUAL (a verifiable claim — routes through the REQ-KS-006 consensus engine unchanged), INTERPRETED (what lyrics mean / how critics read a track), or EDITORIAL-OPINION (a critic's evaluative judgment) (REQ-KS-008). |
+| **Meaning-as-attributed-speech** | The discipline that an INTERPRETED / EDITORIAL-OPINION claim is aired only as ATTRIBUTED speech ("%CRITIC% reads it as…", "the band has said…"), never as the station's own asserted fact; the host states whose reading it is, not a settled truth (REQ-KS-008, NFR-K-8). |
+| **Confidence-grade (editorial)** | For a subjective editorial claim, a grade HIGH (3+ authoritative sources concur on a reading) / MODERATE (2, with disagreement noted) / LOW (1 source, or strong disagreement). MODERATE/LOW claims are always hedged. Distinct from the FACTUAL per-fact consensus confidence (REQ-KS-006), which still governs FACTUAL claims (REQ-KS-008). |
+| **Disagreement field** | A per-fact record of competing readings/values across sources, so a CONTESTED meaning is preserved as a FIRST-CLASS airable outcome the host can voice as disagreement ("some hear X, others Y") rather than collapsed into one false certainty (REQ-KS-008). |
+| **Contextual fact** | A THIRD currency class (beside TIMELESS + TIME-SENSITIVE): lyrical-meaning + cultural-context facts that do not expire on a date but ACCRUE and SHIFT as readings evolve; refreshed on a cadence, may gain disagreement over time, never gated stale by a release date (REQ-KF-005). |
+| **Per-track / per-album deep-research job** | A research job type that fills the per-track / per-release editorial fields (recording session, writing story, lyrical readings, production credits, era context) for a specific track/album, distinct from the per-ARTIST job (REQ-KR-006). |
+| **Pre-show research pass** | A bounded-timeout deep-research pass for a featured artist/release/track that runs BEFORE the grounding feed is assembled, so the show is well-researched in time; on timeout it proceeds with whatever is ready, never blocking (REQ-KR-007). |
+| **Reliability tier** | The rank a source sits in — AUTHORITATIVE-STRUCTURED (MusicBrainz, Wikidata, LoC/IA public-domain) > REPUTABLE-PRESS (The Guardian, BBC, Pitchfork, The Quietus…) > EDITORIAL-BLOG (Stereogum, Aquarium Drunkard, Bandcamp Daily…) > CROWD (Discogs notes, Last.fm, Genius community) — which drives the consensus WEIGHT in REQ-KS-006 (REQ-KS-009). Ranked by reliability, NOT license. |
+| **Discogs provider** | An ARTIST-scoped editorial research source (`SRC_DISCOGS`, CROWD-tier ~0.25 weight, not authoritative): STRUCTURED fields (credits/companies/labels/styles) CAN reach consensus; free-text NOTES are permanently single-source and ALWAYS hedged ("according to Discogs"). Populates the credited_to/recorded_at/signed_to edges + ENTITY_PERSON/ENTITY_PLACE nodes (REQ-KR-008, REQ-KG-006). |
+| **Release-scoped grounding** | The `grounding_for_release(artist_key, album_title)` accessor that serves the release-scoped facts an in-depth album show needs, beside the existing artist/track-scoped feed (REQ-KI-006). |
 
 ---
 
@@ -330,24 +446,37 @@ Consumed CORE-001 concepts:
   recommended), in `/db` alongside the JSON stores; the entity set (artist/band, person,
   release/album, song/recording, label, genre/scene/era, place); facts attached to entities;
   per-fact PROVENANCE + as-of date; the TIMELESS vs TIME-SENSITIVE classification; the
-  MULTI-SOURCE CONSENSUS rule (verified-source allowlist + threshold + per-fact confidence;
-  single-source/conflicting flagged + qualified); the brain-only / no-fork / engine-choice
-  rails.
+  MULTI-SOURCE CONSENSUS rule (the RELIABILITY-RANKED source tier list + threshold + per-fact
+  confidence; single-source/conflicting flagged + qualified); the PER-TRACK editorial fields
+  (recording session / writing story / lyrical meaning(s) / production notes / era context),
+  the `subjectivity_class` {FACTUAL | INTERPRETED | EDITORIAL-OPINION} + editorial
+  confidence-grade + disagreement record (meaning-as-attributed-speech, contested-meaning a
+  first-class outcome); the brain-only / no-fork / engine-choice rails.
 - **Group KF — Freshness & Currency.** Validity windows/expiry on time-sensitive facts; the
   current-date awareness from ORCH-005; the don't-announce-stale GATE at generation/airtime;
-  the periodic re-research refresh cadence (tighter for time-sensitive); stale-entry flagging.
+  the periodic re-research refresh cadence (tighter for time-sensitive); stale-entry flagging;
+  the per-track currency classification (writing/recording = TIMELESS; lyrical-meaning/
+  cultural-context = CONTEXTUAL, a third class that accrues/shifts rather than expires).
 - **Group KR — Continuous Research Jobs.** Triggers (ingest of a new artist; periodic
-  refresh; pre-show prep); sources (MusicBrainz, Wikidata/Wikipedia, Last.fm, web search for
-  currency, official/label pages); de-dup/idempotency/caching; bounded/throttled (OPS-004
-  REQ-OH-006); rate-limit + key/ToS respect; graceful degradation; non-blocking background.
+  refresh; pre-show prep + the PRE-SHOW RESEARCH PASS; per-TRACK + per-ALBUM deep research);
+  sources — a RELIABILITY-RANKED set: MusicBrainz, Wikidata/Wikipedia, Last.fm, the Discogs
+  artist-scoped editorial provider, reputable press (The Guardian, BBC, Pitchfork, The Quietus…),
+  open archives (Internet Archive, LoC Chronicling America, CritiqueBrainz), editorial deep
+  sources (Genius, AllMusic, Songfacts, WhoSampled, Nardwuar, Bandcamp Daily, Aquarium Drunkard,
+  The Fader, Stereogum), web search for currency, official/label pages — reachable by SCRAPING
+  (trafilatura/newspaper4k) where no API; de-dup/idempotency/caching; bounded/throttled (OPS-004
+  REQ-OH-006); graceful degradation; non-blocking background.
 - **Group KG — Relational Graph.** The relationship model (artist↔artist member-of/
   side-project/collaborator/similar, artist↔label, artist↔genre/scene/era/place, song↔song
-  cover/sample/remix lineage, release↔artist); seed from ANALYSIS-006 + enrich with research;
-  the related-music + sane-transition + grounded-comparison QUERIES.
+  cover/sample/interpolation/remix lineage + writing/production/thematic-influence connections,
+  release↔artist, credited_to/recorded_at/signed_to + ENTITY_PERSON/ENTITY_PLACE populated by
+  Discogs); seed from ANALYSIS-006 + enrich with research; the related-music + sane-transition +
+  grounded-comparison QUERIES.
 - **Group KI — Grounding Feed & Integration.** The verified-facts source for the talk-script
-  LLM (host speaks only from dated, sourced facts); feeds to curation (related-music + sane
-  transitions), the website (artist/show notes), and the newscaster (music news); the worked
-  %ARTIST%/new-album/%LABEL%/sneak-peek scenario end-to-end.
+  LLM (host speaks only from dated, sourced facts; attributed-speech for interpreted/opinion);
+  the artist/track-scoped feed AND the release-scoped `grounding_for_release(...)` accessor;
+  feeds to curation (related-music + sane transitions), the website (artist/show notes), and the
+  newscaster (music news); the worked %ARTIST%/new-album/%LABEL%/sneak-peek scenario end-to-end.
 - Plus **NFRs** (Section 13) and **Risks** (Section 14).
 
 ### 4.2 Out of scope (explicitly deferred / owned elsewhere)
@@ -504,6 +633,71 @@ a fact must be BOTH non-stale AND consensus-passed to air as certain) and the gr
 
 **Acceptance criteria:** see acceptance.md AC-KS-006.
 
+### REQ-KS-007 — Per-TRACK editorial fields on the song/recording entity (Ubiquitous) [HARD]
+
+The store shall attach, to a song/recording entity, the deeper PER-TRACK EDITORIAL FIELDS a real DJ
+researches before featuring a track: `recording_session` (where / how / with whom it was cut),
+`writing_story` (how the song came to be), one or more `lyrical_meaning` readings (a track may carry
+SEVERAL — each a separate entry with its OWN provenance + as-of date + confidence), `production_notes`
+(who produced / engineered / technique / gear), and `era_context` (what the track meant in its moment).
+[HARD] Each per-track editorial field is a FACT (or a set of facts) and carries the same provenance +
+as-of date as any other fact (REQ-KS-003), is classified for currency (REQ-KF-005), and carries a
+`subjectivity_class` (REQ-KS-008). [HARD] The `lyrical_meaning` field is INHERENTLY plural-capable so
+COMPETING readings are stored side by side, never overwritten into one (the substrate for
+contested-meaning, REQ-KS-008). The field SET is the rail (these fields must be representable); the
+attributes within each are extensible. Lyrical text MAY be quoted verbatim where it supports an
+interpretation (private-PoC posture — no licensing constraint).
+
+**Acceptance criteria:** see acceptance.md AC-KS-007.
+
+### REQ-KS-008 — Subjectivity class + editorial confidence-grade + disagreement; meaning-as-attributed-speech (Ubiquitous) [HARD]
+
+The store shall tag every editorial claim with a `subjectivity_class` — FACTUAL (a verifiable claim:
+recorded at Studio X, written by Y, produced by Z), INTERPRETED (what the lyrics MEAN / how critics read
+the track), or EDITORIAL-OPINION (a critic's evaluative judgment) — and shall handle each class by its
+nature:
+- [HARD] **FACTUAL** claims route through the EXISTING REQ-KS-006 multi-source consensus engine
+  UNCHANGED — it remains the SOLE airable-FACT seam: a FACTUAL claim is airable AS CERTAIN only on
+  multi-source consensus, else flagged + qualified. No second fact-consensus path is created.
+- [HARD] **INTERPRETED** and **EDITORIAL-OPINION** claims are NEVER stated as the station's own settled
+  truth. They are aired only as MEANING-AS-ATTRIBUTED-SPEECH — attributed to whose reading it is
+  ("%CRITIC% reads it as a breakup song", "the band has said it's about…", "critics at the time heard
+  it as…"). Each carries an editorial CONFIDENCE-GRADE: HIGH (3+ authoritative sources concur on a
+  reading) / MODERATE (2 sources, with the disagreement noted) / LOW (a single source, or strong
+  disagreement); MODERATE and LOW are ALWAYS hedged.
+- [HARD] Each subjective claim carries a DISAGREEMENT record of the competing readings/values across
+  sources, so a CONTESTED meaning is a FIRST-CLASS airable outcome: the host MAY voice the disagreement
+  itself ("some hear it as X, others as Y"), and a contested meaning is NEVER collapsed into one false
+  certainty.
+
+[HARD] KNOWLEDGE-008 OWNS the attributed claim + its source + its grade + its disagreement record;
+PROGRAMMING-007 owns the host-voice PHRASING of attributed speech and the bounded self-aware first-person
+MUSING aside (a light curiosity-framed question; the host opinion is never authoritative) — KNOWLEDGE-008
+NEVER mints a host opinion as a fact and NEVER weakens the per-persona anti-convergence firewall
+(PROGRAMMING-007 REQ-PR-004 / REQ-PR-009). The subjectivity heuristic + the grade thresholds are TUNABLE
+config; that every editorial claim is classed, that FACTUAL routes through REQ-KS-006 unchanged, and that
+INTERPRETED/EDITORIAL-OPINION are attributed + graded + hedged with contested-meaning preserved, are the
+FIXED rails.
+
+**Acceptance criteria:** see acceptance.md AC-KS-008.
+
+### REQ-KS-009 — Reliability-ranked source tiers drive consensus weight (Ubiquitous) [HARD]
+
+The system shall declare the REQ-KS-006 verified-source set as a RELIABILITY-RANKED TIER LIST (TUNABLE
+config), not a flat allowlist, with at least the tiers: AUTHORITATIVE-STRUCTURED (MusicBrainz, Wikidata,
+LoC Chronicling America / Internet Archive public-domain text) > REPUTABLE-PRESS (The Guardian, BBC,
+Pitchfork, The Quietus, The Fader, AllMusic) > EDITORIAL-BLOG (Stereogum, Aquarium Drunkard, Bandcamp
+Daily) > CROWD (Discogs notes, Last.fm, Genius community annotations, Songfacts). [HARD] A source's tier
+drives its WEIGHT in the REQ-KS-006 consensus computation (a higher-reliability source contributes more to
+a fact's confidence; a CROWD source corroborates weakly and never alone makes a fact airable-as-certain).
+[PIVOT — private personal PoC] Sources are ranked by RELIABILITY, NOT by license; no copyright / ToS /
+CC-vs-NC tiering, no scraping ban, and no attribution-for-law is applied — the ranking is purely about how
+trustworthy the source is. [HARD] The tier membership + the per-tier weights are TUNABLE config; that the
+source set is reliability-ranked and the rank drives consensus weight is the rail. The existing REQ-KS-006
+consensus engine is REUSED unchanged; KS-009 only supplies it a richer, ranked weighting input.
+
+**Acceptance criteria:** see acceptance.md AC-KS-009.
+
 ---
 
 ## 7. Requirement Group KF — Freshness & Currency
@@ -564,6 +758,22 @@ entries are flagged is the rail. Refresh runs as a background research job (Grou
 on the pull path.
 
 **Acceptance criteria:** see acceptance.md AC-KF-004.
+
+### REQ-KF-005 — Per-track editorial fact currency classification incl. a third CONTEXTUAL class (Ubiquitous) [HARD]
+
+The system shall classify the per-track editorial facts (REQ-KS-007) for currency: WRITING and RECORDING
+facts (when/where/with-whom a track was written or cut, its production credits) are TIMELESS (REQ-KS-004 —
+they do not expire); LYRICAL-MEANING and CULTURAL-CONTEXT facts (`lyrical_meaning`, `era_context`) are a
+THIRD currency class, CONTEXTUAL. [HARD] A CONTEXTUAL fact does NOT expire on a date the way a TIME-SENSITIVE
+fact does — there is no release-date past which it goes stale — but it ACCRUES and SHIFTS as readings evolve:
+it is refreshed on a cadence (REQ-KF-004), MAY gain additional `lyrical_meaning` readings or DISAGREEMENT
+over time (REQ-KS-008), and is NEVER gated out by the don't-announce-stale release-date gate (REQ-KF-003,
+which targets TIME-SENSITIVE facts only). [HARD] The CONTEXTUAL class is therefore exempt from the
+expired-release-date drop, but still subject to refresh + the consensus/attribution discipline. That every
+per-track editorial fact is classified, and that lyrical-meaning/cultural-context is the accruing CONTEXTUAL
+class rather than a date-expiring one, is the rail.
+
+**Acceptance criteria:** see acceptance.md AC-KF-005.
 
 ---
 
@@ -643,6 +853,80 @@ research degrades knowledge richness, never continuity; the music keeps playing.
 
 **Acceptance criteria:** see acceptance.md AC-KR-005.
 
+### REQ-KR-006 — Per-TRACK and per-ALBUM deep-research job types (Event-driven) [HARD]
+
+When a track/album needs deeper editorial coverage (it is freshly ingested, flagged for refresh, or about
+to be featured), the system shall run PER-TRACK and per-ALBUM DEEP-RESEARCH jobs — distinct from the
+per-ARTIST job (REQ-KR-001/002) — that research the recording session, writing story, lyrical reading(s),
+production credits, and era context for that specific track/release and fill the per-track editorial fields
+(REQ-KS-007). [HARD] The per-track/per-album jobs reuse the same de-dup/idempotency/cache (REQ-KR-003),
+bounded/throttled queue (REQ-KR-004), and non-blocking background discipline (REQ-KR-005) as the artist
+job; they add WHAT to research at track/album granularity, not a second job runner. Each fetched item is
+stored with provenance + as-of date (REQ-KS-003), a subjectivity class (REQ-KS-008), and a currency class
+(REQ-KF-005). That per-track + per-album deep-research jobs exist and feed the per-track editorial fields
+is the rail.
+
+**Acceptance criteria:** see acceptance.md AC-KR-006.
+
+### REQ-KR-007 — Pre-show research pass with a bounded timeout, before grounding-feed assembly (Event-driven) [HARD]
+
+When a show/persona is about to feature a particular artist/release/track (pre-show prep, REQ-KR-001 case
+(c)), the system shall run a PRE-SHOW RESEARCH PASS — a bounded deep-research pass (REQ-KR-006) that aims to
+COMPLETE within a configured TIMEOUT BEFORE the grounding feed (Group KI) is assembled for that show, so the
+host goes on air well-researched. [HARD] The pre-show pass has a BOUNDED TIMEOUT; on timeout it SHALL NOT
+block — the grounding feed is assembled with whatever facts are READY (and unresearched fields simply yield
+no claim, REQ-KI-001), and the remaining research continues in the background and is available for a later
+break. [HARD] The pre-show pass NEVER runs on the `/api/next` pull path and NEVER stalls a curation tick, a
+talk break, or playout (inherits REQ-KR-005). [Boundary] SHOWS-020's pre-show prep TRIGGERS this pass;
+KNOWLEDGE-008 owns the bounded deep-research-before-grounding behavior, SHOWS-020 owns when a show is
+scheduled (referenced, not re-owned). That the pre-show pass is bounded-timeout and never blocks is the rail.
+
+**Acceptance criteria:** see acceptance.md AC-KR-007.
+
+### REQ-KR-008 — Discogs artist-scoped editorial provider; structured can reach consensus, NOTES always hedged (Event-driven) [HARD]
+
+When a research job runs, the system MAY consult a DISCOGS ARTIST-SCOPED editorial provider (`SRC_DISCOGS`)
+for credits, companies, labels, and styles. [HARD] Discogs is a CROWD-tier source (REQ-KS-009, weight
+~0.25 — NOT authoritative): its STRUCTURED fields (release credits, company roles, label, genre/style tags)
+CAN contribute toward multi-source consensus (REQ-KS-006) like any other corroborating source, but its
+FREE-TEXT NOTES are PERMANENTLY SINGLE-SOURCE — they originate with one Discogs contributor, cannot be
+corroborated by their nature, and SHALL therefore ALWAYS be hedged + attributed ("according to Discogs…"),
+NEVER stated as a consensus-passed certain fact. [HARD] Discogs structured credits populate the
+`credited_to` / `recorded_at` / `signed_to` graph edges and the ENTITY_PERSON / ENTITY_PLACE nodes
+(REQ-KG-006); the heavier per-release-credit cross-check against the MusicBrainz mirror is DEFERRED to
+MBMIRROR-017 (referenced, not forked here). The Discogs key/availability is config-gated; with no Discogs
+access the provider is simply skipped (graceful, REQ-KR-005). That Discogs structured fields can reach
+consensus while its free-text notes are permanently single-source/hedged is the rail.
+
+**Acceptance criteria:** see acceptance.md AC-KR-008.
+
+### REQ-KR-009 — Expanded reliability-ranked provider set, reachable by scraping where no API (Event-driven) [HARD] [documented compound]
+
+[Documented compound requirement: research draws on many alternative editorial sources feeding the SAME
+reliability-ranked consensus engine (REQ-KS-006/009); the sources are alternatives, not separable
+requirements, and share one AC. Verified intentionally compound.]
+
+When a research job runs, the system shall draw on an EXPANDED, RELIABILITY-RANKED provider set beyond the
+core MusicBrainz/Wikidata/Last.fm/web sources, each tagged its reliability tier (REQ-KS-009): **The
+Guardian** (free Open Platform API, full article text — REPUTABLE-PRESS, dual-use for OPS-004 news leads +
+music-journalism); **Internet Archive** (discovery + public-domain text + Wayback recovery of dead
+sources); **LoC Chronicling America** (public-domain full-text historical press); **CritiqueBrainz** (open
+music criticism); plus the editorial sources **Nardwuar**, **WhoSampled** (sample/interpolation lineage,
+REQ-KG-006), **Bandcamp Daily**, **Aquarium Drunkard**, **The Fader**, **Stereogum**, **The Quietus**,
+**BBC**, and the deep sources **Genius** / **AllMusic** / **Pitchfork** / **Songfacts**. [HARD] Where a
+source has NO API, the system MAY reach it by SCRAPING (e.g. `trafilatura` / `newspaper4k` for article
+extraction); scraping is a permitted acquisition method for this private PoC. [PIVOT — private personal
+PoC] Sources are ranked by RELIABILITY, NOT by license — no copyright/ToS/CC-vs-NC filtering, no scraping
+ban, no attribution-for-law, no no-store-time rule; lyrics may be quoted verbatim for analysis (Genius /
+Songfacts lyrical readings). [HARD] **AOTY (AlbumOfTheYear)** is SKIP-ON-FEASIBILITY — it Cloudflare
+bot-blocks and is recorded as NOT reliably reachable (a feasibility skip, not a policy exclusion). Every
+fetched item is stored with provenance + as-of date (REQ-KS-003), a subjectivity class (REQ-KS-008), and
+its source tier (REQ-KS-009), and flows through the UNCHANGED consensus engine (REQ-KS-006). That the
+provider set is reliability-ranked and scraping-reachable where no API exists, feeding the same consensus
+engine, is the rail.
+
+**Acceptance criteria:** see acceptance.md AC-KR-009.
+
 ---
 
 ## 9. Requirement Group KG — Relational Graph
@@ -671,6 +955,12 @@ MusicBrainz member-of / side-project / collaborator / label edges, REQ-KR-002). 
 seed edges are marked as seed-provenance and the researched edges as research-provenance so
 the two are distinguishable; KNOWLEDGE-008 EXTENDS ANALYSIS-006's edges, it does not
 recompute the similar-artist analysis or the audio features.
+
+[Annotation, v0.3.0] The researched-edge sources now include the DISCOGS provider (REQ-KR-008): Discogs
+STRUCTURED credits populate the `credited_to` / `recorded_at` / `signed_to` edges and the ENTITY_PERSON /
+ENTITY_PLACE nodes, marked Discogs research-provenance (CROWD-tier). The richer TRACK-TO-TRACK edges are
+specified in REQ-KG-006. Per-release-credit cross-check against the MusicBrainz mirror remains DEFERRED to
+MBMIRROR-017 (referenced, not forked).
 
 **Acceptance criteria:** see acceptance.md AC-KG-002.
 
@@ -710,6 +1000,23 @@ decision to build such a set is OPS-004/PROGRAMMING-007's (consistent with the p
 distinct-taste separability, ANALYSIS-006 REQ-AD-003).
 
 **Acceptance criteria:** see acceptance.md AC-KG-005.
+
+### REQ-KG-006 — Richer track-to-track edges; Discogs-populated credit/person/place edges (Ubiquitous) [HARD]
+
+The store shall model richer TRACK-TO-TRACK (song↔song) edges beyond the cover/sample/remix lineage of
+REQ-KG-001: COVER LINEAGE (this recording is a cover of / was covered by that song), SAMPLE / INTERPOLATION
+(this track samples or interpolates that one — sourced chiefly from WhoSampled, REQ-KR-009), WRITING /
+PRODUCTION CONNECTIONS (two tracks sharing a writer or producer), and THEMATIC / MUSICAL INFLUENCE (one
+track is an acknowledged influence on / response to another). [HARD] Each edge carries its type, provenance,
+and an as-of date (REQ-KG-001), and supports the sane-transition / grounded-comparison query (REQ-KG-004) so
+the host can ground a track-to-track segue ("this samples that", "these two share a producer") in a REAL
+edge, never a free-associated one. [HARD] In addition, the `credited_to` / `recorded_at` / `signed_to` edges
+and the ENTITY_PERSON (a producer / session player / writer) and ENTITY_PLACE (a studio / scene location)
+nodes are now POPULATED BY DISCOGS structured credits (REQ-KR-008), marked Discogs research-provenance
+(CROWD-tier). The edge-type SET is the rail (these track-to-track + credit/person/place relations must be
+representable); additional edge types are extensible.
+
+**Acceptance criteria:** see acceptance.md AC-KG-006.
 
 ---
 
@@ -785,6 +1092,21 @@ KNOWLEDGE-008 owns recording the knowledge events; OPS-004 owns the ledger/diary
 
 **Acceptance criteria:** see acceptance.md AC-KI-005.
 
+### REQ-KI-006 — Release-scoped grounding accessor for in-depth album shows (Event-driven) [HARD]
+
+The system shall expose a RELEASE-SCOPED grounding accessor `grounding_for_release(artist_key, album_title)`
+— beside the existing artist/track-scoped grounding feed (REQ-KI-001) — that returns the dated, sourced,
+fresh, consensus-marked facts + graph edges scoped to a SPECIFIC RELEASE: the album's release facts, its
+per-TRACK editorial fields (REQ-KS-007), its production credits + credited-to/recorded-at edges (REQ-KG-006),
+and its era context, so an IN-DEPTH ALBUM SHOW (which is release-scoped, not artist-scoped) is grounded at
+the right granularity. [HARD] Every fact the release accessor returns passes the SAME freshness + consensus
+gate (REQ-KF-003) and carries the SAME certain-vs-qualified + attributed-speech marking (REQ-KS-006/008,
+REQ-KI-001) as the artist-scoped feed — the release accessor is a SCOPE over the same engine, not a second
+grounding path. An album with no researched facts yields no claims (the host falls back, REQ-KI-001). That a
+release-scoped grounding accessor exists over the same gated engine is the rail.
+
+**Acceptance criteria:** see acceptance.md AC-KI-006.
+
 ---
 
 ## 11. Exclusions (What NOT to Build)
@@ -808,6 +1130,20 @@ KNOWLEDGE-008 owns recording the knowledge events; OPS-004 owns the ledger/diary
 - **HOW the host speaks** (radio-craft, ear-writing, persona POV, banter delivery, the exact
   qualified-claim phrasing) — owned by PROGRAMMING-007; KNOWLEDGE-008 supplies the facts +
   their certain/hedged marking, not the delivery wording.
+- **The attributed-speech PHRASING + the bounded personal-musing host aside** — owned by
+  PROGRAMMING-007 (Group PG / Group PV + the host-voice musing allowance); KNOWLEDGE-008 supplies
+  the ATTRIBUTED claim + its source + grade + disagreement record (REQ-KS-008), never the host's
+  spoken wording and never a host opinion minted as a fact; the per-persona anti-convergence
+  firewall (REQ-PR-004 / REQ-PR-009) is referenced, never re-owned or weakened.
+- **A copyright / ToS / license source-tiering axis** — explicitly NOT built (PIVOT, private PoC):
+  sources are ranked by RELIABILITY only (REQ-KS-009); no CC0-vs-NC filtering, no ToS exclusions,
+  no scraping bans, no attribution-for-law, and no no-store-time rules are added. Scraping is a
+  permitted acquisition method; lyrics may be quoted verbatim for analysis.
+- **AOTY (AlbumOfTheYear) scraping** — SKIP-ON-FEASIBILITY (Cloudflare bot-block, not reliably
+  reachable); recorded as a feasibility skip, not built (REQ-KR-009).
+- **The PER-RELEASE-CREDIT cross-check against the MusicBrainz mirror** — DEFERRED to MBMIRROR-017;
+  KNOWLEDGE-008 populates Discogs structured credits onto the graph (REQ-KR-008/KG-006) but does not
+  reconcile them release-by-release against the mirror, and does not fork the mirror or its clients.
 - **The curation / taste POLICY** (which related track to pick, the persona taste charter,
   the anti-convergence firewall) — owned by OPS-004 / PROGRAMMING-007; KNOWLEDGE-008 supplies
   the grounded related-music + transition queries.
@@ -888,6 +1224,18 @@ grounding feed on the confirmed brain-only stack; deferred items (Section 11) MU
 partially built — no new service, no second HTTP client, no vector store, no graph-DB engine,
 no Liquidsoap change. See acceptance.md AC-NFR-K-7.
 
+### NFR-K-8 — Subjective/interpreted editorial claims are attributed + hedged, never stated as fact (Ubiquitous) — Priority High
+No code path shall present an INTERPRETED or EDITORIAL-OPINION claim (a lyrical meaning, a critical
+reading, a critic's evaluative judgment) AS the station's own settled fact: such claims are aired only as
+MEANING-AS-ATTRIBUTED-SPEECH (attributed to whose reading it is) with their editorial confidence-grade, and
+MODERATE/LOW-grade claims are hedged (REQ-KS-008). A CONTESTED meaning is preserved as a first-class airable
+outcome (the host may voice the disagreement) and is NEVER collapsed into one false certainty. FACTUAL
+claims remain governed by the REQ-KS-006 consensus engine UNCHANGED (the sole airable-FACT seam); aired
+editorial claims are logged with their subjectivity class + grade + attribution so an unattributed-as-fact
+statement is detectable after the fact. The host opinion is never authoritative, and the per-persona
+anti-convergence firewall (PROGRAMMING-007 REQ-PR-004 / REQ-PR-009) is untouched. See acceptance.md
+AC-NFR-K-8.
+
 ---
 
 ## 14. Open Questions / Risks
@@ -957,6 +1305,34 @@ no Liquidsoap change. See acceptance.md AC-NFR-K-7.
   facts (distinct domain, no fork). Relayed during authoring; confirm with the user (the
   allowlist membership + the threshold). The reputable-music-press half of the allowlist is the
   fuzziest to define and is the part most likely to need tuning.
+- **R-K-10 — Subjectivity/attribution drift on interpreted claims (Medium, v0.3.0).** The new
+  per-track interpretation surface (REQ-KS-008) is where a "confidently wrong" failure could creep
+  in: a lyrical reading is INTERPRETED, not FACTUAL, and the temptation is to state "this song is
+  about X" as settled truth. Mitigated by: the `subjectivity_class` forcing every editorial claim to
+  declare FACTUAL vs INTERPRETED vs EDITORIAL-OPINION; FACTUAL routing through the unchanged REQ-KS-006
+  consensus engine; INTERPRETED/EDITORIAL-OPINION aired only as attributed speech with a grade and a
+  preserved DISAGREEMENT record so a contested meaning is voiced AS contested (NFR-K-8); and the
+  host-voice phrasing + bounded personal-musing aside owned by PROGRAMMING-007 (a host musing is a
+  light curiosity question, never an authoritative verdict). The residual risk is the FACTUAL-vs-
+  INTERPRETED classification heuristic itself mislabeling a claim — tunable, and a mislabel toward
+  INTERPRETED is the SAFE direction (it gets attributed/hedged, never over-asserted).
+- **R-K-11 — Scraper brittleness + AOTY bot-block (Medium, v0.3.0, build-time).** Many of the new
+  REPUTABLE-PRESS / EDITORIAL-BLOG / deep sources (REQ-KR-009) have no API and are reached by scraping
+  (trafilatura/newspaper4k); page-structure changes break extractors, and AOTY Cloudflare-blocks
+  outright. Mitigated by: the bounded/throttled non-blocking research discipline (REQ-KR-004/005 — a
+  failed scrape degrades richness, never continuity); per-source exception isolation (NFR-K-5); the
+  Internet Archive / Wayback fallback for dead or moved pages (REQ-KR-009); AOTY recorded as
+  skip-on-feasibility rather than retried into the ground; and the reliability-ranked weighting
+  (REQ-KS-009) so a flaky low-tier source contributes little and its absence barely moves a fact's
+  confidence. [PIVOT] No license/ToS concern is in scope — only reliability/availability.
+- **R-K-12 — Discogs notes single-source + crowd-tier noise (Low/Medium, v0.3.0).** Discogs free-text
+  NOTES are one contributor's words and Discogs credits/styles are crowd-curated (sometimes wrong).
+  Mitigated by: Discogs being CROWD-tier (~0.25 weight, REQ-KS-009/KR-008) so it corroborates weakly
+  and never alone makes a fact airable-as-certain; its STRUCTURED fields contributing to consensus
+  only alongside higher-tier sources; its free-text NOTES permanently single-source and ALWAYS hedged
+  ("according to Discogs"); and the per-release-credit cross-check against the MusicBrainz mirror
+  deferred to MBMIRROR-017 for the heavier reconciliation. Residual: an isolated wrong Discogs credit
+  with no corroboration stays hedged, never asserted.
 
 ---
 
@@ -991,25 +1367,35 @@ Section B).
 | REQ-KS-004 | Knowledge Store & Schema | High | Ubiquitous | AC-KS-004 |
 | REQ-KS-005 | Knowledge Store & Schema | High | Ubiquitous | AC-KS-005 |
 | REQ-KS-006 | Knowledge Store & Schema | High | Ubiquitous | AC-KS-006 |
+| REQ-KS-007 | Knowledge Store & Schema | High | Ubiquitous | AC-KS-007 |
+| REQ-KS-008 | Knowledge Store & Schema | High | Ubiquitous | AC-KS-008 |
+| REQ-KS-009 | Knowledge Store & Schema | High | Ubiquitous | AC-KS-009 |
 | REQ-KF-001 | Freshness & Currency | High | Ubiquitous | AC-KF-001 |
 | REQ-KF-002 | Freshness & Currency | High | Ubiquitous | AC-KF-002 |
 | REQ-KF-003 | Freshness & Currency | High | Unwanted | AC-KF-003 |
 | REQ-KF-004 | Freshness & Currency | High | State | AC-KF-004 |
+| REQ-KF-005 | Freshness & Currency | High | Ubiquitous | AC-KF-005 |
 | REQ-KR-001 | Continuous Research Jobs | High | Event | AC-KR-001 |
 | REQ-KR-002 | Continuous Research Jobs | High | Event | AC-KR-002 |
 | REQ-KR-003 | Continuous Research Jobs | High | Ubiquitous | AC-KR-003 |
 | REQ-KR-004 | Continuous Research Jobs | High | State | AC-KR-004 |
 | REQ-KR-005 | Continuous Research Jobs | High | Unwanted | AC-KR-005 |
+| REQ-KR-006 | Continuous Research Jobs | High | Event | AC-KR-006 |
+| REQ-KR-007 | Continuous Research Jobs | High | Event | AC-KR-007 |
+| REQ-KR-008 | Continuous Research Jobs | High | Event | AC-KR-008 |
+| REQ-KR-009 | Continuous Research Jobs | High | Event | AC-KR-009 |
 | REQ-KG-001 | Relational Graph | High | Ubiquitous | AC-KG-001 |
 | REQ-KG-002 | Relational Graph | High | Event | AC-KG-002 |
 | REQ-KG-003 | Relational Graph | High | Event | AC-KG-003 |
 | REQ-KG-004 | Relational Graph | High | Event | AC-KG-004 |
 | REQ-KG-005 | Relational Graph | Medium | Event | AC-KG-005 |
+| REQ-KG-006 | Relational Graph | High | Ubiquitous | AC-KG-006 |
 | REQ-KI-001 | Grounding Feed & Integration | High | Ubiquitous | AC-KI-001 |
 | REQ-KI-002 | Grounding Feed & Integration | High | Event | AC-KI-002 |
 | REQ-KI-003 | Grounding Feed & Integration | Medium | Event | AC-KI-003 |
 | REQ-KI-004 | Grounding Feed & Integration | High | Event | AC-KI-004 |
 | REQ-KI-005 | Grounding Feed & Integration | Medium | Ubiquitous | AC-KI-005 |
+| REQ-KI-006 | Grounding Feed & Integration | High | Event | AC-KI-006 |
 | NFR-K-1 | Non-Functional | High | Ubiquitous | AC-NFR-K-1 |
 | NFR-K-2 | Non-Functional | High | Ubiquitous | AC-NFR-K-2 |
 | NFR-K-3 | Non-Functional | High | Ubiquitous | AC-NFR-K-3 |
@@ -1017,3 +1403,11 @@ Section B).
 | NFR-K-5 | Non-Functional | High | Ubiquitous | AC-NFR-K-5 |
 | NFR-K-6 | Non-Functional | High | Ubiquitous | AC-NFR-K-6 |
 | NFR-K-7 | Non-Functional | Medium | Ubiquitous | AC-NFR-K-7 |
+| NFR-K-8 | Non-Functional | High | Ubiquitous | AC-NFR-K-8 |
+
+Parity: 35 REQ + 8 NFR = 43 specified items; 43 acceptance entries (35 AC + 8 AC-NFR); 1:1 REQ↔AC.
+
+REQ-group prefixes + counts: KS (Knowledge Store & Schema) = 9, KF (Freshness & Currency) = 5, KR
+(Continuous Research Jobs) = 9, KG (Relational Graph) = 6, KI (Grounding Feed & Integration) = 6 →
+9+5+9+6+6 = 35 REQ across 5 groups. NFR-K-1…8 = 8 NFR. Total = 35 + 8 = 43 specified items, 43 acceptance
+entries, 1:1 REQ↔AC.

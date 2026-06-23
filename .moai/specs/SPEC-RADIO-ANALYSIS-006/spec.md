@@ -1,6 +1,6 @@
 ---
 id: SPEC-RADIO-ANALYSIS-006
-version: 0.4.2
+version: 0.5.0
 status: draft
 created: 2026-06-22
 updated: 2026-06-23
@@ -125,6 +125,29 @@ issue_number: null
   REQ-AM-004 from Ubiquitous to Event-driven (its text is already event-worded: "When a track
   has garbled/filename-parsed tags…"); header + Traceability Index now agree. Net: +0 REQ.
   Total unchanged: 31 REQ + 7 NFR = 38, 1:1 REQ↔AC preserved.
+- 2026-06-23 (v0.5.0): One additive extension, no behavior change to existing detectors or to
+  the grounded-only discipline (which is in fact tightened). EXTENDED the sonic-character
+  understanding (REQ-AE-006) with PRODUCTION OBSERVATIONS: +REQ-AE-007 [HARD] lets the brain
+  derive a track-level production observation that LINKS a SOURCED production fact (gear /
+  recording location / production technique — read from SPEC-RADIO-KNOWLEDGE-008's researched
+  editorial facts, with that fact's provenance + consensus state UNCHANGED) to an AUDIBLE RESULT
+  read from the extracted features (REQ-AE-006 sonic-character profile + spectral/MFCC/energy/
+  dynamics), so a host can ground "the dry drum tone" in BOTH the analysis feature AND the
+  sourced gear fact — NEVER one alone. [HARD] THE TWO-LEG RULE is load-bearing: an observation is
+  valid only when BOTH legs are present and agree in direction — a sourced gear fact with no
+  corroborating audible feature is just a KNOWLEDGE-008 fact (not a production observation), and an
+  audible feature reading with no sourced production fact is just a sonic-character descriptor (not
+  a production observation). Grounding is [HARD]: the audible-result claim MUST be supported by the
+  features (cannot assert an audible result the features contradict), and the production-fact leg
+  carries KNOWLEDGE-008's consensus state so a single-source/unconfirmed production fact yields a
+  HEDGED observation, not a confident one; ANALYSIS-006 does NOT re-run consensus on the production
+  fact (KNOWLEDGE-008 owns that, REQ-KS-006) and does NOT invent it. The REVEAL/PRESENTATION
+  mechanic (solo-the-stem / isolate-the-track CONTENT cue) is owned by SPEC-RADIO-LONGFORM-025
+  Group LN (forward-ref) — ANALYSIS-006 supplies only the GROUNDED SONIC SUBSTRATE (feature reading
+  + sourced-fact reference + the grounded link), referenced not restated. Added a bridging clause to
+  REQ-AE-006, a glossary term, a Group AE scope line, a KNOWLEDGE-008 consumed-concept + LONGFORM-025
+  downstream forward-ref to Section 2, a REFERENCES entry to Section 1.4, and risk R-A-14. Net: +1
+  REQ (AE-007). Total: 32 REQ + 7 NFR = 39, 1:1 REQ↔AC preserved.
 
 ---
 
@@ -238,6 +261,19 @@ REFERENCES (consumes / feeds; does not restate):
 - **CORE-001 library** — `brain/library.py` `Track` model, JSON index, `scan()`,
   `pick_next()`, the `acquire.py` import path. ANALYSIS-006 EXTENDS this store in place;
   it does not fork it.
+- **KNOWLEDGE-008 REQ-KS-002 / REQ-KS-003 / REQ-KS-006** — the researched EDITORIAL FACT
+  store (entity model + provenance/as-of + multi-source consensus). The PRODUCTION FACT (gear /
+  recording location / production technique) that REQ-AE-007's production observation links to
+  is a KNOWLEDGE-008 fact attached to a release/song/artist entity, sourced and consensus-graded
+  THERE. ANALYSIS-006 READS that fact (with its provenance + consensus state intact) for the
+  production observation; it does NOT re-own the fact, re-source it, or re-run consensus on it
+  (KNOWLEDGE-008 owns REQ-KS-006; ANALYSIS-006 owns AM-003 audio/genre/feature consensus —
+  neither re-owns the other).
+- **LONGFORM-025 Group LN** (forward reference — not yet authored) — the REVEAL / PRESENTATION
+  mechanic (solo-the-stem / isolate-the-track CONTENT cue that surfaces a production observation
+  to the listener). ANALYSIS-006 supplies ONLY the grounded sonic substrate (REQ-AE-007's
+  production observation: the feature reading + the sourced-fact reference + the grounded link);
+  LONGFORM-025 Group LN owns HOW and WHEN a host reveals it. Referenced, not restated.
 
 ### 1.5 The Creative Autonomy Principle (inherited, cross-cutting)
 
@@ -307,13 +343,27 @@ Consumed VOICE-002 concept:
 - Loudness target reuse for any analysis-derived gain (ReplayGain measurement feeds the
   shared -16 LUFS / -1.5 dBTP normalization owned by OPS/CORE).
 
-### Downstream SPEC that depends on ANALYSIS-006 (forward reference)
+Consumed KNOWLEDGE-008 concept (for the production observation, REQ-AE-007):
+- **REQ-KS-002 / REQ-KS-003 / REQ-KS-006** — the researched editorial-fact store: the
+  PRODUCTION FACT (gear / recording location / production technique) the production observation
+  links to is a KNOWLEDGE-008 fact attached to a release/song/artist entity, carrying its
+  source + as-of date (REQ-KS-003) and its consensus state (REQ-KS-006). ANALYSIS-006 reads it
+  for REQ-AE-007 and propagates that consensus state into the observation's grounding (a
+  single-source production fact yields a hedged observation); it does NOT fork the knowledge
+  store or re-run fact consensus. [HARD] The knowledge store is consumed, never re-owned.
+
+### Downstream SPECs that depend on ANALYSIS-006 (forward references)
 
 - **SPEC-RADIO-ORCH-005** (director loop / world-model / event reaction, authored in
   parallel) CONSUMES track-intelligence as a PERCEPTION input — the world model reads the
   catalog's feature dimensions (genre/key/bpm/energy/era) to reason about what is playing
   and what to schedule. ANALYSIS-006 owns producing those features; ORCH-005 owns
   reasoning over them. Neither redefines the other.
+- **SPEC-RADIO-LONGFORM-025 Group LN** (not yet authored) CONSUMES the REQ-AE-007 production
+  observation as the GROUNDED SONIC SUBSTRATE for its reveal/presentation mechanic
+  (solo-the-stem / isolate-the-track CONTENT cue). ANALYSIS-006 owns producing the grounded
+  observation (feature reading + sourced-fact reference + the two-leg grounded link);
+  LONGFORM-025 owns the content presentation of it. Neither redefines the other.
 
 ---
 
@@ -340,6 +390,7 @@ Consumed VOICE-002 concept:
 | **Confidence** | A per-feature reliability score (especially for key and BPM) recorded with the feature so consumers can refuse low-confidence values rather than act on a wrong one. |
 | **Spectral flux** | A frame-to-frame measure of how fast the spectrum is changing. A spectral-flux / spectrogram-derived onset & offset is an ADDITIONAL boundary estimate (REQ-AT-008) computed differently from the energy-envelope cue points, used to CORROBORATE them and enrich transition reasoning — never to replace the playout-critical energy-envelope detector. |
 | **Acquisition provenance** | The stored record of WHY/HOW a track entered the library (REQ-AD-006): `acquired_at` (the acquisition-decision timestamp, distinct from file mtime/`added_at`), `requested_by` (director-curated / user-requested / ingest-scan / seed-reference), and `grab_reason` (the director's stated reason, stored verbatim as an UNVERIFIED claim — never a verified fact). |
+| **Production observation** | A track-level observation (REQ-AE-007) that LINKS a SOURCED production fact (gear / recording location / production technique — read from KNOWLEDGE-008's editorial-fact store with its provenance + consensus state) to an AUDIBLE RESULT read from the extracted features (the REQ-AE-006 sonic-character profile + spectral/MFCC/energy/dynamics), so a claim like "the dry drum tone" is grounded in BOTH the analysis feature AND the source. [Two-leg rule] Valid only when BOTH legs are present and agree: a sourced fact alone is just a KNOWLEDGE-008 fact; an audible feature alone is just a sonic descriptor. ANALYSIS-006 supplies the substrate; the reveal/presentation cue (solo-the-stem / isolate-the-track) is LONGFORM-025 Group LN's. |
 
 ---
 
@@ -350,9 +401,11 @@ Consumed VOICE-002 concept:
 - **Group AE — Audio Analysis Engine.** The offline CPU extractor; the feature set; the
   SONIC-CHARACTER "how it sounds" understanding (mood/timbre/production/instrumentation/
   vocal/acoustic/dynamics +/- a content embedding +/- a grounded LLM sonic description); the
-  idempotent persisted cache (never re-analyze); the CPU-only/offline/no-GPU rail; the
-  bounded backfill of the existing library; per-feature confidence + low-confidence
-  flagging.
+  PRODUCTION OBSERVATION that links a sourced production fact (gear/location/technique from
+  KNOWLEDGE-008) to an audible feature result under the two-leg grounding rule (the substrate
+  the LONGFORM-025 reveal mechanic consumes, referenced); the idempotent persisted cache
+  (never re-analyze); the CPU-only/offline/no-GPU rail; the bounded backfill of the existing
+  library; per-feature confidence + low-confidence flagging.
 - **Group AT — Transition Intelligence (the Q3 answer).** Cue-in, cue-out/outro, true-end
   + trailing-silence, beat grid + downbeats for club beat-align; an ADDITIVE spectral-flux /
   spectrogram-derived onset & offset that corroborates the energy-envelope cue points (without
@@ -523,7 +576,74 @@ This feeds the data model (REQ-AD-001) + the per-persona separability (REQ-AD-00
 distinguishing personas on SONIC CHARACTER, not only the genre tag (PROGRAMMING-007
 REQ-PR-004 anti-convergence firewall consumes this — referenced, not restated).
 
+[Production-observation extension] Beyond describing how a track sounds in the abstract, the
+sonic-character understanding extends to PRODUCTION OBSERVATIONS that link a SOURCED production
+fact (gear / recording location / production technique) to an audible result in these same
+features — specified in REQ-AE-007. That extension reads the production fact from KNOWLEDGE-008
+and grounds the audible-result claim in BOTH the feature and the source under a two-leg rule; it
+does not change this requirement's CPU-feature extraction or its existing acceptance.
+
 **Acceptance criteria:** see acceptance.md AC-AE-006.
+
+### REQ-AE-007 — Production observation: grounded link of a sourced production fact to an audible feature result (Event-driven) [HARD]
+
+When analyzing a track for which SPEC-RADIO-KNOWLEDGE-008 has a SOURCED PRODUCTION FACT — gear,
+recording location, or production technique (e.g. "close-mic'd, damped drum kit", "recorded to
+tape at Studio X", "no reverb on the drums", "tracked live in one room") — the system MAY derive a
+PRODUCTION OBSERVATION that LINKS that sourced fact to an AUDIBLE RESULT read from the extracted
+features: the REQ-AE-006 sonic-character profile plus the spectral / MFCC / energy / dynamics
+features (REQ-AE-001) and, where relevant, the cue/boundary signals (Group AT). The observation's
+purpose is to let a host ground an audible claim — e.g. "the dry drum tone" — in BOTH the analysis
+feature (low reverb / short decay / tight dynamics reading) AND the sourced gear/technique fact,
+never in one alone. This is the deeper "understand WHY it sounds that way" capability built on top
+of the "understand HOW it sounds" capability of REQ-AE-006.
+
+[HARD two-leg rule] A production observation is VALID only when BOTH legs are present and agree in
+direction:
+- **Leg 1 — the sourced production fact**, supplied by KNOWLEDGE-008 (REQ-KS-002 entity +
+  REQ-KS-003 provenance/as-of + REQ-KS-006 consensus state). ANALYSIS-006 READS this fact; it does
+  NOT invent it, re-source it, or re-run consensus on it.
+- **Leg 2 — the supporting FEATURE evidence** from the ANALYSIS feature record (REQ-AE-006
+  sonic-character profile + the Group AE/AT features) that is consistent with that production fact.
+
+[HARD] NEITHER LEG ALONE is an airable production observation. A sourced gear/location/technique
+fact with NO corroborating audible feature is just a KNOWLEDGE-008 fact (not a production
+observation); an audible feature reading with NO sourced production fact is just a sonic-character
+descriptor (REQ-AE-006, not a production observation). The host grounds the production claim in the
+PAIR.
+
+[HARD grounding] The link assertion (the audible-result description) MUST be supported by the
+feature evidence — it MUST NOT claim an audible result the features contradict (it may not say "you
+can hear the long plate-reverb tail" when the features read dry / no-reverb). And the
+production-fact leg carries KNOWLEDGE-008's provenance + consensus state UNCHANGED: a single-source
+or unconfirmed production fact (not consensus-passed per REQ-KS-006) yields a HEDGED observation
+(grounded per KNOWLEDGE-008's qualified-claim discipline — "reportedly recorded with…"), NOT a
+confident one. This mirrors the AE-006 / AT-007 grounded-features-feed-the-LLM principle: the
+feature is the audible evidence, the sourced fact is the attributed cause, and the observation is a
+grounded summary of the pair — not invention on either side.
+
+[HARD rail scoping] The CPU-only / offline / no-network rail (NFR-A-1, REQ-AE-003) applies to the
+FEATURE leg — the spectral/MFCC/energy/dynamics + sonic-character extraction is the CPU-only,
+offline DSP output. The LINK reasoning that pairs a sourced fact with the feature reading uses the
+brain's EXISTING LLM access (the same provider the brain already calls), OFF the playout/`/api/next`
+path, CACHED + IDEMPOTENT with the feature record (REQ-AE-002) — mirroring the AE-006 / AT-007 /
+OA-011 exemption. A track that has no production fact, or skips the link step, still has its
+complete CPU-derived feature/sonic-character record; the production observation is optional
+enrichment, never a precondition of analysis or playout.
+
+[Storage] The production observation is persisted as part of / alongside the sonic-character
+profile on the feature record (REQ-AD-001), carrying its own confidence (the strength of
+feature↔fact agreement) and a REFERENCE to the KNOWLEDGE-008 fact (entity/fact reference +
+that fact's provenance + consensus state) — NOT a re-owned copy that re-runs consensus.
+
+[Boundary] The REVEAL / PRESENTATION mechanic — the solo-the-stem / isolate-the-track CONTENT cue
+that surfaces a production observation to the listener — is owned by SPEC-RADIO-LONGFORM-025 Group
+LN (forward reference, not yet authored). ANALYSIS-006 supplies ONLY the GROUNDED SONIC SUBSTRATE
+(this observation: feature reading + sourced-fact reference + the grounded link); LONGFORM-025 owns
+HOW and WHEN a host reveals it. Referenced, not restated. The production FACT itself is
+KNOWLEDGE-008's (REQ-KS-002/003/006); referenced, not re-owned.
+
+**Acceptance criteria:** see acceptance.md AC-AE-007.
 
 ---
 
@@ -1147,6 +1267,18 @@ health/status surface (OPS-004 NFR-O-6, REQ-AP-006). See acceptance.md AC-NFR-A-
   absent (REQ-AP-004). Coordinates with KNOWLEDGE-008's fact-consensus (artist facts) to
   avoid duplicate/contradictory consensus logic. Relayed during authoring; confirm with the
   user.
+- **R-A-14 — Production-observation depends on a sourced fact AND a confident feature reading
+  (Medium).** REQ-AE-007: a production observation needs BOTH legs, so coverage is naturally
+  thin — most tracks will lack a researched gear/location/technique fact, and where a fact
+  exists the feature reading may be ambiguous or contradict it. This is by design, not a defect:
+  the two-leg rule means a missing or weak leg simply means no production observation (the track
+  still has its full sonic-character record). Risks: (a) the LLM link step over-asserting an
+  audible result the features do not back — mitigated by the [HARD] grounding rule (the claim
+  must be feature-supported) and the agreement confidence; (b) propagating an unconfirmed
+  KNOWLEDGE-008 production fact as certain — mitigated by carrying KNOWLEDGE-008's consensus
+  state through unchanged (single-source → hedged), never re-running consensus here (REQ-KS-006
+  owns it). The reveal/presentation of the observation is LONGFORM-025 Group LN's, not built
+  here. Relayed via assignment; confirm with the user.
 
 ---
 
@@ -1178,6 +1310,7 @@ Section B).
 | REQ-AE-004 | Audio Analysis Engine | High | Event/Self-scheduled | AC-AE-004 |
 | REQ-AE-005 | Audio Analysis Engine | High | Ubiquitous | AC-AE-005 |
 | REQ-AE-006 | Audio Analysis Engine | High | Event | AC-AE-006 |
+| REQ-AE-007 | Audio Analysis Engine | High | Event | AC-AE-007 |
 | REQ-AT-001 | Transition Intelligence | High | Event | AC-AT-001 |
 | REQ-AT-002 | Transition Intelligence | High | Event | AC-AT-002 |
 | REQ-AT-003 | Transition Intelligence | High | Event | AC-AT-003 |

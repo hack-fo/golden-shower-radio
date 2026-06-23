@@ -1,9 +1,9 @@
 ---
 id: SPEC-RADIO-VOICE-002
-version: 0.3.0
+version: 0.4.0
 status: draft
 created: 2026-06-22
-updated: 2026-06-22
+updated: 2026-06-23
 author: charlie
 priority: High
 issue_number: null
@@ -76,6 +76,33 @@ issue_number: null
   table scenario references updated). D6 (frontmatter schema) intentionally left
   unchanged — it is the established RADIO-series house schema. Count unchanged: 33
   REQ-V + 7 NFR-V = 40, REQ↔AC 1:1 preserved.
+- 2026-06-23 (v0.4.0): Longform-readiness pass — extended the V-A provider interface
+  and the V-C audio path so this voice layer can underpin a future LONGFORM episode
+  engine (SPEC-RADIO-LONGFORM-025, not yet authored — forward-referenced as a code
+  seam) WITHOUT re-owning its orchestration. (a) Group V-A gains a per-engine
+  CAPABILITY DESCRIPTOR (new REQ-V-A-009): each registered provider declares its
+  optimal chunk token count, native sample rate, inter-chunk silence capability,
+  deterministic-seed support, and an OPTIONAL `validate(audio, text)` ASR self-check
+  hook — so a provider switch (Kokoro 24 kHz / Qwen 24 kHz / Chatterbox 22.05 kHz /
+  Piper 22.05 kHz) is detected for chunk-pacing/sample-rate compatibility, replacing
+  the loose "~100-200 tokens for Kokoro" hint with a structured signal the
+  orchestrator reads. There is no PS-004-style pacing-contract OBJECT in this SPEC
+  (PS-004 belongs to PROGRAMMING-007), so REQ-V-A-010 states the explicit
+  sample-rate/token compatibility check performed on a provider switch. (b) Group V-C
+  gains EPISODE-LEVEL AUDIO ASSEMBLY (new REQ-V-C-008..012): segment-assembly order
+  (arc→paragraph→chunk), inter-arc vs inter-paragraph vs inter-chunk silence
+  calibration materialized at the provider's native sample rate, parallel-vs-serial
+  render with persona-state ordering, per-segment timeout with skip-arc-vs-abort
+  policy, and async pre-render of whole episodes to the ready buffer off the playout
+  path. (c) Added the VOICE-002 ↔ LONGFORM-025 OWNS/REFERENCES seam (Section 2):
+  VOICE-002 OWNS the provider interface (incl. the descriptor) and the episode
+  assembly; SPEC-RADIO-LONGFORM-025 OWNS the longform orchestration (Group LT:
+  chunking strategy, ASR-gate, regen-on-mismatch, drift detection, episode loudness
+  policy); only the inner per-chunk synthesize call swaps per engine. The existing
+  short-break (single talk segment + live ducking) path is UNCHANGED. All FROZEN
+  invariants preserved (never-block-the-stream, free-default operation, child-voice
+  exclusion, Faroese single-host cap, LLM-authored content, no monetization). Count:
+  33 → 40 REQ-V (+2 V-A, +5 V-C), 7 NFR-V unchanged = 47, REQ↔AC 1:1 preserved.
 
 ---
 
@@ -183,6 +210,45 @@ Glossary, and the host-cap acceptance scenarios). The concept-only / renumbering
 caution applies to the playout group, NOT to this Group-B invariant. Citing
 REQ-B-011 by number is correct and intended; it is not a hard-binding violation.
 
+### 2.1 Relationship to SPEC-RADIO-LONGFORM-025 (OWNS vs REFERENCES)
+
+SPEC-RADIO-LONGFORM-025 (the longform / multi-arc episode engine) is NOT YET
+AUTHORED. This SPEC forward-references it as a stable CODE SEAM only; the boundary
+below is declared now so the two SPECs never overlap when LONGFORM-025 is written.
+
+VOICE-002 **OWNS** (and LONGFORM-025 MUST consume by REQ id, never restate):
+
+- **The provider interface** — REQ-V-A-001 (synthesize a line → audio/typed
+  failure) PLUS the per-engine CAPABILITY DESCRIPTOR (REQ-V-A-009) and the
+  provider-switch compatibility check (REQ-V-A-010). The descriptor is the single
+  declared surface through which any engine (Kokoro / Qwen / Chatterbox / Piper /
+  ElevenLabs) advertises its chunk/silence/sample-rate/seed/ASR capabilities.
+- **Episode-level audio assembly** — REQ-V-C-008..012 (segment-assembly order,
+  silence calibration, parallel/serial render with persona-state ordering,
+  per-segment timeout + skip-arc-vs-abort, async episode pre-render to the ready
+  buffer). Assembly is the deterministic "given rendered segments, produce one
+  coherent episode audio off the playout path" mechanism.
+
+SPEC-RADIO-LONGFORM-025 (when authored) **OWNS** (and VOICE-002 MUST NOT restate,
+fork, or weaken — referenced here by group name as a forward-ref):
+
+- **Group LT — longform orchestration**: the chunking STRATEGY (how a long script is
+  split into arcs/paragraphs/chunks and how chunk budgets are chosen), the ASR-GATE
+  policy (when to call a provider's `validate(audio, text)` hook and what to do on a
+  mismatch), REGEN-ON-MISMATCH (re-render a failed chunk, optionally with a different
+  deterministic seed), DRIFT detection across a long episode, and the episode-wide
+  loudness NORMALIZATION policy. The orchestration sits ABOVE this interface and
+  drives it; only the inner per-chunk synthesize call swaps per engine via
+  REQ-V-A-001.
+
+[HARD] Single source of truth: the longform ORCHESTRATION logic (chunk strategy,
+ASR-gate, regen, drift, episode loudness policy) lives ONLY in SPEC-RADIO-LONGFORM-025
+and MUST NOT be specified, duplicated, or pre-empted here. This SPEC specifies ONLY
+the interface those orchestration steps call and the assembly they hand finished
+segments to. Where a behavior could land in either SPEC, the rule is: a step that
+DECIDES content/strategy/verification is LONGFORM-025; a step that DECLARES an engine
+capability or MECHANICALLY assembles already-rendered audio is VOICE-002.
+
 ---
 
 ## 3. Glossary
@@ -209,6 +275,12 @@ REQ-B-011 by number is correct and intended; it is not a hard-binding violation.
 | **Language routing** | Selecting the provider + voice for a script based on the declared language of the show/segment/line (English or Faroese). |
 | **Call-in seam** | A typed insertion point in the voice + mix pipeline where a FUTURE live caller's audio + transcript would attach to the host conversation and the on-air mix. v1 voice layer defines ONLY this seam (REQ-V-F-001); the full call-in subsystem is SPEC-RADIO-CALLIN-003. |
 | **Graceful skip** | When a talk segment cannot be produced/aired in time, the segment is simply not aired; music continues uninterrupted. |
+| **Capability descriptor** | A static, per-provider declaration (exposed through the provider interface) of an engine's chunk/silence/timing capabilities: its optimal chunk token count, native sample rate (e.g. Kokoro/Qwen 24 kHz, Chatterbox/Piper 22.05 kHz), inter-chunk silence capability (inline pause tags vs externally-inserted silence), deterministic-seed support, and an OPTIONAL `validate(audio, text)` ASR self-check hook. The orchestrator reads it to size chunks and calibrate silence WITHOUT knowing the concrete engine. |
+| **Episode** | A longform, multi-segment program (one or more arcs, each with paragraphs, each with chunks) rendered and assembled into a single continuous audio artifact, as opposed to a single short talk segment. The longform engine that PLANS an episode is SPEC-RADIO-LONGFORM-025; VOICE-002 OWNS the assembly of its already-rendered segments. |
+| **Arc** | A topic/narrative unit within an episode. Arc boundaries get the longest inter-unit silence in assembly; paragraph boundaries get a shorter gap; chunk boundaries the shortest/none. (The arc/paragraph STRUCTURE is decided by LONGFORM-025; VOICE-002 only honours it during assembly.) |
+| **Segment assembly** | The deterministic step that concatenates already-rendered episode segments in planned narrative order, inserting calibrated silence between units at the provider's native sample rate, to produce one coherent episode audio off the playout path. Owned by VOICE-002 (Group V-C). |
+| **Ready buffer** | The off-playout store where a fully-rendered, assembled episode (or a pre-rendered talk segment) waits for its air window. A render that misses the window is skipped per REQ-V-C-005; music continues. |
+| **ASR self-check (`validate`)** | An OPTIONAL provider hook that runs automatic speech recognition over rendered audio and reports whether it matches the input text. VOICE-002 only DECLARES whether a provider exposes it; the policy for when to call it and how to react to a mismatch (the ASR-gate / regen loop) is LONGFORM-025's Group LT, not specified here. |
 
 ---
 
@@ -234,6 +306,13 @@ REQ-B-011 by number is correct and intended; it is not a hard-binding violation.
    created personas. (Group V-E)
 6. **Call-in integration SEAM ONLY** — a typed insertion point for a future live
    caller's audio + transcript. (Group V-F, single requirement REQ-V-F-001)
+7. **Longform-readiness interface + assembly** — a per-engine capability descriptor
+   (chunk/silence/sample-rate/seed/ASR metadata) and provider-switch compatibility
+   check (Group V-A, REQ-V-A-009/010), plus episode-level audio assembly (order,
+   silence calibration, parallel/serial render, per-segment timeout policy, async
+   episode pre-render) (Group V-C, REQ-V-C-008..012). VOICE-002 OWNS this interface +
+   assembly; the longform ORCHESTRATION that drives it is SPEC-RADIO-LONGFORM-025
+   (Section 2.1), referenced not re-owned.
 
 Plus NFRs (Section 11) and Risks/Open Questions (Section 13).
 
@@ -350,10 +429,13 @@ The following are NOT requirements in this SPEC and MUST NOT be implemented here
 
 ## 6. Requirement Group V-A — TTS Provider Abstraction & Config
 
-Priority: High for REQ-V-A-001..004 and REQ-V-A-007 (the interface, free-default
-operation, and secrets handling are prerequisites for everything else); Medium for
-REQ-V-A-005 (optional ElevenLabs upgrade) and REQ-V-A-008 (teldutala concurrency/
-retry hardening), per the traceability table in Section 16.
+Priority: High for REQ-V-A-001..004, REQ-V-A-007, and REQ-V-A-009 (the interface,
+free-default operation, secrets handling, and the per-engine capability descriptor
+are prerequisites for everything else, the descriptor included because episode
+assembly in Group V-C reads it); Medium for REQ-V-A-005 (optional ElevenLabs
+upgrade), REQ-V-A-008 (teldutala concurrency/retry hardening), and REQ-V-A-010
+(provider-switch compatibility detection — exercised only on a rare config swap),
+per the traceability table in Section 16.
 
 ### REQ-V-A-001 — Provider-agnostic TTS interface (Ubiquitous)
 
@@ -487,6 +569,61 @@ and retry transient failures with backoff, so it does not overload the service.
   not block the stream.
 - The concurrency cap and retry policy are configurable.
 
+### REQ-V-A-009 — Per-engine capability descriptor (Ubiquitous)
+
+The system shall expose, for each registered TTS provider through the
+provider-agnostic interface (REQ-V-A-001), a static capability descriptor declaring
+at least: (1) the engine's OPTIMAL CHUNK token count (or range), (2) its NATIVE
+SAMPLE RATE in Hz, (3) its INTER-CHUNK SILENCE capability (whether it accepts inline
+pause tags such as Acapela `\pau=`, or requires externally-inserted silence between
+chunks), (4) whether it supports a DETERMINISTIC SEED for reproducible renders, and
+(5) whether it exposes an OPTIONAL `validate(audio, text)` ASR self-check hook — so
+that callers can size chunks, calibrate silence, choose render ordering, and know
+whether seed/ASR are available WITHOUT depending on the concrete engine.
+
+**Acceptance criteria:**
+- Each registered provider (Kokoro, Piper, ElevenLabs, teldutala.fo, and future
+  Qwen/Chatterbox) exposes a capability descriptor through the interface with the
+  five declared fields; the descriptor is readable without invoking synthesis.
+- Declared native sample rates match the engines (e.g. Kokoro 24000 Hz, Qwen
+  24000 Hz, Chatterbox 22050 Hz, Piper 22050 Hz), and the optimal chunk token
+  count for Kokoro is in the ~100-200 range (formalizing the existing Constraints
+  guidance), with each other engine declaring its own value.
+- [HARD] The deterministic-seed field and the `validate(audio, text)` ASR hook are
+  OPTIONAL: a provider MAY declare them ABSENT, and the system MUST continue to
+  operate when they are absent (no seed → non-reproducible but valid render; no ASR
+  hook → the orchestrator's verification gate is simply not available for that
+  engine). Absence is never an error.
+- The descriptor is the ONLY surface through which an engine advertises these
+  capabilities; no caller branches on a hardcoded engine name to infer them.
+
+### REQ-V-A-010 — Provider-switch compatibility check (Event-driven)
+
+When the active provider for a language changes (e.g. a config swap between Kokoro,
+Qwen, Chatterbox, Piper, or ElevenLabs), the system shall re-derive its
+chunk-pacing and assembly parameters from the NEW provider's capability descriptor
+(REQ-V-A-009) — re-clamping the chunk-token budget to the new optimal range and
+re-materializing assembly silence at the new native sample rate — and shall detect a
+descriptor-level incompatibility rather than silently producing mispaced or
+wrong-sample-rate audio. (There is no PS-004-style pacing-contract object in this
+SPEC; this requirement IS the explicit sample-rate/token compatibility check.)
+
+**Acceptance criteria:**
+- After switching the configured engine for a language, the chunk-token budget used
+  by the caller is re-clamped to the new provider's declared optimal range, and the
+  inter-arc/paragraph/chunk silence (REQ-V-C-009) is re-computed in frames at the new
+  provider's declared native sample rate — both taken from the descriptor, not from a
+  hardcoded per-engine table in the caller.
+- Switching providers requires no change to the assembly code or the script
+  generator — only the descriptor value the caller reads changes (consistent with
+  NFR-V-5 provider-agnostic isolation).
+- A switch to a provider whose descriptor is missing a required field (e.g. no
+  declared sample rate) is detected and logged as a configuration error, and the
+  system falls back to a known-good provider (per the Kokoro→Piper fallback chain)
+  rather than emitting broken audio.
+- The compatibility re-derivation and any detected incompatibility are logged for
+  traceability.
+
 ---
 
 ## 7. Requirement Group V-B — Script → Speech Generation (tied to the program-director loop)
@@ -604,6 +741,16 @@ This group injects speech audio into the live Liquidsoap stream with music
 ducking and clean transitions. Behavior is specified here; operator-level detail
 (exact Liquidsoap operators/params) lives in plan.md.
 
+REQ-V-C-001..007 specify the SINGLE talk-segment, live-ducked path and are
+UNCHANGED. REQ-V-C-008..012 ADD an episode-level audio ASSEMBLY path: given the
+segments of a longform episode (planned and rendered under the orchestration of the
+future SPEC-RADIO-LONGFORM-025, see Section 2.1), VOICE-002 mechanically assembles
+them into one coherent episode audio off the playout path. The two paths coexist;
+the short-break path does not change. Assembly OWNS order, silence calibration,
+render scheduling, per-segment failure policy, and async pre-render — it does NOT own
+the longform chunking strategy, ASR-gate, regen, or drift logic (those are
+LONGFORM-025 Group LT, referenced not re-owned).
+
 ### REQ-V-C-001 — Inject speech into the live stream (Event-driven)
 
 When a talk segment's speech audio is ready to air, the system shall inject it
@@ -703,6 +850,99 @@ availability) through the core health/status surface.
 - A degraded voice state (e.g. paid provider misconfigured, teldutala.fo
   unavailable, repeated TTS failures) is visible in status without affecting the
   music-stream liveness indicator.
+
+### REQ-V-C-008 — Episode segment-assembly order (Event-driven)
+
+When the segments of a longform episode have been rendered, the system shall
+assemble them into a single continuous episode audio in the planned NARRATIVE ORDER
+(arc → paragraph → chunk), preserving order exactly so the listener hears a coherent
+program. The order is supplied by the episode plan (LONGFORM-025); VOICE-002 honours
+it and does not re-derive content order.
+
+**Acceptance criteria:**
+- Given an ordered set of rendered episode segments, the assembled episode audio
+  plays the segments in that exact order (arc-by-arc, paragraph-by-paragraph,
+  chunk-by-chunk); no reordering occurs.
+- Assembly operates only on already-rendered audio + the supplied order; it does NOT
+  decide the chunking/arc structure (that is LONGFORM-025 Group LT).
+- A missing/failed segment is handled per REQ-V-C-011 (skip), not by silently
+  reordering or collapsing the sequence.
+
+### REQ-V-C-009 — Inter-arc vs inter-paragraph silence calibration (Ubiquitous)
+
+The system shall insert CALIBRATED silence between assembled units — a longer
+configured gap BETWEEN ARCS (topic shifts), a shorter configured gap BETWEEN
+PARAGRAPHS within an arc, and the shortest (or none) between CHUNKS within a
+paragraph — specified in milliseconds and materialized as silence frames at the
+active provider's native sample rate (from the REQ-V-A-009 descriptor), so a
+longform episode is paced like a human program rather than an unbroken wall of
+speech.
+
+**Acceptance criteria:**
+- The assembled episode contains a longer silence at arc boundaries than at
+  paragraph boundaries, and the smallest (or zero) silence at chunk boundaries; the
+  three gap durations are configurable in milliseconds.
+- Each gap is materialized at the active provider's declared native sample rate
+  (e.g. 24000 Hz for Kokoro/Qwen, 22050 Hz for Chatterbox/Piper) so the silence is
+  the intended wall-clock duration regardless of engine; switching engines
+  re-computes the frame counts per REQ-V-A-010 without changing the configured
+  millisecond values.
+- Where an engine supports inline pause tags (declared in the descriptor), the
+  system MAY use them instead of externally-inserted silence for intra-chunk pauses;
+  the inter-unit gaps remain externally calibrated.
+
+### REQ-V-C-010 — Parallel-vs-serial render with persona-state ordering (State-driven)
+
+While the active provider carries per-utterance persona/voice state that must be
+applied in order (or while deterministic-seed continuity across an episode matters),
+the system shall render the episode's segments in the order that preserves that
+state; where the active provider is stateless across chunks (per its descriptor),
+the system MAY render segments in parallel to absorb latency. In either case the
+assembled output MUST be in the correct narrative order (REQ-V-C-008).
+
+**Acceptance criteria:**
+- With a stateless provider, segments may be rendered concurrently and the assembled
+  episode is still in correct order; with an order-sensitive provider, rendering
+  preserves the required ordering.
+- The choice of parallel vs. serial is driven by the provider's declared
+  capabilities (REQ-V-A-009), not by a hardcoded engine name.
+- Parallel rendering of episode segments runs off the playout path and does not raise
+  music underruns (consistent with REQ-V-C-006).
+
+### REQ-V-C-011 — Per-segment timeout: skip-arc vs abort-episode (Unwanted) [HARD]
+
+If a single episode segment's render exceeds its per-segment timeout or otherwise
+fails, then the system shall skip that segment (or, per a configured policy, the
+whole arc it belongs to) and continue assembling the rest of the episode rather than
+aborting the entire episode — UNLESS skipping would breach a configured
+minimum-coherence threshold, in which case the system shall abandon the episode and
+the station falls back to music. In no case does an episode render block, stall, or
+silence the music stream (inherits REQ-V-C-005).
+
+**Acceptance criteria:**
+- A single failed/timed-out segment results in that segment (or its arc, per policy)
+  being dropped while the remaining episode is still assembled and aired; the skip
+  and its reason are logged.
+- The skip-segment-vs-skip-arc behavior and the minimum-coherence threshold are
+  configurable; below the threshold the episode is abandoned and music continues.
+- [HARD] No per-segment timeout, skip, or episode abandonment ever blocks or silences
+  the music stream; a wholly-failed episode degrades to music per REQ-V-C-005.
+
+### REQ-V-C-012 — Async pre-render of episodes to the ready buffer (Ubiquitous)
+
+The system shall render and assemble episode audio AHEAD of its air window on a
+worker OFF the music playout path, placing the finished episode in the ready buffer,
+so that a long episode render never appears as a stall in the stream; an episode not
+ready by its air window is handled per REQ-V-C-005 (music continues), exactly as the
+single-segment pre-render (REQ-V-C-006) is for short talk.
+
+**Acceptance criteria:**
+- Episode rendering + assembly happen on a separate worker from the playout control
+  path, and the finished episode lands in the ready buffer before its air window.
+- An episode not ready by its air window is skipped per REQ-V-C-005 (music continues
+  at full level, no gap); it is not aired late in a disruptive way.
+- Concurrent episode rendering does not raise music underruns (verifiable under
+  load), consistent with REQ-V-C-006 and NFR-V-1.
 
 ---
 
@@ -1069,6 +1309,13 @@ missed or broken talk segment after the fact (feeds REQ-V-C-007).
   subsystem: telephony/VoIP, realtime speech-to-text of callers, two-way host↔
   caller conversation, and mixing caller audio into the on-air program. It attaches
   to the typed call-in seam (REQ-V-F-001) defined here.
+- **SPEC-RADIO-LONGFORM-025 — Longform / multi-arc episode engine (FUTURE, not yet
+  authored).** Owns the longform ORCHESTRATION (Group LT): chunking strategy,
+  ASR-gate, regen-on-mismatch, drift detection, and episode loudness policy. It
+  consumes the VOICE-002 provider interface + capability descriptor (REQ-V-A-001/009/
+  010) and the VOICE-002 episode assembly (REQ-V-C-008..012) by REQ id; only the
+  inner per-chunk synthesize call swaps per engine. The OWNS/REFERENCES boundary is
+  declared in Section 2.1. Nothing in LONGFORM-025's orchestration is specified here.
 - Other core-deferred SPECs are unchanged: SPEC-RADIO-INGEST, SPEC-RADIO-NEWS,
   SPEC-RADIO-SOCIAL, SPEC-RADIO-FINANCE, SPEC-RADIO-ANALYTICS, SPEC-RADIO-ORG.
 - Possible voice-layer follow-ups (not committed): additional languages beyond
@@ -1092,6 +1339,8 @@ acceptance.md).
 | REQ-V-A-006 | TTS Provider Abstraction & Config | High | Event | AC-V-A-006 |
 | REQ-V-A-007 | TTS Provider Abstraction & Config | High | Unwanted | AC-V-A-007 |
 | REQ-V-A-008 | TTS Provider Abstraction & Config | Medium | State | AC-V-A-008 |
+| REQ-V-A-009 | TTS Provider Abstraction & Config | High | Ubiquitous | AC-V-A-009 |
+| REQ-V-A-010 | TTS Provider Abstraction & Config | Medium | Event | AC-V-A-010 |
 | REQ-V-B-001 | Script → Speech Generation | High | Event | AC-V-B-001 |
 | REQ-V-B-002 | Script → Speech Generation | High | Ubiquitous | AC-V-B-002 |
 | REQ-V-B-003 | Script → Speech Generation | High | Event | AC-V-B-003 |
@@ -1106,6 +1355,11 @@ acceptance.md).
 | REQ-V-C-005 | On-Air Audio Integration & Ducking | High | Unwanted | AC-V-C-005 |
 | REQ-V-C-006 | On-Air Audio Integration & Ducking | High | Ubiquitous | AC-V-C-006 |
 | REQ-V-C-007 | On-Air Audio Integration & Ducking | Medium | Ubiquitous | AC-V-C-007 |
+| REQ-V-C-008 | On-Air Audio Integration & Ducking | High | Event | AC-V-C-008 |
+| REQ-V-C-009 | On-Air Audio Integration & Ducking | High | Ubiquitous | AC-V-C-009 |
+| REQ-V-C-010 | On-Air Audio Integration & Ducking | Medium | State | AC-V-C-010 |
+| REQ-V-C-011 | On-Air Audio Integration & Ducking | High | Unwanted | AC-V-C-011 |
+| REQ-V-C-012 | On-Air Audio Integration & Ducking | High | Ubiquitous | AC-V-C-012 |
 | REQ-V-D-001 | Language Routing | High | Ubiquitous | AC-V-D-001 |
 | REQ-V-D-002 | Language Routing | High | Event | AC-V-D-002 |
 | REQ-V-D-003 | Language Routing | High | Unwanted | AC-V-D-003 |

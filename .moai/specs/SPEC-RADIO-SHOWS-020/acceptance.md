@@ -1,6 +1,6 @@
 ---
 id: SPEC-RADIO-SHOWS-020-acceptance
-version: 0.2.0
+version: 0.3.0
 status: draft
 created: 2026-06-23
 updated: 2026-06-23
@@ -17,10 +17,11 @@ distinctness-critical requirements. Section C is the Definition of Done and the 
 A passing implementation MUST satisfy every Section A entry and every Section B scenario. Where a
 criterion is marked [HARD] it is a must-pass gate (no compensation by other criteria).
 
-Group prefixes: LF (Last.fm Research Client) / SG (Show / Program Model) / SX (Editorial Variation
-Engine) / SP (Per-Persona Distinctness) / SD (Scheduling / Direction) / SB (Show Wiring).
-25 AC + 8 AC-NFR = 33, matching spec.md 25 REQ + 8 NFR (v0.2.0: +AC-LF-006, +AC-SG-005, +AC-SD-005,
-+AC-NFR-S-8).
+Group prefixes: LF (Last.fm Research Client) / SK (KEXP Human-DJ Thread Signal) / SG (Show / Program
+Model) / SX (Editorial Variation Engine) / SP (Per-Persona Distinctness) / SD (Scheduling / Direction) /
+SB (Show Wiring).
+29 AC + 8 AC-NFR = 37, matching spec.md 29 REQ + 8 NFR (v0.3.0: +AC-SK-001…004, and AC-SD-005 extended in
+place with the episode/part/arc additive rows; v0.2.0: +AC-LF-006, +AC-SG-005, +AC-SD-005, +AC-NFR-S-8).
 
 ---
 
@@ -66,6 +67,48 @@ Engine) / SP (Per-Persona Distinctness) / SD (Scheduling / Direction) / SB (Show
   as a KNOWLEDGE-008 dated/sourced fact and passes the PROGRAMMING-007 grounding gate UNCHANGED (the single
   airable-fact seam, D-S-5); relative popularity may frame loosely but is never quoted as a precise live
   figure (asserted: no raw Last.fm bio/wiki string reaches air without entering KNOWLEDGE-008 first).
+
+### Group SK — KEXP Human-DJ Thread Signal
+
+**AC-SK-001 (REQ-SK-001 — keyless, fully-graceful, OFF-by-default KEXP thread-signal client):**
+- GIVEN the Group SK KEXP client (`brain/kexp.py`, sibling to `brain/lastfm.py`), WHEN `kexp_thread_enabled`
+  is `false` (the default), THEN it constructs no client, polls nothing, and returns EMPTY; WHEN enabled, THEN
+  it polls the public no-auth KEXP API v2 `/v2/plays/?ordering=-airdate`, walks the show FK, and assembles
+  configurable N-song (default 3–4, tunable) back-to-back human-DJ CLUSTERS keyed on one show/host session,
+  each carrying `{artists, titles, albums, airdate, host_name, program_name, provenance}`.
+- [HARD] On ANY failure (network/endpoint-change/malformed/missing show FK) it returns EMPTY and NEVER raises;
+  disabled or empty, the show engine falls back to Last.fm + taste-only angles and the station is completely
+  unaffected (asserted: the OFF/empty/error paths construct no airable output and never reach the director/talk
+  loops — KEXP needs no key, so NFR-S-8's Last.fm-ToS clauses do not apply).
+
+**AC-SK-002 (REQ-SK-002 — rate-limited, timed-out, exception-isolated, cached KEXP polls):**
+- GIVEN a KEXP poll, WHEN it runs, THEN it has an explicit timeout, self-throttles to ≤ 1 req/s (jittered),
+  caches the last poll, and returns EMPTY on ANY error without raising.
+- [HARD] A KEXP flake never propagates toward the `brain/director.py` tick, the `brain/talk.py` talk loop, or
+  the `/api/next` pull; the poll runs under the same bounded background-job pattern as the Last.fm research
+  (REQ-LF-005 / OPS-004 REQ-OH-006) and adopts the REQ-LF-002 rate/timeout/isolation discipline by reference
+  (asserted: the poll is off the sub-1s pull path and exception-isolated).
+
+**AC-SK-003 (REQ-SK-003 — a KEXP cluster is a thread HYPOTHESIS / research lead, never an airable-fact channel):**
+- GIVEN a KEXP human-DJ cluster (`{artists, titles, albums, airdate, host_name, program_name, provenance}`,
+  `provenance` shaped by REQ-LF-004 with `method=kexp.plays`), WHEN it is gathered, THEN it is handed to the
+  LLM as a THREAD HYPOTHESIS that may seed a REQ-SX-001 angle proposal OR a PROGRAMMING-007 REQ-PC-006
+  transition idea — colour to reason about, NOT broadcast text.
+- [HARD] The cluster is treated EXACTLY like a Last.fm artist-fact research lead (REQ-LF-006): "KEXP played X
+  then Y" is NEVER voiced raw and is NOT an airable-fact channel — KNOWLEDGE-008 stays the SOLE airable-fact
+  seam (D-S-5); KEXP picks are NOT a playlist to copy, the station plays only its OWN catalog, and KEXP track
+  ids NEVER enter rotation so the PROGRAMMING-007 REQ-PR-009 per-track exclusivity rule is UNAFFECTED
+  (asserted: no KEXP track is added to any rotation pool and no raw KEXP string reaches air without entering
+  KNOWLEDGE-008 first).
+
+**AC-SK-004 (REQ-SK-004 — a KEXP-seeded angle passes the same per-persona gates; one signal refracted divergently):**
+- GIVEN a KEXP-thread hypothesis seeding a proposed angle for a persona, WHEN the angle is evaluated, THEN it
+  passes the SAME gates as any angle: the per-persona taste profile (REQ-PL-004), the novelty check
+  (REQ-SX-002), and the anti-convergence firewall (REQ-PR-004 territory + REQ-PR-009 track), UNCHANGED.
+- [HARD] IF a KEXP thread falls OUTSIDE a persona's lane (territory/taste) THEN it is DROPPED for that persona
+  (the firewall WINS) — the single KEXP signal is refracted DIVERGENTLY across the roster, never a homogenizer;
+  with the KEXP signal disabled or failing, REQ-SX-001 falls back to Last.fm + taste-only angles with no change
+  in behaviour (asserted by the Section B KEXP-refraction scenario).
 
 ### Group SG — Show / Program Model
 
@@ -196,6 +239,13 @@ Engine) / SP (Per-Persona Distinctness) / SD (Scheduling / Direction) / SB (Show
   persona is on-air); SHOWS-020 supplies queued CONTENT only and never forks the schedule store.
 - [HARD] The queue is bounded + never-blocks: an empty queue falls back to just-in-time angle proposal
   (REQ-SX-001), and a queued show still passes the novelty check at activation (REQ-SX-002).
+- [HARD] [ADDITIVE] A planned-shows queue ENTRY MAY OPTIONALLY carry `episode_id` + `part_number` +
+  `series_arc_id`; this is a PURE ADDITIVE field extension on the QUEUE ENTRY — the per-session `Show` record
+  (REQ-SG-001), the novelty check (REQ-SX-002), and the show-history ledger (REQ-SG-005) are UNCHANGED, and the
+  fields are INERT in SHOWS-020 single-session operation (a single-session show ignores them, behaving exactly
+  as before). They reserve the FORWARD-REFERENCE seam consumed by the future SPEC-RADIO-LONGFORM-025 Group LB
+  (asserted: the fields are optional + inert; SHOWS-020 implements no multi-session threading; the queue is not
+  forked).
 
 ### Group SB — Show Wiring
 
@@ -406,13 +456,39 @@ Verification: assert show history + the forward schedule are our own persisted d
 dependency); the time-grid ownership is referenced not re-owned; artist facts route through KNOWLEDGE-008
 (addressing the broadened use cases + research.md §4/§5c-d/§5b).
 
+### B11 — KEXP thread signal: a research lead refracted divergently, never a playlist or homogenizer (REQ-SK-001/002/003/004, REQ-PR-009) [HARD]
+
+```
+GIVEN kexp_thread_enabled is ON and the KEXP client polled /v2/plays/?ordering=-airdate and assembled a
+  back-to-back human-DJ CLUSTER for one show/host session
+  (e.g. host "Cheryl Waters" segued track A → B → C → D on KEXP)
+WHEN the engine uses the cluster
+THEN the cluster is handed to the LLM as a THREAD HYPOTHESIS (colour to reason about), provenance method=kexp.plays
+  AND it may seed a fresh Group SX angle (REQ-SX-001) or a PROGRAMMING-007 REQ-PC-006 transition idea
+  AND "KEXP played A then B" is NEVER voiced raw; any airable fact first enters KNOWLEDGE-008 (REQ-LF-006/SK-003)
+  AND KEXP picks are NOT copied into rotation: the station plays only its OWN catalog, KEXP track ids never
+      enter any rotation pool, and REQ-PR-009 per-track exclusivity is UNAFFECTED
+  AND the KEXP-seeded angle passes the SAME per-persona taste (REQ-PL-004) + novelty (REQ-SX-002) +
+      anti-convergence (REQ-PR-004 + REQ-PR-009) gates as any angle
+  AND for a persona whose lane the thread does NOT fit, the thread is DROPPED for that persona (firewall wins)
+      — the one KEXP signal is refracted divergently across the roster, never homogenizing two personas
+GIVEN kexp_thread_enabled is OFF (default) or the poll errors
+WHEN the engine plans a show
+THEN the KEXP client returns EMPTY (constructs nothing / never raises) and Group SX falls back to
+  Last.fm + taste-only angles with the station completely unaffected
+```
+Verification: assert KEXP is OFF-by-default + keyless + cached + exception-isolated off the pull path
+(REQ-SK-001/002); a cluster is a never-aired-raw research lead (REQ-SK-003); KEXP track ids never enter
+rotation (REQ-PR-009 unaffected); a KEXP-seeded angle is gate-equal + dropped outside a lane (REQ-SK-004,
+addressing R-S-8/R-S-9).
+
 ---
 
 ## Section C — Definition of Done & Quality Gates
 
 A SHOWS-020 implementation is DONE when:
 
-1. [HARD] All 25 REQ + 8 NFR Section A entries pass, and all Section B scenarios pass.
+1. [HARD] All 29 REQ + 8 NFR Section A entries pass, and all Section B scenarios pass.
 2. [HARD] **Anti-repetition invariant holds (REQ-SX-002, NFR-S-2):** no slot's show repeats a recent kind
    of show for that persona within the configurable window; the per-persona recent-shows ledger + novelty
    check defeat show-sameness (B1); the reject loop is bounded + degrades gracefully (B2).
@@ -455,13 +531,24 @@ A SHOWS-020 implementation is DONE when:
 15. **Decisions reflected (D-S-1…D-S-5):** ship-now single-persona (D-S-1), non-binding lens bias (D-S-2),
     separate `brain/lastfm.py` (D-S-3), deterministic text-similarity novelty for v1 (D-S-4), KNOWLEDGE-008
     single airable-fact home (D-S-5).
+16. [HARD] **KEXP human-DJ thread signal (REQ-SK-001/002/003/004, B11):** the Group SK `brain/kexp.py` is
+    keyless + OFF-by-default + cached + timed-out + exception-isolated off the pull path (SK-001/002, reusing
+    REQ-LF-002/004/005); a KEXP cluster is a thread HYPOTHESIS / research lead never voiced raw (SK-003, reusing
+    REQ-LF-006) and KEXP picks NEVER enter rotation (the station plays only its own catalog; REQ-PR-009
+    unaffected); a KEXP-seeded angle passes the same per-persona taste/novelty/anti-convergence gates and is
+    DROPPED outside a persona's lane — one signal refracted divergently, never a homogenizer (SK-004); disabled/
+    failing falls Group SX back to Last.fm + taste-only angles.
+17. **Multi-session series seam reserved (REQ-SD-005 extension):** the OPTIONAL `episode_id` / `part_number` /
+    `series_arc_id` queue-entry fields are additive + inert (the per-session `Show` model + novelty check
+    unchanged), reserving the seam the future SPEC-RADIO-LONGFORM-025 Group LB consumes; SHOWS-020 stays
+    single-session and the queue is not forked.
 
 Quality gates (TRUST 5, inherited): Tested (the anti-repetition B1, the reject-storm B2, the no-key/
-complementary B3, the bias-not-force B4, the grounded-content B5, the distinctness B6, and the
-off-pull-path B9 are the must-pass characterization tests); Readable; Unified; Secured (key-gated +
-exception-isolated research; no secret in code; the unchanged grounding gate keeps spoken facts honest);
-Trackable (the show record + status lifecycle + the recent-shows ledger + per-item research provenance
-give an auditable show/variation trail).
+complementary B3, the bias-not-force B4, the grounded-content B5, the distinctness B6, the off-pull-path B9,
+and the KEXP-refraction B11 are the must-pass characterization tests); Readable; Unified; Secured (key-gated +
+exception-isolated Last.fm research + keyless exception-isolated KEXP poll; no secret in code; the unchanged
+grounding gate keeps spoken facts honest); Trackable (the show record + status lifecycle + the recent-shows
+ledger + per-item research provenance — including `method=kexp.plays` — give an auditable show/variation trail).
 
-Parity check: 25 AC (Section A) + 8 AC-NFR = 33 acceptance entries, matching spec.md 25 REQ + 8 NFR;
+Parity check: 29 AC (Section A) + 8 AC-NFR = 37 acceptance entries, matching spec.md 29 REQ + 8 NFR;
 1:1 REQ↔AC preserved.

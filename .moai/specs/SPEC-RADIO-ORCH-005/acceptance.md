@@ -319,6 +319,68 @@ selection and recap pass the apolitical+factual check (REQ-RE-005 / OPS-004 REQ-
 an injected slow/errored ledger read, the system airs fresh without dedup memory or skips to
 music — never a stall (inherits REQ-RE-006 / OPS-004 REQ-OG-009).
 
+**AC-RN-007 (REQ-RN-007) [HARD]** — The event sensor is driven by a declarative, FREE-ONLY,
+RSS-first feeds config; each entry carries `id`, `url`, `kind` ∈ {`rss` | `gnews-search` |
+`scrape`}, `locality_tier` ∈ {`faroese` | `nordic` | `intl`}, `cadence_seconds`,
+`attribution_name`, and `enabled`; the list is AI-evolvable under the OPS-004 REQ-OG-002
+discipline and never pays for any news/data API. VERIFY: the config (`BRAIN_NEWS_FEEDS`) is a
+list of entries with exactly those fields; `kind` and `locality_tier` are constrained to the
+named enums; no code path calls a paid news/data API (free RSS + the Guardian free tier only);
+the AI may add/re-tier/re-cadence/enable-disable/retire entries (evolvable, referencing OG-002,
+not forking it); RSS is preferred first. Anti-property: no paid API or paid aggregator is ever
+invoked. (Detailed: B-20.)
+
+**AC-RN-008 (REQ-RN-008) [HARD]** — The poller rides the EXISTING event-sensor cadence
+(REQ-RE-001 / REQ-RW-004) — not a new loop — never touches the pull path, uses HTTP conditional
+GET (`If-None-Match`/`ETag` + `If-Modified-Since`, honoring `304`) and RSS `lastBuildDate` with a
+descriptive `BRAIN_NEWS_USER_AGENT`, and degrades best-effort. VERIFY: feed polling is invoked
+from the event-sensor refresh, not a separate loop, and never appears on the `/api/next` path
+(shares evidence with B-1 / NFR-R-2); a feed returning `304` yields no new items and no re-parse;
+an unchanged `lastBuildDate` skips the feed; the User-Agent is descriptive; an injected
+down/slow/errored/rate-limited feed marks that feed stale, is skipped, and is re-attempted later
+(REQ-RD-002) without blocking or silencing the stream. (Detailed: B-20.)
+
+**AC-RN-009 (REQ-RN-009) [HARD]** — Each fetched item becomes a `news_fetched` event over the
+OPS-004 REQ-OD-007/008 ledger carrying the RN-002 semantic `story_id`, `attribution_name`, source
+URL, `fetched_at`, and `locality_tier`; one event covered across feeds collapses to ONE
+`story_id`. VERIFY: fetching an item writes a `news_fetched` event (the REQ-RN-001 seam) with
+those fields; KVF + a Google News result + the Guardian world feed all covering one event resolve
+to a SINGLE `story_id` (it calls RN-002's normalizer, computes no new key), producing one story —
+not three competing items; a grep confirms no new datastore is introduced. Anti-property: the
+source layer must not fork a store or re-compute the `story_id` algorithm. (Detailed: B-20.)
+
+**AC-RN-010 (REQ-RN-010)** — A default seed feed set ships (KVF `rss/tidindi` + `rss/forsida` as
+the Faroese TIER-1 spine polled 5–10 min; Google News Faroe-discovery as Faroese fallback; DR
+`udland`/`senestenyt` + Google News DK as nordic; BBC World / Guardian world / Al Jazeera /
+Deutsche Welle EN / NPR World / euronews + Reuters/AP via Google News allinurl as intl; reserved
+Faroese scrape entries disabled); `locality_tier` maps into the REQ-RN-004 rotation; items older
+than the RN-004 staleness threshold are dropped at intake; the wire register may be preferred for
+neutral read-outs. VERIFY: the default config contains the named seeds with correct `kind` and
+`locality_tier`; the Faroese tier is tier-1 and feeds the RN-004 Faroese→Nordic→intl rotation;
+an over-stale item is dropped at intake using the RN-004 threshold (referenced, not a forked
+threshold); Reuters/AP-via-Google-News is markable as preferred for neutral on-air phrasing
+(serving REQ-RN-006); the set is AI-evolvable (OPS-004 REQ-OG-002). (Detailed: B-20.)
+
+**AC-RN-011 (REQ-RN-011)** — Scrape fallback is used ONLY where no feed exists, extracts
+headline+snippet only, respects `robots.txt`, and is DISABLED BY DEFAULT (reserved Faroese
+dimma/portal/in/local/government entries ship `enabled=false`, gated behind
+`BRAIN_NEWS_SCRAPE_ENABLED` default false). VERIFY: an RSS/free-API source is always preferred
+over a scrape entry; with `BRAIN_NEWS_SCRAPE_ENABLED=false` no scraping occurs; when explicitly
+enabled, only headline+snippet is extracted (no full-article re-hosting) and `robots.txt` is
+respected; scraped items enter the ledger through the same REQ-RN-009 `news_fetched` seam with
+the same `story_id` normalization. NOTE: the robots-respect + disabled-default posture is
+OPERATIONAL conservatism, not a copyright/ToS gate (project PIVOT). (Detailed: B-20.)
+
+**AC-RN-012 (REQ-RN-012)** — The Guardian free Open Platform API is an OPTIONAL enrichment
+supplement + music-journalism lead seam gated behind `BRAIN_GUARDIAN_API_KEY`; when the key is
+UNSET the Guardian RSS feed still works and enrichment is skipped. VERIFY: with the key set,
+fetched stories may be enriched with structured Guardian metadata (section/tags/time/trail) to
+sharpen `story_id`/framing, and a music-journalism lead seam is exposed for downstream consumers
+(KNOWLEDGE-008 / acquisition — referenced, not built here); with the key UNSET, the Guardian
+world RSS feed (REQ-RN-010) still polls normally and no enrichment runs; the source layer never
+hard-depends on or blocks on the Guardian API (inherits REQ-RN-008 / REQ-RE-006); the Guardian
+free tier honors the REQ-RN-007 free-only rail. (Detailed: B-20.)
+
 ### Group RI — Listener-Interaction Memory
 
 **AC-RI-001 (REQ-RI-001) [HARD]** — A listener-response memory exists recording, per
@@ -782,11 +844,83 @@ ANTI: ORCH-005 must NOT re-own the lifecycle FSM, the rarity tier, the always-st
       leave a slot hostless; the news anchor must NEVER be subject to lifecycle/staffing.
 ```
 
+### B-20 — Free-only feed poller: RSS-first, conditional-GET, cross-source collapse, scrape-fallback, Guardian enrichment (REQ-RN-007, REQ-RN-008, REQ-RN-009, REQ-RN-010, REQ-RN-011, REQ-RN-012)
+
+```
+GIVEN a declarative free-only feeds config (BRAIN_NEWS_FEEDS) driving the event sensor, each
+      entry {id, url, kind ∈ {rss | gnews-search | scrape}, locality_tier ∈ {faroese | nordic |
+      intl}, cadence_seconds, attribution_name, enabled}, AI-evolvable under OPS-004 REQ-OG-002,
+      and the default seeds installed (KVF rss/tidindi + rss/forsida as the faroese tier-1 spine;
+      Google News Faroe-discovery as faroese fallback; DR udland/senestenyt + Google News DK as
+      nordic; BBC World / Guardian world / Al Jazeera / DW EN / NPR World / euronews + Reuters/AP
+      via Google News allinurl as intl; reserved Faroese scrape entries disabled)
+
+SCENARIO 1 — RSS-first poll on the existing cadence, off the pull path, conditional-GET:
+WHEN the event sensor refreshes on its throttled cadence (REQ-RE-001 / REQ-RW-004) and a KVF
+     feed entry's cadence_seconds is due
+THEN the poller fetches it from WITHIN the event-sensor refresh (not a new loop) and NEVER on the
+     /api/next pull path
+  AND it sends conditional GET (If-None-Match from the stored ETag + If-Modified-Since) with a
+      descriptive BRAIN_NEWS_USER_AGENT, and a 304 Not Modified (or an unchanged lastBuildDate)
+      yields no new items and no re-parse
+  AND no paid news/data API is ever called (free-only rail, REQ-RN-007).
+
+SCENARIO 2 — cross-source collapse to one story_id:
+GIVEN the same Faroese event is reported by KVF, by a Google News result, and by the Guardian
+      world feed
+WHEN each item is fetched
+THEN each is written as a news_fetched event over the OPS-004 REQ-OD-007/008 ledger carrying the
+     RN-002 semantic story_id, attribution_name, source URL, fetched_at, and locality_tier
+  AND all three COLLAPSE to ONE story_id (the poller calls RN-002's normalizer; it computes no
+      new key and forks no store) — counted, deduped, and aged as a single story, not three
+  AND the locality_tier maps the story into the REQ-RN-004 Faroese→Nordic→intl rotation
+  AND an item older than the RN-004 staleness threshold is dropped at intake (threshold
+      referenced, not forked).
+
+SCENARIO 3 — best-effort degradation, never a stall:
+GIVEN a feed is down / slow / errored / rate-limited
+WHEN the poller attempts it
+THEN that feed's slice is marked stale, skipped, and re-attempted on a later tick (REQ-RD-002)
+  AND the stream is never blocked, stalled, or silenced (inherits REQ-RW-005 / REQ-RE-006)
+  AND the Faroese fallback (Google News Faroe-discovery) covers a KVF outage where possible.
+
+SCENARIO 4 — scrape fallback is reserved, disabled-by-default, robots-respected:
+GIVEN a reserved Faroese scrape entry (dimma / portal / in / local / government) and
+      BRAIN_NEWS_SCRAPE_ENABLED = false (default)
+WHEN feeds are polled
+THEN no scraping occurs (RSS/free-API is always preferred; scrape is used ONLY where no feed
+     exists, REQ-RN-011)
+  AND when scraping is explicitly enabled, only headline+snippet is extracted (no full-article
+      re-hosting), robots.txt is respected, and the item enters the ledger through the SAME
+      REQ-RN-009 news_fetched seam.
+
+SCENARIO 5 — Guardian enrichment is optional and graceful:
+GIVEN BRAIN_GUARDIAN_API_KEY is UNSET
+WHEN news is fetched
+THEN the Guardian world RSS feed still polls normally as a plain free feed and enrichment is
+     simply SKIPPED (no hard dependency, no block)
+  AND when the key IS set, fetched stories may be enriched with structured Guardian metadata
+      (section/tags/time/trail) to sharpen story_id/framing, and a music-journalism lead seam is
+      exposed for downstream consumers (KNOWLEDGE-008 / acquisition — referenced, not built here)
+  AND the Guardian free tier honors the REQ-RN-007 free-only rail.
+
+AND ACROSS ALL: the wire register (Reuters / AP via Google News) may be PREFERRED for neutral,
+    apolitical on-air read-outs (serving REQ-RN-006); the feeds config is AI-evolvable
+    (OPS-004 REQ-OG-002); and the source layer DRIVES OPS-004 Group OG production via news_fetched
+    events without forking the ledger store, re-owning OG sourcing/production, or adding a new
+    datastore / playout kind / Liquidsoap change.
+ANTI: no paid news/data API may be called; the poller must NOT introduce a new loop or touch the
+      pull path; cross-source coverage of one event must NOT produce multiple competing ledger
+      items; scrape must NOT run by default or re-host full articles; the Guardian API must NEVER
+      be a hard dependency. The robots-respect + disabled-default posture is OPERATIONAL
+      conservatism, NOT a copyright/ToS gate (project PIVOT).
+```
+
 ---
 
 ## Section C — Definition of Done
 
-- All 42 REQ + 8 NFR have a passing acceptance criterion (Section A), with detailed
+- All 48 REQ + 8 NFR have a passing acceptance criterion (Section A), with detailed
   scenarios (Section B) green for the load-bearing requirements.
 - The director loop runs as the single brain-only orchestrator; the <1s pull is never
   blocked (B-1, B-9) and the stream never goes silent across all failure/reaction tests
@@ -807,6 +941,19 @@ ANTI: ORCH-005 must NOT re-own the lifecycle FSM, the rarity tier, the always-st
   prefers fresh, ages out stale, and rotates source tiers without looping; a dry wire falls
   back to an honest same-day recap only after fresh is exhausted; every item is grounded,
   apolitical, and never blocks the stream.
+- The FREE-ONLY FEED-POLLER / source layer (Group RN, REQ-RN-007..012, B-20) populates the news
+  ledger: a declarative RSS-first free-only feeds config (never a paid API, AI-evolvable under
+  OPS-004 REQ-OG-002) drives the event sensor; the poller rides the EXISTING event-sensor cadence
+  off the pull path with conditional GET (ETag/304/lastBuildDate) and a descriptive User-Agent,
+  degrading best-effort; each fetched item becomes a `news_fetched` event carrying the RN-002
+  semantic story_id so KVF + Google News + Guardian coverage of one event collapses to ONE story;
+  the default seeds ship (KVF tier-1 spine + nordic + intl, scrape entries disabled), items map
+  into the RN-004 rotation, over-stale items drop at intake, and the wire register is preferable
+  for neutral read-outs; scrape fallback is headline+snippet only, robots-respected, used only
+  where no feed exists, disabled by default (`BRAIN_NEWS_SCRAPE_ENABLED`); and the Guardian free
+  Open Platform enrichment is optional + graceful (`BRAIN_GUARDIAN_API_KEY` UNSET ⇒ RSS still
+  works). The source layer DRIVES OPS-004 Group OG production without forking the ledger, re-owning
+  sourcing, paying for any API, or adding a new datastore.
 - Listener interaction is a first-class memory (Group RI, B-14): the feedback→action→outcome
   through-line is recorded as a VIEW over the OPS-004 ledger (not a fork), with a no-spam
   discipline and [HARD] the anti-appeal rail held (never an engagement/popularity target);
