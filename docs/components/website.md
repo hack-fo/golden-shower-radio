@@ -7,9 +7,9 @@ string is stored in `StationState.website_html` and served by the HTTP server at
 `GET /`. A separate JSON endpoint (`GET /api/nowplaying`) provides the live data
 that the page polls every 5 seconds.
 
-The module is phase 1 of a planned self-editing pipeline. The design intentionally
-stores HTML in `StationState` (not written to disk) so a future LLM-controlled phase
-can atomically swap it at runtime without ever serving a partially-written page.
+The design intentionally stores HTML in `StationState` (not written to disk) so a
+planned future LLM-controlled self-editing mode can atomically swap it at runtime
+without ever serving a partially-written page.
 
 ## How it works
 

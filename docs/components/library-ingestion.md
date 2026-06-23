@@ -2,7 +2,7 @@
 
 **Modules:** `brain/library.py`, `brain/analyzer.py`
 
-The library-ingestion subsystem is the source of truth for every audio file the station can play. It scans the music directory, extracts metadata, deduplicates, and persists the catalog to `library.json`. A separate background worker (`Analyzer`) then enriches each track with DSP-derived features — BPM, key, energy, loudness, cue points, genre — without ever touching the playout path.
+The library-ingestion subsystem is the source of truth for every audio file the station can play. It scans the music directory, extracts metadata, deduplicates, and persists the catalog to SQLite (`tracks` table in `brain.db`; JSON fallback when `BRAIN_STORE_BACKEND=json`). A separate background worker (`Analyzer`) then enriches each track with DSP-derived features — BPM, key, energy, loudness, cue points, genre — without ever touching the playout path.
 
 ---
 
@@ -41,11 +41,11 @@ A track is fully playable the moment it is ingested. Every analysis field defaul
 
 ### `Library` class (`library.py`)
 
-Thread-safe in-memory catalog backed by `{DB_DIR}/library.json`. Protected by a single `threading.RLock`; every public method that touches `_tracks` acquires it.
+Thread-safe in-memory catalog backed by SQLite (`tracks` table in `{DB_DIR}/brain.db` by default; `{DB_DIR}/library.json` when `BRAIN_STORE_BACKEND=json`). Protected by a single `threading.RLock`; every public method that touches `_tracks` acquires it.
 
 #### Startup: `_load()`
 
-Reads `library.json`. The loader is deliberately tolerant:
+At startup, loads all track records from the SQLite `tracks` table (or from `library.json` in JSON fallback mode). The loader is deliberately tolerant:
 
 - Unknown keys in a record are silently dropped (forward-compatibility with future schema fields).
 - Each record is wrapped in its own `try/except`; one corrupt record is skipped without losing the rest.
@@ -61,7 +61,7 @@ Reads `library.json`. The loader is deliberately tolerant:
 - Files missing a title after tag extraction are skipped.
 - **Dedup via `normalize_key(artist, title)`**: case/space/diacritic-insensitive. If the slug already exists in `_tracks`, the duplicate file is silently dropped and the first-seen copy wins.
 - Files that have vanished since the last scan are pruned from `_tracks`.
-- Persists `library.json` on every scan call (write is atomic via `.tmp` + `os.replace`).
+- Persists the catalog on every scan call. SQLite: one transaction deleting vanished keys and upserting survivors. JSON fallback: atomic `.tmp` + `os.replace`.
 
 `_read_tags(path)` tries mutagen first (`easy=True` for normalized tag names). If either artist or title is missing from the tags, it falls back to parsing the filename as `"Artist - Title"`, stripping leading track numbers (e.g. `"01 - "`, `"3. "`) first.
 
@@ -89,7 +89,7 @@ Single daemon thread that runs the analysis backfill without touching the playou
 
 Every `BRAIN_ANALYSIS_INTERVAL_SEC` seconds (default 30 s):
 
-1. **Watch scan** (`_maybe_watch`): stat-only directory walk (no content reads) diffed against `{DB_DIR}/watch_manifest.json`. If the directory changed, triggers `library.scan()` to ingest new files. On an idle (no change) tick, the interval is multiplied by `watch_idle_backoff` (default 2×) up to the base interval ceiling, to reduce disk churn.
+1. **Watch scan** (`_maybe_watch`): stat-only directory walk (no content reads) diffed against the watch manifest (SQLite `watch_manifest` table in `brain.db` by default; `{DB_DIR}/watch_manifest.json` in JSON fallback mode). If the directory changed, triggers `library.scan()` to ingest new files. On an idle (no change) tick, the interval is multiplied by `watch_idle_backoff` (default 2×) up to the base interval ceiling, to reduce disk churn.
 2. **Download throttle** (B2): counts `len(state.downloading())`. If at or above `analysis_max_concurrent_downloads` (default 1), the analysis tick is skipped entirely. Acquisition is upstream of analysis.
 3. **Batch selection**: pulls up to `BRAIN_ANALYSIS_WORKERS` (default 1) tracks whose `schema_version < SCHEMA_VERSION` (the `needs_analysis` gate). The batch is a snapshot taken under the lock; the heavy work runs off the lock.
 4. **Per-track analysis** (`_analyze_one`):
@@ -100,11 +100,11 @@ Every `BRAIN_ANALYSIS_INTERVAL_SEC` seconds (default 30 s):
    - If `enrichment_enabled`, calls `metadata.enrich()` (network — off-lock) and merges the result into the DSP record without clobbering the engine's `provenance` block.
    - Calls `library.set_analysis()` under a brief lock to write the record.
 
-The beat-grid fields (`beat_grid`, `downbeats`) are reserved-empty and excluded from the persisted index (`_ANALYSIS_VOLATILE_FIELDS`) to keep `library.json` small and fast on the hot path.
+The beat-grid fields (`beat_grid`, `downbeats`) are reserved-empty and excluded from the persisted index (`_ANALYSIS_VOLATILE_FIELDS`) to keep the catalog small and fast on the hot path.
 
 #### Watch scan detail
 
-`_stat_scan()` mirrors `Library.scan()`'s dot-dir skip and partial-download sentinel skip, so the manifest only tracks files the library would index. inotify is unreliable on the WSL2 bind mount; the periodic stat scan is the authoritative pick-up mechanism (REQ-AP-007).
+`_stat_scan()` mirrors `Library.scan()`'s dot-dir skip and partial-download sentinel skip, so the manifest only tracks files the library would index. inotify is unreliable on some bind-mounted filesystems; the periodic stat scan is the authoritative pick-up mechanism (REQ-AP-007).
 
 ---
 
@@ -119,7 +119,8 @@ _tracks dict  (key -> Track, in-memory)
      |
      |  Library._save_locked()  (atomic .tmp -> replace)
      v
-{DB_DIR}/library.json   <-- survives restarts
+{DB_DIR}/brain.db (tracks table)   <-- survives restarts (SQLite, default)
+{DB_DIR}/library.json              <-- JSON fallback, or backup
      |
      |  Analyzer._tick() (background, serialized)
      v
@@ -140,7 +141,7 @@ All come from environment variables via `brain/config.py` (`Config` dataclass, f
 | Env var | Default | Effect |
 |---|---|---|
 | `MUSIC_DIR` | `/music` | Root directory for the recursive scan |
-| `DB_DIR` | `/db` | Directory holding `library.json` and `watch_manifest.json` |
+| `DB_DIR` | `/db` | Directory holding `brain.db` (SQLite) and JSON fallback files |
 | `BRAIN_ANALYSIS_ENABLED` | `1` | Master switch for the `Analyzer` background worker |
 | `BRAIN_ANALYSIS_WORKERS` | `1` | Tracks analyzed per tick (bounds RAM/CPU) |
 | `BRAIN_ANALYSIS_INTERVAL_SEC` | `30` | Tick interval in seconds |
@@ -162,12 +163,12 @@ All come from environment variables via `brain/config.py` (`Config` dataclass, f
 ## Gotchas
 
 - **`Track.key` is not a musical key.** It is the dedup slug (`normalize_key(artist, title)`). The musical key lives in `Track.musical_key`. This distinction is flagged throughout the code, but it is easy to confuse.
-- **mtime instability on WSL2.** The `/mnt/f` bind mount can produce unstable mtimes. The `content_sig` cache key therefore relies on `(size, mtime)` rather than a content hash. This means a file that gets the same mtime after a change might not be re-analyzed. The bounded batch and download throttle cap any resulting re-analysis storm but they do not eliminate the ambiguity. The decision is documented as an explicit M1 tradeoff.
+- **mtime instability on some bind-mounted filesystems.** The `content_sig` cache key relies on `(size, mtime)` rather than a content hash. A file that receives the same mtime after a change may not be re-analyzed. The bounded batch and download throttle cap any resulting re-analysis storm but do not eliminate the ambiguity.
 - **beat-grid fields are never persisted.** `beat_grid` and `downbeats` reload as empty lists after a restart. The deferred DJ club render (OPS-004) must re-derive them. Do not store state in these fields across restarts.
 - **`BRAIN_ANALYSIS_TIMEOUT_SEC` is not currently wired as a hard per-file timeout** — it is defined in `Config` but `_analyze_one` does not apply it yet. A runaway decode on a corrupt file can stall the tick until the OS interrupts it.
 - **Dot-directories are fully excluded from scans.** Any directory whose name starts with `.` (e.g. `.talk/`) is pruned from `os.walk`'s directory list and never descends into. Do not drop music files into dot-directories.
-- **Failed-analysis tracks still play.** A track stamped with `analysis_error` has `schema_version = SCHEMA_VERSION` so it is never retried. It plays with zero BPM, empty key, and safe-default cue points. Clear the error by deleting the record from `library.json` and restarting if the underlying file is fixed.
-- **slskd is currently disabled.** `note_source()` records acquisition provenance (e.g. `'slskd'`, `'manual'`), but slskd is OFF by user request (2026-06-22). New tracks enter the library only via manual drop into `MUSIC_DIR` or other configured acquisition paths.
+- **Failed-analysis tracks still play.** A track stamped with `analysis_error` has `schema_version = SCHEMA_VERSION` so it is never retried. It plays with zero BPM, empty key, and safe-default cue points. To force a re-analysis, delete the track row from the catalog (SQLite: delete from the `tracks` table; JSON fallback: remove the record from `library.json`) and restart the brain.
+- **slskd is optional and off by default.** `note_source()` records acquisition provenance (e.g. `'slskd'`, `'manual'`). When slskd is disabled, new tracks enter the library via yt-dlp acquisition or by manually dropping files into `MUSIC_DIR`.
 
 ---
 

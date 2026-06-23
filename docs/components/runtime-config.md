@@ -22,7 +22,7 @@ os.makedirs(music_dir) # /music
 
 construct shared state
   StationState         # in-memory play history + now-playing
-  Library              # music file index (library.json)
+  Library              # music file index (brain.db tracks table, or library.json fallback)
 
 construct subsystems
   Acquirer             # slskd + yt-dlp downloader
@@ -83,11 +83,13 @@ parser; environment variables are the only source.
 
 | Property | Path |
 |---|---|
-| `cfg.library_path` | `{db_dir}/library.json` |
-| `cfg.attempts_path` | `{db_dir}/attempts.json` |
-| `cfg.state_path` | `{db_dir}/state.json` |
-| `cfg.manifest_path` | `{db_dir}/watch_manifest.json` |
-| `cfg.knowledge_db_path` | `{db_dir}/knowledge.db` |
+| `cfg.brain_db_path` | `{db_dir}/brain.db` | SQLite: tracks + attempts + watch_manifest (default) |
+| `cfg.state_db_path` | `{db_dir}/state.db` | SQLite: state (provisioned) |
+| `cfg.events_db_path` | `{db_dir}/events.db` | SQLite: events (provisioned) |
+| `cfg.library_path` | `{db_dir}/library.json` | JSON fallback / backup |
+| `cfg.attempts_path` | `{db_dir}/attempts.json` | JSON fallback / backup |
+| `cfg.manifest_path` | `{db_dir}/watch_manifest.json` | JSON fallback / backup |
+| `cfg.knowledge_db_path` | `{db_dir}/knowledge.db` | Editorial knowledge SQLite (unchanged) |
 | `cfg.talk_clips_dir` | `{music_dir}/.talk` |
 
 `talk_clips_dir` is deliberately a dot-directory under `music_dir` so the library
@@ -119,7 +121,8 @@ These are shared across multiple modules; import from `brain.config`, not locall
 | Env Var | Default | Notes |
 |---|---|---|
 | `MUSIC_DIR` | `/music` | Shared volume with Liquidsoap |
-| `DB_DIR` | `/db` | JSON stores + SQLite knowledge DB |
+| `DB_DIR` | `/db` | Database directory: brain.db, knowledge.db, and JSON fallback files |
+| `BRAIN_STORE_BACKEND` | `sqlite` | Persistence backend: `sqlite` (default, WAL) or `json` (flat-file fallback). Set to `json` to disable SQLite. |
 
 #### HTTP Server
 
@@ -167,7 +170,7 @@ These are shared across multiple modules; import from `brain.config`, not locall
 
 Enrichment never runs on the `/api/next` hot path. New-download enrichment is
 triggered via an on-download hook; backfill runs in the background `EnrichmentWorker`
-only. A per-track `enrich_version` field in `library.json` prevents re-running
+only. A per-track `enrich_version` field in the library catalog prevents re-running
 enrichment on already-processed files.
 
 A pre-run baseline snapshot is written to `data/db/enrich-baseline.json` at
@@ -229,7 +232,7 @@ at song/talk transitions.
 | Env Var | Default | Notes |
 |---|---|---|
 | `BRAIN_WATCH_ENABLED` | `1` | Master switch for the periodic stat-scan |
-| `BRAIN_WATCH_INTERVAL_SEC` | `120` | Scan interval (inotify is unreliable on WSL2 bind mounts) |
+| `BRAIN_WATCH_INTERVAL_SEC` | `120` | Scan interval (inotify is unreliable on some bind-mounted filesystems) |
 | `BRAIN_WATCH_IDLE_BACKOFF` | `2.0` | Multiplier applied to interval when nothing changed |
 
 #### Knowledge Base (KNOWLEDGE-008)
@@ -311,7 +314,7 @@ logs greppable by subsystem (e.g., `grep '"logger":"brain.director"'`).
   variable.
 
 - **Library watch uses stat-scan, not inotify.** The comment in `config.py`
-  explains why: inotify is unreliable on WSL2 bind mounts. `BRAIN_WATCH_INTERVAL_SEC`
+  explains why: inotify is unreliable on some bind-mounted filesystems. `BRAIN_WATCH_INTERVAL_SEC`
   (default 120 s) is the sole detection mechanism.
 
 - **Timezone note.** The brain itself is TZ-agnostic (timestamps logged in UTC via

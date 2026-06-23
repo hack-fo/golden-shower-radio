@@ -26,6 +26,7 @@ declare -A PAGES=(
   [enrichment]=Enrichment
   [knowledge-research]=Knowledge-Research
   [library-ingestion]=Library-Ingestion
+  [persistence]=Persistence
   [playout]=Playout
   [runtime-config]=Runtime-Config
   [voice-talk]=Voice-Talk
@@ -36,13 +37,10 @@ token="$(gh auth token)"
 git clone -q "https://x-access-token:${token}@github.com/${WIKI_URL_PATH}" "$WIKI_DIR"
 
 cp "$PROJECT_DIR/docs/ARCHITECTURE.md" "$WIKI_DIR/Architecture.md"
+cp "$PROJECT_DIR/docs/Home.md" "$WIKI_DIR/Home.md"
 for slug in "${!PAGES[@]}"; do
   cp "$PROJECT_DIR/docs/components/${slug}.md" "$WIKI_DIR/${PAGES[$slug]}.md"
 done
-# Home.md is a hand-curated landing page — only create it if absent (do not clobber).
-if [[ ! -s "$WIKI_DIR/Home.md" ]]; then
-  printf '# Golden Shower Radio — Wiki\n\nSee [[Architecture]] and the per-subsystem pages.\n' > "$WIKI_DIR/Home.md"
-fi
 
 cd "$WIKI_DIR"
 git add -A

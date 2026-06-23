@@ -210,7 +210,7 @@ DB path is `Config.knowledge_db_path` → `{db_dir}/knowledge.db`.
 
 **Last.fm key required**: The Last.fm provider is a no-op with no key. Set `LASTFM_API_KEY` in the brain container env to enable it.
 
-**musicbrainzngs now installed**: Prior to ENRICH-012, `musicbrainzngs` was referenced in comments but never declared in `requirements.txt`, so every MusicBrainz call in `brain/research.py` (and `brain/metadata.py`) silently no-op'd. The package is now a pinned dependency (`musicbrainzngs>=0.7,<1.0`). If you are running an older image, rebuild or `pip install musicbrainzngs` in the container.
+**musicbrainzngs is a required dependency**: `musicbrainzngs>=0.7,<1.0` is a pinned dependency in `requirements.txt`. MusicBrainz calls in `brain/research.py` and `brain/metadata.py` require it to be present.
 
 **Freshness is Faroe-local**: `current_faroe_date()` uses `Atlantic/Faroe` timezone (the brain container runs with `TZ=Atlantic/Faroe`). Freshness cutoffs are evaluated against that local date, not UTC.
 
