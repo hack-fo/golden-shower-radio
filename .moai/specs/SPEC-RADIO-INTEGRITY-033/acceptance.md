@@ -12,7 +12,7 @@ author: charlie
 
 Section A is the 1:1 REQ↔AC checklist (one entry per requirement). Section B holds the detailed
 Given-When-Then scenarios for the load-bearing requirements + the six north-star anti-collapse scenarios
-named in the authoring brief. Parity: 50 REQ + 10 NFR = 60 specified items; 60 acceptance entries.
+named in the authoring brief. Parity: 51 REQ + 10 NFR = 61 specified items; 61 acceptance entries.
 
 ---
 
@@ -34,6 +34,11 @@ named in the authoring brief. Parity: 50 REQ + 10 NFR = 60 specified items; 60 a
 - **AC-IT-005** — Given only AI-generated analysis (tiers 5–6) as input, when the system attempts to
   increase durable certainty, then certainty does not increase; certainty rises only on tier-1/2/3/4
   (real-world / metrics / external / human) evidence.
+- **AC-IT-006** — Given a durable-knowledge write from any surface (HOSTLIFE-032 / PROGRAMMING-007 PL/PV /
+  REFLECT-026 / the audit / any future learning surface), when it is persisted, then it passed through the
+  ONE governance write-path that stamped the integrity record and enforced the cardinal rule + auto-promotion
+  ban + trust gate + source-admission gate; no durable-knowledge write bypasses the chokepoint, and the
+  callers' own tables/loops are not re-owned.
 
 ### Group TT — Source Trust Tiers
 
@@ -337,12 +342,34 @@ authoring brief. Each is the definitive behavioral proof of the SPEC's purpose.
 - **And** the human-seed frozen core (Paste/Pitchfork/KEXP/kvf.fo/dimma.fo) was never evicted by the AI
   (REQ-SU-006).
 
+### B-13 — The frozen K-cap cannot be widened to defeat the cardinal rule (REQ-AL-001 / REQ-IT-004 ruling)
+
+- **Given** K defaults to 2 and is capped at a small ceiling (3), and a self-evolution/refinement proposal
+  attempts to raise K (or the K cap) — e.g. to ∞ — to let AI-only chains escape quarantine,
+- **When** the proposal reaches the governance intake,
+- **Then** it is BLOCKED at intake before any canary and logged (REQ-IT-004 / NFR-IT-2): the K ceiling is in
+  the FROZEN safety zone,
+- **And** K remains within its frozen cap, so an AI-derived belief still must reach a non-AI tier within ≤K
+  hops or be quarantined — the recursive loop can never be widened into existence.
+
+### B-14 — Every durable-knowledge write passes through the single governance chokepoint (REQ-IT-006)
+
+- **Given** durable-knowledge writes originating from HOSTLIFE-032, PROGRAMMING-007 PL/PV, REFLECT-026, and
+  the audit,
+- **When** each write is persisted,
+- **Then** it passed through the ONE governance write-path that stamped the integrity record and enforced the
+  cardinal rule + auto-promotion ban + trust gate + source-admission gate,
+- **And** no surface wrote durable knowledge by a side path that bypassed the chokepoint (the enforcement is
+  uniform and in one deterministic place), while each surface kept its own table/loop (not re-owned).
+
 ---
 
 ## Section C — Definition of Done
 
-- All 50 REQ + 10 NFR have a passing acceptance check (Section A), 1:1.
-- The six north-star scenarios (B-1…B-6) + B-7…B-12 pass as integration tests.
+- All 51 REQ + 10 NFR have a passing acceptance check (Section A), 1:1.
+- The six north-star scenarios (B-1…B-6) + B-7…B-14 pass as integration tests.
+- The K hop-budget is frozen-capped (B-13) and every durable-knowledge write passes through the single
+  governance chokepoint (B-14, REQ-IT-006).
 - The CARDINAL rule (REQ-AL-001) + auto-promotion ban (REQ-KP-002) are enforced deterministically and are
   provably non-evolvable (B-7).
 - The trusted-source roster stays bounded under the roof, earns-its-place, self-prunes, and never evicts the

@@ -1,6 +1,6 @@
 ---
 id: SPEC-RADIO-INTEGRITY-033
-version: 0.1.0
+version: 0.3.0
 status: draft
 created: 2026-06-23
 updated: 2026-06-23
@@ -13,6 +13,16 @@ issue_number: null
 
 ## HISTORY
 
+- 2026-06-23 (v0.3.0): Orchestrator RULINGS applied. (1) D-7 ruled YES and PROMOTED to a [HARD] requirement
+  — REQ-IT-006: ALL durable-knowledge writes (HOSTLIFE-032, PROGRAMMING-007 PL/PV, REFLECT-026, the audit,
+  any future surface) pass through ONE governance write-path (the single deterministic enforcement
+  chokepoint) that stamps the integrity record + enforces the cardinal rule, the auto-promotion ban, the
+  trust gate, and the source-admission gate in one place — the enforcement linchpin (IT grows 5→6). (2) D-1
+  ruled: K defaults to 2, capped at a small ceiling (3), and the K CEILING ITSELF is now in the FROZEN
+  safety zone (REQ-AL-001 / REQ-IT-004 / NFR-IT-2 strengthened) — self-evolution can never raise K to defeat
+  the cardinal rule. (3) D-2..D-6 + D-8 resolved with conservative safety-first defaults (err toward stricter
+  quarantine, smaller confidence steps, more corroboration, tighter source roof — never the permissive
+  option), documented in research.md §3. New totals: 51 REQ + 10 NFR = 61, 1:1 REQ↔AC (IT=6 …).
 - 2026-06-23 (v0.2.0): Added Group SU — SOURCE-ADMISSION GOVERNANCE (7 REQ: SU-001..007 + NFR-IT-10),
   treating a SOURCE as a first-class governed memory subject under the SAME trust/promotion/eviction
   discipline this SPEC already applies to facts. This directly CONSTRAINS OPS-004 REQ-OG-002's
@@ -79,8 +89,8 @@ issue_number: null
   as the precise shape this SPEC prohibits. Two requirements are declared FROZEN / NON-EVOLVABLE safety
   invariants that no self-learning or evolution mechanism may ever weaken: the anti-loop CARDINAL rule
   (REQ-AL-001) and the auto-promotion ban (REQ-KP-002). The DEMOTE/PROMOTE ASYMMETRY — AI self-critique may
-  only DEMOTE/flag, only NON-AI reality may PROMOTE — is the linchpin (REQ-KV-005). Total at v0.2.0: 50 REQ
-  + 10 NFR = 60, 1:1 REQ↔AC (IT=5, TT=5, KP=6, CN=5, MA=6, AL=4, KV=5, MT=3, FM=4, SU=7).
+  only DEMOTE/flag, only NON-AI reality may PROMOTE — is the linchpin (REQ-KV-005). Total at v0.3.0: 51 REQ
+  + 10 NFR = 61, 1:1 REQ↔AC (IT=6, TT=5, KP=6, CN=5, MA=6, AL=4, KV=5, MT=3, FM=4, SU=7).
 
 ---
 
@@ -209,7 +219,8 @@ OWNS:
 - **Group IT — Integrity Core / Anti-Slop Architecture.** The required per-memory record (source
   attribution + timestamp + confidence + evidence_refs + revision history + epistemic_status +
   trust_tier); the epistemic-status taxonomy + state machine; the auto-promotion ban as a cross-cutting
-  invariant; the deterministic-first posture; the FROZEN-invariant declaration.
+  invariant; the SINGLE governance write-path (the one deterministic enforcement chokepoint all durable
+  writes pass through); the deterministic-first posture; the FROZEN-invariant declaration.
 - **Group TT — Source Trust Tiers.** The six-tier scale; the per-source tier assignment captured at
   write time; the tier-gated promotion threshold; the Tier-6 ceiling; tier downgrade-on-derivation.
 - **Group KP — Knowledge Promotion Pipeline.** The Observation→Hypothesis→Validation→Verified-Knowledge
@@ -559,14 +570,16 @@ never re-derived is the rail.
 
 #### REQ-IT-004 — The anti-loop CARDINAL rule + the auto-promotion ban are FROZEN, non-evolvable invariants (Unwanted) [HARD] [LOAD-BEARING] [FROZEN]
 
-The system SHALL treat the anti-loop CARDINAL rule (REQ-AL-001) and the auto-promotion ban (REQ-KP-002) as
-FROZEN, NON-EVOLVABLE safety invariants, and SHALL NOT permit any self-learning, refinement, or evolution
-mechanism (PROGRAMMING-007 REQ-PV-011 bounded refinement, REFLECT-026 evolution, the audit's own actions)
-to weaken, bypass, disable, or reclassify them. [HARD] [LOAD-BEARING] [FROZEN] Modeled on the
-design-constitution FROZEN zone + per-persona Frozen Guard (PROGRAMMING-007 REQ-PI-003): a proposal that
-targets a frozen invariant is BLOCKED AT INTAKE, before any canary, and logged. If these two rules could be
-self-edited, the entire anti-poisoning architecture would be one bad LLM proposal away from collapse. That
-the CARDINAL rule + the auto-promotion ban are frozen and non-evolvable is the rail (restated as NFR-IT-2).
+The system SHALL treat the anti-loop CARDINAL rule (REQ-AL-001) — INCLUDING its K hop-budget CEILING — and
+the auto-promotion ban (REQ-KP-002) as FROZEN, NON-EVOLVABLE safety invariants, and SHALL NOT permit any
+self-learning, refinement, or evolution mechanism (PROGRAMMING-007 REQ-PV-011 bounded refinement,
+REFLECT-026 evolution, the audit's own actions) to weaken, bypass, disable, reclassify them, or RAISE K /
+the K cap to defeat the cardinal rule. [HARD] [LOAD-BEARING] [FROZEN] Modeled on the design-constitution
+FROZEN zone + per-persona Frozen Guard (PROGRAMMING-007 REQ-PI-003): a proposal that targets a frozen
+invariant — or that tries to widen K beyond its frozen cap — is BLOCKED AT INTAKE, before any canary, and
+logged. If these rules (or the K ceiling) could be self-edited, the entire anti-poisoning architecture would
+be one bad LLM proposal away from collapse. That the CARDINAL rule (with its frozen K ceiling) + the
+auto-promotion ban are frozen and non-evolvable is the rail (restated as NFR-IT-2).
 
 **Acceptance criteria:** see acceptance.md AC-IT-004.
 
@@ -582,6 +595,23 @@ world. That the system stays grounded in external evidence and AI analysis is ab
 rail.
 
 **Acceptance criteria:** see acceptance.md AC-IT-005.
+
+#### REQ-IT-006 — ALL durable-knowledge writes pass through ONE governance write-path (the single enforcement chokepoint) (Ubiquitous) [HARD] [LOAD-BEARING]
+
+The system SHALL route EVERY durable-knowledge write — from HOSTLIFE-032 (news lived-experience),
+PROGRAMMING-007 Group PL/PV (taste / refinement), REFLECT-026 (hypotheses / self-model), the audit's own
+actions, and any future learning surface — through ONE governance WRITE-PATH (a single chokepoint), so that
+the integrity record (REQ-IT-001) is STAMPED and the CARDINAL rule (REQ-AL-001), the auto-promotion ban
+(REQ-KP-002), the trust-tier gate (REQ-TT-003), and the source-admission gate (Group SU) are ENFORCED in ONE
+deterministic place, not scattered across each caller. [HARD] [LOAD-BEARING] A single seam is the
+enforcement linchpin: if each learning surface wrote durable memory its own way, the anti-poisoning
+invariants would be enforced N times inconsistently and one forgetful caller would be a hole in the
+architecture. The chokepoint makes the governance UNIFORM and AUDITABLE — every durable belief the station
+holds went through the same gate. This does NOT re-own any caller's table or loop (NFR-IT-5): the callers
+keep their stores; they just write THROUGH the governance seam. That all durable-knowledge writes pass
+through one governance write-path (the single deterministic enforcement chokepoint) is the rail.
+
+**Acceptance criteria:** see acceptance.md AC-IT-006.
 
 ### Group TT — Source Trust Tiers
 
@@ -866,9 +896,14 @@ unverifiable, and a quarantined memory SHALL NEVER be promoted and SHALL NEVER s
 other memory. [HARD] [LOAD-BEARING] [FROZEN] **AI output is never its own evidence.** This single rule
 breaks the recursive AI-analyzes-AI-analyzes-AI contamination loop at its root: every durable AI-derived
 belief must, within a bounded number of hops, rest on something real (an observation, a metric, an external
-fact, a human note) — or it is trapped and inert. It is a FROZEN, non-evolvable invariant (REQ-IT-004); K is
-tunable config but the rule is fixed. That an AI-only evidence chain is quarantined and never usable as
-evidence is THE rail of this SPEC.
+fact, a human note) — or it is trapped and inert. It is a FROZEN, non-evolvable invariant (REQ-IT-004). [HARD]
+[FROZEN] K DEFAULTS to **2** (an AI claim must reach a non-AI source within 2 hops or quarantine) and is
+TUNABLE but CAPPED at a small ceiling (default cap **3**); [LOAD-BEARING] the K CEILING itself lives in the
+FROZEN safety zone — no self-learning or evolution mechanism may raise K (or the cap) to defeat the rule, so
+the loop can never be widened into existence. Smaller K is STRICTER (fewer hops of AI-derivation tolerated
+before a real anchor is required); the conservative default is the small, capped, frozen value. That an
+AI-only evidence chain is quarantined and never usable as evidence — with K small, capped, and the cap
+itself frozen — is THE rail of this SPEC.
 
 **Acceptance criteria:** see acceptance.md AC-AL-001.
 
@@ -1184,8 +1219,10 @@ provenance + a running accuracy/novelty score is the rail.
 [HARD] INTEGRITY-033 provisions no external account or hardware. The following are flagged as tunable
 config / decisions:
 
-- **K (the anti-loop hop budget).** REQ-AL-001's "≤K hops to a non-AI tier" — the operator may tune K (a
-  small K is stricter). The RULE is frozen; K is config (D-1).
+- **K (the anti-loop hop budget).** REQ-AL-001's "≤K hops to a non-AI tier" — default **K = 2**, tunable
+  but CAPPED at a small ceiling (cap 3); a small K is stricter. The RULE and the K CEILING are FROZEN (a
+  self-evolution proposal cannot widen K past the cap); only the value within the cap is operator-tunable
+  (D-1, resolved).
 - **N + the fractional AI corroboration weight.** REQ-TT-003's "N independent corroborations" + the
   fractional weight AI tiers carry — tunable, with the constraint that AI weight is always strictly less
   than a real source's and Tier-6 is always zero toward verified-knowledge (D-2).
@@ -1212,10 +1249,11 @@ acceptance.md AC-NFR-IT-1.
 
 ### NFR-IT-2 — The CARDINAL rule + auto-promotion ban are FROZEN / non-evolvable (Ubiquitous) — Priority High [LOAD-BEARING] [FROZEN]
 No code path, self-learning mechanism, refinement loop, or evolution proposal shall weaken, bypass, disable,
-or reclassify the anti-loop CARDINAL rule (REQ-AL-001) or the auto-promotion ban (REQ-KP-002); a proposal
-targeting either is blocked at intake before any canary and logged (modeled on the design-constitution
-FROZEN zone + per-persona Frozen Guard). This is the load-bearing safety invariant of the SPEC. See
-acceptance.md AC-NFR-IT-2.
+reclassify, or RAISE K / the K CEILING of the anti-loop CARDINAL rule (REQ-AL-001), nor weaken the
+auto-promotion ban (REQ-KP-002); a proposal targeting either — or attempting to widen K beyond its frozen
+cap — is blocked at intake before any canary and logged (modeled on the design-constitution FROZEN zone +
+per-persona Frozen Guard). This is the load-bearing safety invariant of the SPEC. See acceptance.md
+AC-NFR-IT-2.
 
 ### NFR-IT-3 — Deterministic-first / quota-aware (Ubiquitous) — Priority High
 The governance shall be deterministic-first: the LLM is used for analysis but its output is always
@@ -1332,39 +1370,49 @@ AC-NFR-IT-10.
 
 ---
 
-## 10. Design Decisions Needing the Orchestrator's Ruling
+## 10. Design Decisions (RESOLVED by the orchestrator)
 
-These are surfaced (not silently assumed) for an explicit ruling before/within the Run phase:
+All surfaced decisions were RULED by the orchestrator (2026-06-23) with safety-first / conservative defaults
+— when in doubt the FROZEN-safety principle wins (err toward stricter quarantine, smaller confidence steps,
+more corroboration, never the permissive option). The rulings are recorded here and in research.md §3:
 
-- **D-1 — K (anti-loop hop budget) default (decides REQ-AL-001 config).** RECOMMENDATION: a small K (e.g. K
-  = 2–3) — an AI-derived belief must reach a non-AI source within a couple of hops or quarantine. Confirm
-  the default.
-- **D-2 — N + fractional AI corroboration weight (decides REQ-TT-003).** RECOMMENDATION: require ≥2
-  independent DISTINCT-source corroborations for tier-4/5 promotion; AI tiers count at a small fraction
-  (e.g. tier-5 = 0.25 of a real corroboration, tier-6 = 0) so AI can never reach the threshold alone.
-  Confirm N + the weights.
-- **D-3 — Confidence functions (decides REQ-CN-003/004).** RECOMMENDATION: an annealed schedule (diminishing
-  step), per-tier ceilings (AI tiers capped below the verified-knowledge threshold), and a decay half-life
-  per epistemic class (taste inferences decay faster than external facts). Confirm the shapes/defaults.
-- **D-4 — Audit + self-challenge cadence (decides REQ-MA-001 / REQ-KV-002).** RECOMMENDATION: host the audit
-  + self-challenge on REFLECT-026's existing RF reflection cadence (no new loop), bounded-compute,
-  quota-aware. Confirm the host + period.
-- **D-5 — Governance feature-flag + safe-degradation default (decides REQ-MT-003 / NFR-IT-9).**
-  RECOMMENDATION: a `BRAIN_INTEGRITY_*` flag, default ON, with the conservative fail-safe (no auto-promotion
-  when disabled). Confirm the flag name + default.
-- **D-6 — Contradiction-detector scope (decides REQ-MA-002).** RECOMMENDATION: ship the deterministic
-  fact-token contradiction detector first (year/label/date disagreements), defer any semantic-similarity leg
-  to MEMORY-031's optional vector seam. Confirm v1 scope.
-- **D-7 — The integration seam with REFLECT-026 + PROGRAMMING-007 PL/PV (decides NFR-IT-5 wiring).**
-  RECOMMENDATION: durable writes from REFLECT hypotheses + PL taste conclusions + PV refinements pass through
-  ONE governance write-path that stamps the integrity record + enforces the gates; the siblings keep their
-  tables/loops. Confirm the single-write-path shape at Run phase.
-- **D-8 — Source roof defaults + the frozen-core set + the SU↔OPS-004 admission seam (decides Group SU
-  config + wiring).** RECOMMENDATION: a small per-lane roof (e.g. 5–8 active trusted sources per
-  lane/tier), K≈3 corroborated observations to promote, and a config-declared frozen core (Paste /
-  Pitchfork / KEXP / kvf.fo / dimma.fo + the human-seeded press list); OPS-004 REQ-OG-002's discovery loop
-  writes candidates through the SU admission gate (probation → earn-your-place → roof/tournament). Confirm
-  the roof default, the frozen-core set, and the admission-gate wiring at Run phase.
+- **D-1 — K (anti-loop hop budget) — RESOLVED.** K DEFAULTS to **2** (an AI claim must reach a non-AI source
+  within 2 hops or quarantine); TUNABLE but CAPPED at a small ceiling (cap **3**), and the K CEILING ITSELF
+  is in the FROZEN safety zone so self-evolution can never raise K to defeat the cardinal rule
+  (REQ-AL-001 / REQ-IT-004 / NFR-IT-2). Smaller-is-stricter; the conservative small-capped-frozen value is
+  the default. Rationale: a wide K would let several hops of AI-derivation accumulate before a real anchor
+  is required, re-opening the recursive loop — so K is kept tight and un-widenable.
+- **D-2 — N + fractional AI corroboration weight — RESOLVED (conservative).** Promotion requires ≥2
+  independent DISTINCT-source corroborations; AI tiers count only FRACTIONALLY toward sub-verified
+  transitions (tier-5 ≤ 0.25 of a real corroboration) and ZERO toward verified-knowledge, and tier-6 is
+  zero everywhere (REQ-TT-003/004). Err stricter: AI can never reach a promotion threshold alone.
+- **D-3 — Confidence functions — RESOLVED (conservative).** Annealed (diminishing) steps; per-tier ceilings
+  with AI tiers capped WELL BELOW the verified-knowledge threshold; decay half-life SHORT for AI-tier / taste
+  inferences and longer for externally-grounded facts (REQ-CN-003/004). Err toward smaller steps, lower
+  ceilings, faster decay of low-tier memories.
+- **D-4 — Audit + self-challenge cadence — RESOLVED.** Hosted on REFLECT-026's existing RF reflection cadence
+  (no new loop), bounded-compute, quota-aware; re-validation intervals set short enough that staleness
+  surfaces promptly (err toward re-checking more often) (REQ-MA-001 / REQ-KV-002).
+- **D-5 — Governance feature-flag + safe-degradation default — RESOLVED.** Flag `BRAIN_INTEGRITY_*`, default
+  ON; disabled/failing → conservative fail-safe (no auto-promotion; hypothesis writes only; stream
+  unaffected) — the fail-safe direction is always trust-LESS (REQ-MT-003 / NFR-IT-9).
+- **D-6 — Contradiction-detector scope — RESOLVED (conservative).** Ship the DETERMINISTIC fact-token
+  contradiction detector first (year/label/date disagreements); when two memories MIGHT contradict, FLAG for
+  the audit rather than ignore (err toward flagging); defer any semantic-similarity leg to MEMORY-031's
+  optional, off-by-default vector seam (REQ-MA-002).
+- **D-7 — The single governance write-path seam — RESOLVED → made a [HARD] requirement (REQ-IT-006).** ALL
+  durable-knowledge writes (HOSTLIFE-032, PROGRAMMING-007 PL/PV, REFLECT-026, the audit, any future surface)
+  pass through ONE governance chokepoint that stamps the integrity record + enforces the cardinal rule, the
+  auto-promotion ban, the trust gate, and the source-admission gate in ONE deterministic place. This single
+  seam is the enforcement linchpin (it is no longer a deferred decision — it is REQ-IT-006). The callers keep
+  their tables/loops (NFR-IT-5); they write THROUGH the seam.
+- **D-8 — Source roof defaults + the frozen-core set + the SU↔OPS-004 admission seam — RESOLVED
+  (conservative).** A SMALL per-lane roof (5–8 active trusted sources per lane/tier — err toward fewer);
+  K_source ≈ 3 corroborated observations to promote a discovered source; a config-declared frozen core
+  (Paste / Pitchfork / KEXP / kvf.fo / dimma.fo + the human-seeded press list); OPS-004 REQ-OG-002's
+  discovery loop writes candidates THROUGH the Group SU admission gate (probation → earn-your-place →
+  roof/tournament), which is itself part of the single governance write-path (REQ-IT-006). Err toward a
+  tighter roof and more corroboration before a source is trusted.
 
 ---
 
@@ -1434,6 +1482,7 @@ acceptance.md Section B).
 | REQ-IT-003 | Integrity Core / Anti-Slop | High | Ubiquitous | AC-IT-003 |
 | REQ-IT-004 | Integrity Core / Anti-Slop | High | Unwanted | AC-IT-004 |
 | REQ-IT-005 | Integrity Core / Anti-Slop | High | Ubiquitous | AC-IT-005 |
+| REQ-IT-006 | Integrity Core / Anti-Slop | High | Ubiquitous | AC-IT-006 |
 | REQ-TT-001 | Source Trust Tiers | High | Ubiquitous | AC-TT-001 |
 | REQ-TT-002 | Source Trust Tiers | High | Ubiquitous | AC-TT-002 |
 | REQ-TT-003 | Source Trust Tiers | High | Ubiquitous | AC-TT-003 |
@@ -1490,10 +1539,10 @@ acceptance.md Section B).
 | NFR-IT-9 | Non-Functional | Medium | Ubiquitous | AC-NFR-IT-9 |
 | NFR-IT-10 | Non-Functional | High | Ubiquitous | AC-NFR-IT-10 |
 
-Parity: 50 REQ + 10 NFR = 60 specified items; 60 acceptance entries (50 AC + 10 AC-NFR); 1:1 REQ↔AC.
+Parity: 51 REQ + 10 NFR = 61 specified items; 61 acceptance entries (51 AC + 10 AC-NFR); 1:1 REQ↔AC.
 
-REQ-group prefixes + counts: IT (Integrity Core / Anti-Slop) = 5, TT (Source Trust Tiers) = 5, KP
+REQ-group prefixes + counts: IT (Integrity Core / Anti-Slop) = 6, TT (Source Trust Tiers) = 5, KP
 (Knowledge Promotion) = 6, CN (Confidence Scoring) = 5, MA (Memory Auditing) = 6, AL (AI-Loop Prevention)
 = 4, KV (Knowledge Validation) = 5, MT (Long-Term Maintenance) = 3, FM (Failure Modes) = 4, SU
-(Source-Admission Governance) = 7 → 5+5+6+5+6+4+5+3+4+7 = 50 REQ across 10 groups. NFR-IT-1…10 = 10 NFR.
-Total = 50 + 10 = 60 specified items, 60 acceptance entries, 1:1 REQ↔AC.
+(Source-Admission Governance) = 7 → 6+5+6+5+6+4+5+3+4+7 = 51 REQ across 10 groups. NFR-IT-1…10 = 10 NFR.
+Total = 51 + 10 = 61 specified items, 61 acceptance entries, 1:1 REQ↔AC.

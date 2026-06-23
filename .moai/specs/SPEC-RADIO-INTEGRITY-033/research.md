@@ -101,12 +101,43 @@ remapped:
 | KV (knowledge validation) | free | — | KEPT |
 | LM (long-term maintenance) | **TAKEN** | LOOKUPLOG-023 | remapped → **MT** (Maintenance/long-Term; LT also taken by LONGFORM-025, LG also taken by LOOKUPLOG-023) |
 | FM (failure modes) | free | — | KEPT |
+| SA (source admission, brief's name) | **TAKEN** | STATS-013 | remapped → **SU** (SoUrce admission; verified free) |
 
 NFR namespace: `NFR-I-*` is IMAGING-010's, so the two-letter **`NFR-IT-*`** form is used throughout (verified
 free).
 
-Final groups (all verified collision-free): IT=5, TT=5, KP=6, CN=5, MA=6, AL=4, KV=4, MT=3, FM=3 → 41 REQ;
-NFR-IT-1…9 = 9. Total 50, 1:1 REQ↔AC.
+Final groups at v0.3.0 (all verified collision-free): IT=6, TT=5, KP=6, CN=5, MA=6, AL=4, KV=5, MT=3, FM=4,
+SU=7 → 51 REQ; NFR-IT-1…10 = 10. Total 61, 1:1 REQ↔AC. (Evolution: v0.1.0 41/50 → +KV-005/FM-004 = 43/52 →
++Group SU = 50/60 → +REQ-IT-006 single write-path = 51/61.)
+
+### Orchestrator rulings (2026-06-23) — recorded for review
+
+All surfaced decisions were RULED safety-first (when in doubt the FROZEN-safety principle wins):
+
+- **D-1 (K hop-budget) — K=2 default, capped at 3, and the K CEILING is FROZEN.** Rationale: a wide K lets
+  several hops of AI-derivation accumulate before a real anchor is required, re-opening the recursive loop;
+  so K is kept tight AND un-widenable (a self-evolution proposal cannot raise K past the cap). Strengthened
+  REQ-AL-001 + REQ-IT-004 + NFR-IT-2 + the Section 7 K-config note. Smaller-is-stricter.
+- **D-2 (N + fractional AI weight) — conservative:** ≥2 independent distinct-source corroborations;
+  tier-5 ≤ 0.25 toward sub-verified transitions and ZERO toward verified-knowledge; tier-6 = 0 everywhere.
+  AI can never reach a promotion threshold alone.
+- **D-3 (confidence functions) — conservative:** annealed/diminishing steps; AI tiers capped well below the
+  verified-knowledge threshold; short decay half-life for AI-tier/taste, longer for externally-grounded
+  facts.
+- **D-4 (audit + self-challenge cadence) — on REFLECT-026's RF cadence**, bounded-compute/quota-aware, with
+  short re-validation intervals (err toward re-checking more often).
+- **D-5 (governance flag) — `BRAIN_INTEGRITY_*`, default ON;** disabled/failing → trust-LESS fail-safe (no
+  auto-promotion; hypothesis writes only; stream unaffected).
+- **D-6 (contradiction detector) — deterministic fact-token first; flag-on-uncertainty** (when two memories
+  MIGHT contradict, flag for the audit rather than ignore); semantic leg deferred to MEMORY-031's optional
+  vector seam.
+- **D-7 (single governance write-path) — YES, promoted to [HARD] REQ-IT-006.** ALL durable-knowledge writes
+  pass through ONE deterministic enforcement chokepoint (stamps the integrity record + enforces cardinal
+  rule + auto-promotion ban + trust gate + source-admission gate). The enforcement linchpin; callers keep
+  their tables/loops (NFR-IT-5), they write THROUGH the seam.
+- **D-8 (source roof / frozen core / SU↔OPS-004 seam) — conservative:** small per-lane roof (5–8), K_source≈3
+  to promote, config-declared frozen core (Paste/Pitchfork/KEXP/kvf.fo/dimma.fo + human-seeded press); the
+  OPS-004 REQ-OG-002 discovery loop writes candidates THROUGH the SU gate (part of REQ-IT-006).
 
 ## 4. The anti-collapse mechanism, end-to-end
 
@@ -142,14 +173,41 @@ anti-contamination machinery does not itself depend on the contaminating compone
   MEMORY-031's optional vector seam.
 - D-7 the single governance write-path seam with REFLECT-026 + PROGRAMMING-007 PL/PV — RECOMMEND one
   write-path stamps the integrity record + enforces gates; siblings keep their tables/loops.
+- D-8 source roof defaults + frozen-core set + the SU↔OPS-004 admission seam — RECOMMEND a small per-lane
+  roof (5–8), K≈3 to promote, a config-declared frozen core (Paste/Pitchfork/KEXP/kvf.fo/dimma.fo + the
+  human-seeded press list), and OPS-004 REQ-OG-002's discovery loop writing candidates through the SU gate.
+
+## v0.2.0 addition — Group SU (Source-Admission Governance)
+
+The v0.2.0 pass treats a SOURCE as a first-class governed memory subject, applying the EXISTING discipline
+(no new machinery): the trust-tier model (TT), the promotion pipeline (KP), confidence decay (CN-004), and
+provenance-at-decision (IT-003) specialized to "the source" as subject. It directly CONSTRAINS OPS-004
+REQ-OG-002 ("the AI continuously discover[s], evaluate[s], and maintain[s] its OWN list of trusted news
+sources, evolving it over time with no human input") so "AI-evolved" = BOUNDED CURATION UNDER SELECTION
+PRESSURE, not append-on-discovery. Seven mechanics: SU-001 hard roof + replacement tournament; SU-002
+earn-your-place (accuracy + non-duplicate value + spam filter = the KP pipeline on a source); SU-003
+no-value/redundancy rejection (the CN-002/AL-002 "repetition ≠ corroboration" rule on sources — N echoes are
+not N sources); SU-004 tier inheritance (start CROWD, never self-assign REPUTABLE-PRESS/AUTHORITATIVE — a
+discovered blog is not Pitchfork); SU-005 decay + eviction (the roster self-prunes); SU-006 human-seed
+FROZEN CORE (unevictable spine, mirrors the FROZEN-zone discipline); SU-007 auditable why-admitted
+provenance + running accuracy/novelty score (deterministic tournament, not LLM opinion). + NFR-IT-10
+(roster integrity). The lane/tier structure is KNOWLEDGE-008's reliability ranking (REQ-KS-009:
+AUTHORITATIVE-STRUCTURED > REPUTABLE-PRESS > EDITORIAL-BLOG > CROWD); the frozen-core Faroe seeds are
+ORCH-005's kvf.fo/dimma.fo. SU GOVERNS, does not re-own, OPS-004 REQ-OG-002 / ORCH-005 (the source-list +
+news discovery + aggregation). Prefix SU verified collision-free (SA is STATS-013's, so the brief's
+suggested SA → SU). North-star = acceptance B-12 (bounded roster + duplicate never reaches trusted after a
+long run). New totals: 50 REQ + 10 NFR = 60.
 
 ## 6. Sources
 
 - SPEC-RADIO-MEMORY-031 spec.md (storage substrate; REQ-MF-004 / REQ-MK-003 provenance+timestamp seam).
+- SPEC-RADIO-OPS-004 spec.md (REQ-OG-002 the AI-evolved trusted source list — the Group SU consumer).
+- SPEC-RADIO-ORCH-005 spec.md (Faroe trusted seeds kvf.fo / dimma.fo for the SU frozen core).
+- SPEC-RADIO-KNOWLEDGE-008 spec.md (REQ-KS-009 reliability tiers = the SU lane/tier structure; REQ-KS-006
+  airable-fact seam + freshness/consensus precedent).
 - SPEC-RADIO-REFLECT-026 spec.md (hypotheses table / RF cadence / RH discipline).
 - SPEC-RADIO-PROGRAMMING-007 spec.md (PL taste loop, PV REQ-PV-011 bounded refinement + FROZEN-invariant
   pattern, PI-003 Frozen Guard, PG grounding).
-- SPEC-RADIO-KNOWLEDGE-008 spec.md (REQ-KS-006 airable-fact seam + freshness/consensus precedent).
 - SPEC-RADIO-SELFHEAL-030 spec.md (deterministic-first + canary pattern).
 - SPEC-RADIO-DATASTORE-022 spec.md (SQLite substrate).
 - .claude/rules/moai/design/constitution.md §5 (Layer-2 canary) + §6 (observation→heuristic→rule
