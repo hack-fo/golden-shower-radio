@@ -208,23 +208,75 @@ def _build_prompt(batch_size: int, recent: List[str], seed_reference: List[str])
     return "\n".join(parts)
 
 
+def _persona_curation_overlay(persona) -> tuple:
+    """Build the (system_prompt, extra_prompt_lines) that bias curation toward an ACTIVE
+    persona's taste charter (SPEC-RADIO-PROGRAMMING-007 Group PR, REQ-PR-006/PR-014).
+
+    Returns ``(PERSONA, [])`` (the byte-identical house default) when ``persona`` is None or
+    carries no usable charter, so the single-default-persona path is unchanged. When an active
+    persona is supplied, the curator prompt is specialized to its charter (primary territory,
+    in/out genres, eras, moods, signature artists) so it draws a DISTINCT candidate pool —
+    while still inheriting the house ethos."""
+    if persona is None:
+        return PERSONA, []
+    ch = getattr(persona, "charter", None)
+    name = str(getattr(persona, "display_name", "") or "").strip()
+    primary = str(getattr(ch, "primary_territory", "") or "").strip() if ch else ""
+    if not name and not primary:
+        return PERSONA, []
+    sys_prompt = (
+        PERSONA + " For this show you ARE the curator-persona "
+        f"\"{name}\"" + (f", whose primary territory is {primary}." if primary else ".") +
+        " Pick tracks that fit THIS persona's distinct taste, not a generic average."
+    )
+    lines: List[str] = []
+    if ch is not None:
+        in_g = ", ".join([g for g in (getattr(ch, "in_genres", []) or [])][:8])
+        out_g = ", ".join([g for g in (getattr(ch, "out_genres", []) or [])][:8])
+        eras = ", ".join([e for e in (getattr(ch, "in_eras", []) or [])][:6])
+        moods = ", ".join([m for m in (getattr(ch, "moods", []) or [])][:6])
+        arts = ", ".join([a for a in (getattr(ch, "signature_artists", []) or [])][:8])
+        if primary:
+            lines.append(f"Your primary territory (lead with it): {primary}.")
+        if in_g:
+            lines.append(f"In-bounds genres: {in_g}.")
+        if out_g:
+            lines.append(f"Out-of-bounds (avoid): {out_g}.")
+        if eras:
+            lines.append(f"Favoured eras: {eras}.")
+        if moods:
+            lines.append(f"Moods: {moods}.")
+        if arts:
+            lines.append(f"Signature artists/labels to echo (not copy): {arts}.")
+    return sys_prompt, lines
+
+
 def curate_batch(
     model: str,
     batch_size: int = 25,
     recent: Optional[List[str]] = None,
     seed_reference: Optional[List[str]] = None,
+    persona=None,
 ) -> List[Dict[str, str]]:
     """Return a batch of {artist, title} dicts. NEVER raises; always returns >=1.
 
     On any SDK error / quota / rate-limit / empty parse, falls back to the built-in
     seed list (shuffled) so the station keeps running.
+
+    ``persona`` (SPEC-RADIO-PROGRAMMING-007 Group PR) is OPTIONAL and DEFAULTS to None. When
+    None the curation is BYTE-IDENTICAL to before this SPEC (the house curator PERSONA). When
+    an active persona is supplied (opt-in multi-persona), curation is biased toward its taste
+    charter so it draws a distinct candidate pool (REQ-PR-014).
     """
     recent = recent or []
     seed_reference = seed_reference or []
     prompt = _build_prompt(batch_size, recent, seed_reference)
+    system_prompt, persona_lines = _persona_curation_overlay(persona)
+    if persona_lines:
+        prompt = prompt + "\n" + "\n".join(persona_lines)
 
     try:
-        text = asyncio.run(_query_text(prompt, model))
+        text = asyncio.run(_query_text(prompt, model, system_prompt=system_prompt))
         tracks = _extract_tracks(text)
         if tracks:
             log_event(log, "llm.curated", count=len(tracks), model=model)
@@ -404,16 +456,45 @@ def _clean_talk_text(text: str) -> str:
     return t
 
 
-def generate_talk_script(model: str, context: Dict) -> str:
+def _persona_host_prompt(persona) -> str:
+    """The on-air HOST system prompt, optionally specialized to an ACTIVE persona's POV +
+    identity (SPEC-RADIO-PROGRAMMING-007 Group PR, REQ-PR-005/PR-014).
+
+    Returns the byte-identical house HOST_PERSONA when ``persona`` is None or carries no POV,
+    so the single-default-persona talk path is unchanged. With an active persona the host
+    speaks as that named, persistent person (its POV seed) while keeping the house voice
+    rules (short, natural, no slop)."""
+    if persona is None:
+        return HOST_PERSONA
+    name = str(getattr(persona, "display_name", "") or "").strip()
+    pov = str(getattr(persona, "pov_seed", "") or "").strip()
+    if not name and not pov:
+        return HOST_PERSONA
+    extra = " You are the host persona"
+    if name:
+        extra += f" \"{name}\""
+    extra += "."
+    if pov:
+        extra += f" Your persistent point of view: {pov}"
+    extra += " Stay consistently this same returning person."
+    return HOST_PERSONA + extra
+
+
+def generate_talk_script(model: str, context: Dict, persona=None) -> str:
     """Generate a SHORT host talk link for the given context. NEVER raises.
 
     Returns the clean spoken text, or "" on any SDK error / quota / empty parse so the
     caller can skip the talk break and just play the next song. Cheap by design: same
     tools-off, one-turn, subscription-auth config as curation, with a HOST system prompt.
+
+    ``persona`` (SPEC-RADIO-PROGRAMMING-007 Group PR) is OPTIONAL and DEFAULTS to None. When
+    None the talk is BYTE-IDENTICAL to before this SPEC (the house HOST_PERSONA). When an
+    active persona is supplied the host speaks as that named, persistent person (REQ-PR-014).
     """
     prompt = _build_talk_prompt(context)
+    system_prompt = _persona_host_prompt(persona)
     try:
-        text = asyncio.run(_query_text(prompt, model, system_prompt=HOST_PERSONA))
+        text = asyncio.run(_query_text(prompt, model, system_prompt=system_prompt))
         spoken = _clean_talk_text(text)
         if spoken:
             log_event(log, "llm.talk_script", model=model, chars=len(spoken))

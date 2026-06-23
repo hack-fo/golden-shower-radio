@@ -724,6 +724,105 @@ class EventsStore:
 
 
 # --------------------------------------------------------------------------- #
+# brain.db — personas (SPEC-RADIO-PROGRAMMING-007 Group PR / REQ-PR-012)
+# --------------------------------------------------------------------------- #
+
+
+class PersonaStore:
+    """``personas`` table in ``brain.db`` — the durable, first-class persona-entity store.
+
+    SPEC-RADIO-PROGRAMMING-007 Group PR (REQ-PR-012): the system-owned, runtime-extensible
+    persona model. A validated persona (manual OR authored) is persisted here so it is
+    DURABLE ACROSS RESTARTS and reloaded into the roster — INDISTINGUISHABLE IN KIND from an
+    authored persona. Lives in ``brain.db`` (operational, low-churn) and SHARES that file's
+    one connection + WAL write lock (REQ-DP-003), so it never opens a competing connection.
+
+    Each persona is one row keyed by its ``id`` (PRIMARY KEY -> idempotent upsert). The full
+    serialized entity (charter, POV, anchors, gender/age, ...) is a JSON blob in ``data``; a
+    couple of hot columns (``voice``, ``enabled``) are PROMOTED for quick 1:1-firewall +
+    roster queries. Tolerant load (REQ-DC-002 pattern): a corrupt / id-less row is skipped,
+    never aborting the whole load.
+
+    FORWARD-CASCADE (REQ-PR-016): this store also exposes ``purge_persona(persona_id)`` so a
+    full persona RESET deletes the entity row itself through the SAME cascade convention every
+    future per-persona table honors ("delete everything WHERE persona_id = X").
+    """
+
+    def __init__(self, db_path: str):
+        self.handle = _conn_for(db_path)
+        _ensure_meta(self.handle)
+        with self.handle.lock:
+            self.handle.conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS personas (
+                    id       TEXT PRIMARY KEY,
+                    voice    TEXT,
+                    enabled  INTEGER DEFAULT 1,
+                    data     TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_personas_voice ON personas(voice);
+                """
+            )
+            self.handle.conn.commit()
+
+    def upsert(self, persona_id: str, rec: Dict[str, Any]) -> None:
+        blob = json.dumps(rec, ensure_ascii=False)
+        voice = str(rec.get("voice", "") or "")
+        enabled = 1 if rec.get("enabled", True) else 0
+        with self.handle.lock:
+            self.handle.conn.execute(
+                """INSERT INTO personas(id, voice, enabled, data) VALUES(?,?,?,?)
+                   ON CONFLICT(id) DO UPDATE SET
+                       voice=excluded.voice, enabled=excluded.enabled, data=excluded.data""",
+                (persona_id, voice, enabled, blob),
+            )
+            self.handle.conn.commit()
+
+    def load_all(self) -> List[Dict[str, Any]]:
+        """Return [record_dict] tolerantly: a corrupt / id-less row is skipped, never fatal."""
+        out: List[Dict[str, Any]] = []
+        with self.handle.lock:
+            cur = self.handle.conn.cursor()
+            cur.execute("SELECT id, data FROM personas")
+            rows = cur.fetchall()
+        skipped = 0
+        for row in rows:
+            try:
+                rec = json.loads(row["data"])
+                if not isinstance(rec, dict) or not row["id"]:
+                    skipped += 1
+                    continue
+                rec.setdefault("id", row["id"])
+                out.append(rec)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                skipped += 1
+        if skipped:
+            log_event(log, "personas.load_skipped", skipped=skipped)
+        return out
+
+    def delete(self, persona_id: str) -> int:
+        """Delete ONE persona entity row. Returns the row count removed (0 or 1)."""
+        with self.handle.lock:
+            cur = self.handle.conn.cursor()
+            cur.execute("DELETE FROM personas WHERE id=?", (persona_id,))
+            self.handle.conn.commit()
+            return int(cur.rowcount or 0)
+
+    def purge_persona(self, persona_id: str) -> int:
+        """FORWARD-CASCADE purge (REQ-PR-016): "delete everything WHERE persona_id = X" for
+        THIS store's per-persona surface (the entity row). Idempotent — purging an absent
+        persona returns 0. The convention every FUTURE per-persona table honors so a RESET
+        stays total as the model grows."""
+        return self.delete(persona_id)
+
+    def count(self) -> int:
+        with self.handle.lock:
+            cur = self.handle.conn.cursor()
+            cur.execute("SELECT COUNT(*) AS n FROM personas")
+            return int(cur.fetchone()["n"])
+
+
+# --------------------------------------------------------------------------- #
 # brain.db — mb_result_cache (SPEC-RADIO-MBMIRROR-017 Group MC)
 # --------------------------------------------------------------------------- #
 

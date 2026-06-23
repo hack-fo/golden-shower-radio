@@ -68,6 +68,14 @@ The FROZEN invariants are inherited unchanged (1:1 voice↔persona REQ-PR-003, a
 REQ-PR-004/PR-009, frozen anchor REQ-PI-001, persona-entity model CORE-001 REQ-PR-001, never-silences
 NFR-P-5). 1:1 REQ ↔ AC preserved (90 REQ + 13 NFR = 103).
 
+(2026-06-23, v0.11.0 — persona gender+age + full cascade-purge reset, matches spec.md v0.11.0:) Added
+two Group PR acceptance entries — AC-PR-015 (persona gender + age attributes; age enforced inclusive
+[22, 70] by the shared gate for both the manual and AI-autonomous paths) and AC-PR-016 (full
+cascade-purge RESET: entity + freed voice + ALL per-persona data keyed by persona_id deleted, the
+forward-cascade contract, the explicit destructive verb, and the on-air-finish-break golden rule) —
+plus a Section B GWT block (B-27). All ADDITIVE; the single-default-persona path is byte-identical, no
+existing invariant weakened. 1:1 REQ ↔ AC preserved (92 REQ + 13 NFR = 105).
+
 ---
 
 ## Section A — Acceptance Criteria (1:1 with requirements)
@@ -198,6 +206,31 @@ and SHOWS-020 shows; (e) [HARD] these downstream seams are EXISTING and UNCHANGE
 no fork, the manual host simply another roster entity the consumers iterate over; (f) SCHEDULING is
 owned by OPS-004 + SHOWS-020 (referenced, not re-owned here); (g) the news anchor (REQ-PI-005) is not
 reached by the manual-creation flow.
+
+**AC-PR-015 (REQ-PR-015 — persona gender + age attributes; age constrained to [22, 70]).** Verify:
+(a) each persona-entity carries a GENDER (an open value — male / female / non-binary / … — that varies
+across the roster and aligns with the gendered VOICE-002 palette but is its own attribute) and an
+integer AGE; (b) [HARD] the age is constrained to the INCLUSIVE range [22, 70] — age 22 and age 70 are
+ACCEPTED (boundaries inclusive), age 21 and age 71 are REJECTED; (c) [HARD] the constraint is enforced
+by the SAME shared validation gate for BOTH the manual creation/edit path (REQ-PR-010/011/013) AND the
+AI-autonomous growth path (REQ-PR-008) — a violating persona never enters the roster, on either path;
+(d) the bound is stated as tunable constants (MIN_PERSONA_AGE / MAX_PERSONA_AGE); (e) both fields
+persist with the entity (REQ-PR-012) additively — a stored persona without them loads with sane
+defaults so the single-default-persona path is unchanged. See Section B for the GWT.
+
+**AC-PR-016 (REQ-PR-016 — full cascade-purge reset + forward-cascade contract).** Verify: (a) a RESET is
+a FULL CASCADE-PURGE (clean slate), not merely an entity-row delete; (b) it deletes the persona-entity;
+(c) it FREES the bound voice back to the palette as assignable (REQ-PR-003) so a fresh persona can
+immediately be created in the freed slot/voice; (d) [HARD] it CASCADE-deletes ALL per-persona data keyed
+by `persona_id` across every registered per-persona data surface (taste/curation state, taste-charter /
+self-learning records, talk / diary / history / stats) so AFTER the reset NO residual data for that
+persona remains anywhere; (e) [HARD] FORWARD-CASCADE CONTRACT — per-persona data is keyed by `persona_id`
+and each per-persona store exposes a "delete everything WHERE persona_id = X" purge registered into the
+shared cascade seam, so FUTURE per-persona stores (SHOWS-020 / OPS-004 / Group PL) cascade cleanly too;
+(f) [HARD] the reset is an EXPLICIT, DELIBERATE destructive action (a distinct delete/reset verb, never
+accidental); (g) [HARD] GOLDEN RULE — resetting an ON-AIR/mid-render persona lets it finish its current
+break/episode first and the purge (exception-isolated: a failing per-surface purge logs and the reset
+proceeds) NEVER silences or breaks the running stream (inherits NFR-P-5). See Section B for the GWT.
 
 ### Group PC — Radio-Craft Playbook & Talk Rules
 
@@ -1756,6 +1789,40 @@ Scenario: Disabling a manual host never cuts a live break (golden rule)
   Then the in-flight break/episode finishes gracefully — the stream is never silenced (NFR-P-5)
     And the persona is excluded only from the NEXT selection cycle, not the current one
     And on REMOVE the freed voice returns to the palette as assignable (REQ-PR-003)
+```
+
+### B-27 — Persona gender+age bound + full cascade-purge reset (REQ-PR-015, REQ-PR-016 / AC-PR-015, AC-PR-016)
+
+```gherkin
+Feature: Persona gender/age attributes and a clean-slate cascade-purge reset
+
+Scenario: Age boundaries are inclusive [22, 70]
+  Given an operator (or the AI growth gate) submits a persona with a valid voice and a distinct charter
+  When the age is 22 or 70
+  Then the persona is ACCEPTED (the boundaries are inclusive, REQ-PR-015)
+  When the age is 21 or 71
+  Then the persona is REJECTED with reason "age_out_of_range" and never enters the roster
+    And the SAME bound is enforced for the manual path AND the AI-autonomous growth path (one shared gate)
+
+Scenario: Gender varies across the roster
+  Given three distinct personas
+  When their genders are male, female, and non-binary
+  Then each persona carries its own gender attribute (it aligns with but is independent of the voice)
+
+Scenario: A reset is a full cascade-purge that leaves zero residual
+  Given a persona "Ember" bound to voice "af_bella" with per-persona taste/diary/history data
+  When the operator RESETS Ember (the explicit destructive delete/reset action, REQ-PR-016)
+  Then Ember's entity is deleted
+    And ALL per-persona data keyed by persona_id is purged across every registered surface (zero residual)
+    And the voice "af_bella" is freed back to the palette as assignable
+    And a FRESH persona can immediately be created on "af_bella" in the cleared slot
+
+Scenario: Resetting an on-air persona never silences the stream (golden rule)
+  Given a persona is currently ON AIR mid-break (or mid-render)
+  When that persona is RESET
+  Then the in-flight break/episode finishes gracefully — the stream is never silenced (NFR-P-5)
+    And the persona is excluded only from the NEXT selection cycle
+    And a failing per-surface purge is logged and the reset still completes (exception-isolated)
 ```
 
 ---

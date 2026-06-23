@@ -291,6 +291,7 @@ class _Handler(BaseHTTPRequestHandler):
     state = None
     picker: Picker = None  # type: ignore
     knowledge = None  # KNOWLEDGE-008 store (optional; None when disabled) for /status
+    roster = None  # SPEC-RADIO-PROGRAMMING-007 Group PR persona roster (optional; None = none configured)
 
     server_version = "GSRBrain/1.0"
 
@@ -320,12 +321,43 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             if path == "/api/airing":
                 self._handle_airing(split.query)
+            elif path == "/api/personas":
+                # SPEC-RADIO-PROGRAMMING-007 REQ-PR-010/011: create a persona.
+                self._handle_persona_create()
+            elif path.startswith("/api/personas/") and path.endswith("/disable"):
+                self._handle_persona_lifecycle(path.split("/")[3], "disable")
+            elif path.startswith("/api/personas/") and path.endswith("/enable"):
+                self._handle_persona_lifecycle(path.split("/")[3], "enable")
             else:
                 self._send(404, b"not found", "text/plain; charset=utf-8")
         except Exception as exc:  # noqa: BLE001 - never let a request crash the server
             log_event(log, "server.request_error", path=path, error=str(exc))
             # Airing is best-effort: ack with 200 so the streaming thread never stalls.
             self._send(200, b"error", "text/plain; charset=utf-8")
+
+    def do_PUT(self):  # noqa: N802 - persona EDIT (REQ-PR-013a)
+        split = urlsplit(self.path)
+        path = split.path.rstrip("/") or "/"
+        try:
+            if path.startswith("/api/personas/"):
+                self._handle_persona_edit(path.split("/")[3])
+            else:
+                self._send(404, b"not found", "text/plain; charset=utf-8")
+        except Exception as exc:  # noqa: BLE001
+            log_event(log, "server.request_error", path=path, error=str(exc))
+            self._send(500, b"error", "text/plain; charset=utf-8")
+
+    def do_DELETE(self):  # noqa: N802 - persona RESET / cascade-purge (REQ-PR-013c/PR-016)
+        split = urlsplit(self.path)
+        path = split.path.rstrip("/") or "/"
+        try:
+            if path.startswith("/api/personas/"):
+                self._handle_persona_reset(path.split("/")[3])
+            else:
+                self._send(404, b"not found", "text/plain; charset=utf-8")
+        except Exception as exc:  # noqa: BLE001
+            log_event(log, "server.request_error", path=path, error=str(exc))
+            self._send(500, b"error", "text/plain; charset=utf-8")
 
     def do_GET(self):  # noqa: N802
         split = urlsplit(self.path)
@@ -340,6 +372,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self._handle_status()
             elif path == "/api/nowplaying":
                 self._handle_nowplaying()
+            elif path == "/api/personas":
+                self._handle_persona_list()
             elif path == "/health":
                 self._send(200, b"ok", "text/plain; charset=utf-8")
             elif path == "/":
@@ -477,14 +511,131 @@ class _Handler(BaseHTTPRequestHandler):
         html = self.state.website_html() or "<h1>Golden Shower Radio</h1>"
         self._send(200, html.encode("utf-8"), "text/html; charset=utf-8")
 
+    # -- persona API (SPEC-RADIO-PROGRAMMING-007 Group PR, REQ-PR-010..016) ------ #
+    #
+    # The OPERATOR-driven companion to the AI-autonomous growth gate (REQ-PR-008): a
+    # DIFFERENT ENTRY into the SAME persona-entity model + the SAME shared 1:1 + anti-
+    # convergence validation gate (Roster.validate_candidate) — never a bypass or fork.
+    # The UI/transport is deferred to implementation; this minimal JSON API is the seam.
+    # Every handler returns 503 when no roster is configured (the default single-house path)
+    # so the API never half-exists. DELETE is the explicit, deliberate cascade-RESET.
 
-def make_server(cfg: Config, library: Library, state, knowledge=None) -> ThreadingHTTPServer:
+    def _read_json_body(self) -> dict:
+        try:
+            length = int(self.headers.get("Content-Length", "0") or "0")
+        except (TypeError, ValueError):
+            length = 0
+        raw = self.rfile.read(length) if length > 0 else b""
+        if not raw:
+            return {}
+        try:
+            obj = json.loads(raw.decode("utf-8"))
+            return obj if isinstance(obj, dict) else {}
+        except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
+            return {}
+
+    @staticmethod
+    def _persona_public(p) -> dict:
+        """The JSON view of a persona (entity fields, no internal-only state)."""
+        rec = p.to_record()
+        return rec
+
+    def _handle_persona_list(self) -> None:
+        if self.roster is None:
+            self._json({"enabled": False, "personas": []})
+            return
+        self._json({"enabled": True,
+                    "personas": [self._persona_public(p) for p in self.roster.all()]})
+
+    def _handle_persona_create(self) -> None:
+        if self.roster is None:
+            self._json({"ok": False, "error": "no roster configured"}, code=503)
+            return
+        from . import persona as persona_mod
+        body = self._read_json_body()
+        candidate = _persona_from_request(persona_mod, body)
+        if candidate is None:
+            self._json({"ok": False, "error": "invalid persona payload (id required)"}, code=400)
+            return
+        created, result = self.roster.create(candidate)
+        if created is None:
+            # Rejected by the SHARED gate (1:1 voice / anti-convergence / fields / age).
+            self._json({"ok": False, "code": result.code, "reason": result.reason}, code=409)
+            return
+        self._json({"ok": True, "persona": self._persona_public(created)}, code=201)
+
+    def _handle_persona_edit(self, persona_id: str) -> None:
+        if self.roster is None:
+            self._json({"ok": False, "error": "no roster configured"}, code=503)
+            return
+        from . import persona as persona_mod
+        body = self._read_json_body()
+        # An edit re-runs the FULL REQ-PR-011 validation (REQ-PR-013a). Charter may arrive
+        # as a nested dict; rebuild it into a TasteCharter so the gate sees real fields.
+        changes = dict(body)
+        if isinstance(changes.get("charter"), dict):
+            valid = set(persona_mod.TasteCharter.__dataclass_fields__)
+            changes["charter"] = persona_mod.TasteCharter(
+                **{k: v for k, v in changes["charter"].items() if k in valid})
+        edited, result = self.roster.edit(persona_id, **changes)
+        if edited is None:
+            code = 404 if result.code == "not_found" else 409
+            self._json({"ok": False, "code": result.code, "reason": result.reason}, code=code)
+            return
+        self._json({"ok": True, "persona": self._persona_public(edited)})
+
+    def _handle_persona_lifecycle(self, persona_id: str, action: str) -> None:
+        if self.roster is None:
+            self._json({"ok": False, "error": "no roster configured"}, code=503)
+            return
+        ok = self.roster.disable(persona_id) if action == "disable" else self.roster.enable(persona_id)
+        if not ok:
+            self._json({"ok": False, "error": "persona not found"}, code=404)
+            return
+        self._json({"ok": True, "id": persona_id, "action": action})
+
+    def _handle_persona_reset(self, persona_id: str) -> None:
+        """DELETE = the explicit, deliberate CASCADE-RESET (REQ-PR-013c / REQ-PR-016): purge
+        the entity + ALL its per-persona data and FREE its voice. Destructive — surfaced as an
+        explicit DELETE verb, never an accidental side effect. Golden-rule safe (owns no
+        playout)."""
+        if self.roster is None:
+            self._json({"ok": False, "error": "no roster configured"}, code=503)
+            return
+        freed_voice = self.roster.remove(persona_id)
+        if freed_voice is None:
+            self._json({"ok": False, "error": "persona not found"}, code=404)
+            return
+        self._json({"ok": True, "id": persona_id, "freed_voice": freed_voice,
+                    "reset": "cascade-purge"})
+
+
+def _persona_from_request(persona_mod, body: dict):
+    """Build a Persona candidate from a create-request JSON body (REQ-PR-010 captured
+    fields). Returns None when no id is supplied. Tolerant: a nested ``charter`` dict is
+    rebuilt into a TasteCharter; unknown keys are ignored by Persona.from_record. The
+    validation gate (not this builder) enforces the invariants."""
+    if not isinstance(body, dict) or not str(body.get("id") or "").strip():
+        return None
+    rec = dict(body)
+    if isinstance(rec.get("charter"), dict):
+        valid = set(persona_mod.TasteCharter.__dataclass_fields__)
+        rec["charter"] = {k: v for k, v in rec["charter"].items() if k in valid}
+    rec.setdefault("origin", "manual")
+    try:
+        return persona_mod.Persona.from_record(rec)
+    except (TypeError, ValueError):
+        return None
+
+
+def make_server(cfg: Config, library: Library, state, knowledge=None,
+                roster=None) -> ThreadingHTTPServer:
     picker = Picker(cfg, library, state)
     handler = type(
         "BoundHandler",
         (_Handler,),
         {"cfg": cfg, "library": library, "state": state, "picker": picker,
-         "knowledge": knowledge},
+         "knowledge": knowledge, "roster": roster},
     )
     httpd = ThreadingHTTPServer((cfg.http_host, cfg.http_port), handler)
     httpd.daemon_threads = True

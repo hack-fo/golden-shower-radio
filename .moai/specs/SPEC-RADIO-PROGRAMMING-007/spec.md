@@ -1,6 +1,6 @@
 ---
 id: SPEC-RADIO-PROGRAMMING-007
-version: 0.10.0
+version: 0.11.0
 status: draft
 created: 2026-06-22
 updated: 2026-06-23
@@ -495,6 +495,36 @@ issue_number: 7
   palette (REQ-PR-003), DATASTORE-022 persona-store substrate, and PROGRAMMING REQ-PR-004/PR-005/PR-006/
   PR-008/PR-009 + REQ-PI-001 + REQ-PL-004 + Groups PC/PG/PV/CL. SCHEDULING is NOT touched (OPS-004 +
   SHOWS-020 own it). Total: 90 REQ + 13 NFR = 103, 1:1 REQ↔AC preserved.
+
+- 2026-06-23 (v0.11.0): TWO USER-FACING persona additions on the Group PR manual-lifecycle slice,
+  both ADDITIVE and both riding the EXISTING shared gates — no existing invariant weakened, the
+  single-default-persona path BYTE-IDENTICAL. Net +2 REQ (PR-015, PR-016), 0 new NFR (the existing
+  integrity NFRs already cover them: NFR-P-1 anti-convergence, NFR-P-5 never-silences-the-stream).
+  (1) REQ-PR-015 PERSONA GENDER + AGE ATTRIBUTES [HARD, Ubiquitous] — two first-class persona-entity
+  attributes that vary across the roster: `gender` (an OPEN value — male / female / non-binary / … —
+  that naturally aligns with the gendered VOICE-002 palette but is its own attribute) and `age` (an
+  integer). [HARD] The age is constrained to the INCLUSIVE range [22, 70] (constants MIN_PERSONA_AGE /
+  MAX_PERSONA_AGE so the bound is tunable), enforced by the SAME shared both-axes validation gate
+  (Roster.validate_candidate) for BOTH the manual creation path (REQ-PR-010/011) AND the AI-autonomous
+  growth path (REQ-PR-008) — never bypassed: a persona with age < 22 or > 70 is REJECTED and never
+  enters the roster. Both fields persist with the rest of the entity (additive/tolerant load — old rows
+  without them load with sane defaults). (2) REQ-PR-016 FULL CASCADE-PURGE RESET + FORWARD-CASCADE
+  CONTRACT [HARD, Event] — a DELIBERATE, explicit destructive action (a DELETE/reset verb, never an
+  accidental side effect) that STRENGTHENS the REQ-PR-013c REMOVE into a CLEAN SLATE so the AI/operator
+  can regenerate a fresh persona in the freed slot. A reset (a) deletes the persona-entity; (b) FREES
+  its bound voice back to the palette as assignable (REQ-PR-003) so a new persona can immediately claim
+  it; and (c) CASCADE-deletes ALL per-persona data keyed by `persona_id` across every registered data
+  surface — per-persona taste/curation state, taste-charter/self-learning records, talk/diary/history/
+  stats rows — so AFTER a reset NO residual data for that persona remains anywhere. [HARD] FORWARD-CASCADE
+  CONTRACT: ALL per-persona data MUST be keyed by `persona_id` and every per-persona store MUST expose a
+  "delete everything WHERE persona_id = X" purge, so the cascade stays TOTAL as the model grows (FUTURE
+  SHOWS-020 shows, OPS-004 diary, Group PL taste-learning register into the SAME cascade seam). [HARD]
+  GOLDEN RULE (inherits REQ-PR-013d / NFR-P-5): resetting an ON-AIR persona lets it finish its current
+  break/render first — the purge owns no playout and is exception-isolated (a failing per-surface purge
+  logs and the reset proceeds), so it NEVER silences or breaks the running stream. References (not
+  re-owned): VOICE-002 voice palette (the gendered voices + the freed-voice return), DATASTORE-022
+  persona-store substrate, and PROGRAMMING REQ-PR-003/PR-008/PR-010/PR-011/PR-013. Total: 92 REQ +
+  13 NFR = 105, 1:1 REQ↔AC preserved.
 
 ---
 
@@ -1672,6 +1702,44 @@ by number). The news anchor remains excluded by construction (REQ-PI-005): it is
 curator persona and the manual-creation flow does not reach it.
 
 **Acceptance criteria:** see acceptance.md AC-PR-014.
+
+### REQ-PR-015 — Persona gender + age attributes; age constrained to [22, 70] (Ubiquitous) [HARD]
+
+The system shall give each persona-entity two first-class attributes that vary across the roster:
+(a) a GENDER — an OPEN value (e.g. male / female / non-binary) that naturally aligns with the
+gendered VOICE-002 voice palette but is its OWN attribute in its own right; and (b) an AGE — an
+integer. [HARD] The age MUST lie within the INCLUSIVE range [22, 70] (a host is no younger than 22
+and no older than 70); the bound is stated as tunable constants (MIN_PERSONA_AGE / MAX_PERSONA_AGE).
+[HARD] The age constraint is enforced by the SAME shared validation gate (REQ-PR-011) for BOTH the
+manual creation/edit path (REQ-PR-010/PR-013) AND the AI-autonomous growth path (REQ-PR-008) — never
+bypassed: a persona whose age is below 22 or above 70 is REJECTED and never enters the roster. Both
+fields persist with the rest of the entity (REQ-PR-012) additively/tolerantly — a stored persona
+without them loads with sane defaults so the single-default-persona path is unchanged. VOICE-002 owns
+the voices; this requirement owns the gender/age ATTRIBUTES and the age BOUND.
+
+**Acceptance criteria:** see acceptance.md AC-PR-015.
+
+### REQ-PR-016 — Full cascade-purge reset + forward-cascade contract (Event-driven) [HARD]
+
+When an operator (or the AI) RESETS a persona, the system shall perform a FULL CASCADE-PURGE — a
+clean slate, not merely deleting the entity row — so a fresh persona can be regenerated in the freed
+slot. This STRENGTHENS the REQ-PR-013c REMOVE: a reset shall (a) delete the persona-entity; (b) FREE
+its bound voice back to the palette as assignable (REQ-PR-003) so a new persona may immediately claim
+it; and (c) [HARD] CASCADE-DELETE ALL per-persona data keyed by `persona_id` across every per-persona
+data surface — per-persona taste/curation state, taste-charter / self-learning records, talk / diary /
+history / stats rows — so that AFTER the reset NO residual data belonging to that persona remains
+anywhere. [HARD] FORWARD-CASCADE CONTRACT: all per-persona data SHALL be keyed by `persona_id`, and
+every per-persona store SHALL expose a "delete everything WHERE persona_id = X" purge that registers
+into the shared cascade seam, so the purge stays TOTAL as the model grows (FUTURE SHOWS-020 shows,
+OPS-004 diary, and Group PL per-persona taste-learning MUST honor this contract). [HARD] The reset is
+an EXPLICIT, DELIBERATE destructive action (surfaced as a distinct delete/reset verb, confirmed, never
+an accidental side effect). [HARD] GOLDEN RULE (inherits REQ-PR-013d / NFR-P-5): resetting an ON-AIR or
+mid-render persona lets it FINISH its current break/episode first; the purge owns no playout and is
+exception-isolated (a failing per-surface purge logs and the reset proceeds), so it NEVER silences or
+breaks the running stream. References (not re-owned): VOICE-002 voice palette, DATASTORE-022 persona
+store, PROGRAMMING REQ-PR-003/PR-008/PR-010/PR-011/PR-013.
+
+**Acceptance criteria:** see acceptance.md AC-PR-016.
 
 ---
 
@@ -3700,6 +3768,8 @@ Section B).
 | REQ-PR-012 | Roster & Persona Model | High | Ubiquitous | AC-PR-012 |
 | REQ-PR-013 | Roster & Persona Model | High | Event | AC-PR-013 |
 | REQ-PR-014 | Roster & Persona Model | High | Ubiquitous | AC-PR-014 |
+| REQ-PR-015 | Roster & Persona Model | High | Ubiquitous | AC-PR-015 |
+| REQ-PR-016 | Roster & Persona Model | High | Event | AC-PR-016 |
 | REQ-PC-001 | Radio-Craft Playbook & Talk Rules | High | Event | AC-PC-001 |
 | REQ-PC-002 | Radio-Craft Playbook & Talk Rules | High | State | AC-PC-002 |
 | REQ-PC-003 | Radio-Craft Playbook & Talk Rules | High | Event | AC-PC-003 |
