@@ -562,3 +562,102 @@ def generate_talk_script(model: str, context: Dict, persona=None) -> str:
     except Exception as exc:  # noqa: BLE001 - talk is best-effort; never crash playout
         log_event(log, "llm.talk_error", error=str(exc), model=model)
     return ""
+
+
+# =====================================================================================
+# IDENTITY layer (SPEC-RADIO-SEEDING-029 Step 2): autonomous persona-identity design.
+#
+# When the station MINTS a persona on its own (brain.minting), it already has a grounded
+# taste charter (from brain.seeding over the real library) and an unused voice. The only
+# free-text choice left is the persona's IDENTITY: a display name + a short personality.
+# This is the cheap "Mode A" one-shot generation - SAME tools-off, one-turn, subscription
+# auth config as curation/talk so it stays cheap on the 5h quota. On ANY error / empty
+# parse it returns {} and the mint falls back to a deterministic identity (never crashes).
+#
+# The identity is plausible flavour, NOT an on-air factual claim: the host never asserts
+# un-grounded facts about itself on air (that grounding rail is enforced downstream by
+# host-voice-grounding). Here we only design who the persona *is*, not what it says.
+# =====================================================================================
+
+# A short system prompt for the identity designer. Kept tight (ships in the call) and
+# explicitly anti-slop / bounded so the model returns a compact, speakable identity.
+IDENTITY_PERSONA = (
+    "You design a single distinct radio-host persona for an autonomous freeform internet "
+    "radio station. Given a musical taste territory, you invent ONE believable human host: "
+    "a real-sounding display name and a SHORT personality (one or two sentences) in a warm, "
+    "human, non-corporate voice - never a chirpy AI assistant. Respond with ONLY a JSON "
+    "object {\"name\": ..., \"personality\": ...} - no commentary, no markdown fences."
+)
+
+
+def _build_identity_prompt(primary_territory: str, in_genres: List[str],
+                           gender: str, age: int) -> str:
+    """Turn the grounded charter anchors + assigned gender/age into a one-shot prompt.
+
+    Only the taste TERRITORY (grounded in the real library) and the already-assigned
+    gender/age constrain the design; the model fills the free-text name + personality."""
+    genres = ", ".join(g for g in (in_genres or []) if g) or primary_territory or "eclectic"
+    parts = [
+        "Design one radio-host persona.",
+        f"Primary taste territory: {primary_territory or 'eclectic'}.",
+        f"Plays mostly: {genres}.",
+    ]
+    if gender:
+        parts.append(f"Gender: {gender}.")
+    if age:
+        parts.append(f"Age: {age}.")
+    parts.append(
+        'Respond with ONLY {"name": "...", "personality": "..."}.'
+    )
+    return " ".join(parts)
+
+
+def _extract_identity(text: str) -> Dict[str, str]:
+    """Pull a {name, personality} dict out of arbitrary model text. Returns {} if nothing
+    usable is found (the caller then uses a deterministic identity). Mirrors the defensive
+    JSON-anywhere strategy of ``_extract_tracks``."""
+    if not text:
+        return {}
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        try:
+            data = json.loads(text[start : end + 1])
+        except (json.JSONDecodeError, ValueError):
+            data = None
+        if isinstance(data, dict):
+            name = str(data.get("name") or data.get("Name") or "").strip()
+            personality = str(
+                data.get("personality") or data.get("Personality")
+                or data.get("pov") or ""
+            ).strip()
+            out: Dict[str, str] = {}
+            if name:
+                out["name"] = name
+            if personality:
+                out["personality"] = personality
+            return out
+    return {}
+
+
+def design_persona_identity(model: str, primary_territory: str,
+                            in_genres: Optional[List[str]] = None,
+                            *, gender: str = "", age: int = 0) -> Dict[str, str]:
+    """Design a persona IDENTITY (name + short personality) for a grounded taste territory.
+
+    NEVER raises. Returns ``{"name": ..., "personality": ...}`` (either key may be absent),
+    or ``{}`` on any SDK error / quota / empty parse so the caller (brain.minting) falls back
+    to a deterministic identity. Same cheap tools-off, one-turn, subscription-auth path as
+    curation/talk. The identity is plausible flavour, not an on-air factual claim."""
+    prompt = _build_identity_prompt(primary_territory, in_genres or [], gender, age)
+    try:
+        text = asyncio.run(_query_text(prompt, model, system_prompt=IDENTITY_PERSONA))
+        identity = _extract_identity(text)
+        if identity.get("name"):
+            log_event(log, "llm.identity_designed", model=model,
+                      name=identity.get("name", ""))
+            return identity
+        log_event(log, "llm.identity_empty_parse", model=model, raw_len=len(text or ""))
+    except Exception as exc:  # noqa: BLE001 - identity design is best-effort; never crash mint
+        log_event(log, "llm.identity_error", error=str(exc), model=model)
+    return {}
