@@ -95,6 +95,23 @@ INTERVIEW-CRAFT-034 · richer formats/dayparting/format-clock.
   number of distinct verified voices (~7 Kokoro + ~6 Piper today). Kokoro ships 54 voicepacks → verify and
   widen the palette to unlock a large autonomous cast. Do this when many personas are wanted.
 
+## Capacity boundaries (host/show counts — define the explicit knobs)
+
+EXISTING (found in code/specs): [HARD][FROZEN] at most 2 hosts per show, never 3 (CORE-001 REQ-B-011);
+ONE active show at a time (single stream; OPS-004 forbids concurrent TTS/LLM renders); ~5 EN + 2 FO launch
+roster TARGET (PROGRAMMING-007); age [22,70]; 1:1 voice<->persona so total personas are implicitly capped
+at the verified voice count (~7 Kokoro + ~6 Piper); minting fails clean at no_free_voice.
+
+GAP TO ADD (user-flagged 2026-06-24): there is NO explicit, tunable MAX_ROSTER or max-scheduled-shows knob —
+the cap is currently emergent from voice count, which is not the same as a REALISTIC roster boundary.
+- Add a tunable MAX_ROSTER (sane default, e.g. ~8–12, ≤ verified voice count) checked in the mint path so
+  autonomous minting respects a realistic roster size, not just the voice ceiling. (Fold into brain/minting.py
+  AFTER Step 3 lands — do not edit brain/ while build-shows is running.)
+- Step 4 scheduler defines a realistic schedule capacity (slots/day or /week); one show airs at a time.
+
+TTS note: user leans Qwen-TTS as the likely A/B winner (faster/efficient/natural) — make Qwen the frontrunner
+in the VOICE-002 A/B, but confirm on the real GPU before locking. See [[voice-tts-ab]].
+
 ## Discipline
 Atomic green commits per step (run `python3 -m pytest brain/ -q`). Default/empty path stays byte-identical
 (behavior preservation). Never leave a broken tree. If a budget window ends mid-step, stop at the last
