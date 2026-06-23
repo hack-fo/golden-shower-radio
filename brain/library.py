@@ -140,6 +140,20 @@ class Track:
     # provenance log of corrections: [{field, old, new, source, confidence, action}].
     enrich_provenance: List[Dict[str, Any]] = field(default_factory=list)
 
+    # -- ENRICH-012 Group EC: canonical identity widening (the shared join seam) -
+    # The canonical MusicBrainz identifiers + the strongest Discogs join keys, lifted
+    # additively by the enrichment engine from ids already present in the AcoustID /
+    # MusicBrainz responses (no new external call). They are NOT display tags — they are
+    # the identity keys LOOKUPLOG-023 / ALBUMART-021 (release_group_mbid) / DEDUP-014
+    # (recording/release-group MBID as the primary duplicate key) / Group EX (barcode/catno
+    # Discogs join) READ. Empty by default so an old record (json OR sqlite) lacking these
+    # keys loads cleanly via the tolerant loaders; a track neither path resolves stays empty
+    # and every consumer degrades gracefully.
+    recording_mbid: str = ""
+    release_group_mbid: str = ""
+    barcode: str = ""
+    catno: str = ""
+
 
 # Identity / dedup fields that set_analysis MUST NEVER overwrite (M5 allowlist
 # hard-exclusions). A metadata provider returning a field literally named "key"
@@ -166,7 +180,10 @@ _ANALYSIS_WRITABLE_FIELDS = frozenset(
 # ``path``, and the play-history fields stay frozen: a re-tag never re-keys the track
 # (the existing record keeps its slot + play history; a future scan can re-key copies).
 _ENRICH_WRITABLE_FIELDS = frozenset(
-    {"artist", "title", "album", "year", "genre", "enrich_version", "enrich_provenance"}
+    {"artist", "title", "album", "year", "genre", "enrich_version", "enrich_provenance",
+     # Group EC (REQ-EC-003): the canonical identity widening — additive, never touches the
+     # frozen key / path / play-history fields. ALBUMART-021 Group AK consumes this extension.
+     "recording_mbid", "release_group_mbid", "barcode", "catno"}
 )
 
 

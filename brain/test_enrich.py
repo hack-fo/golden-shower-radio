@@ -252,7 +252,8 @@ class _Track:
     """Minimal Track-like object with the CORE fields + path/key."""
 
     def __init__(self, path, artist="", title="", album="", year=None, genre="",
-                 key="", enrich_version=0):
+                 key="", enrich_version=0, recording_mbid="", release_group_mbid="",
+                 barcode="", catno=""):
         self.path = path
         self.artist = artist
         self.title = title
@@ -262,6 +263,11 @@ class _Track:
         self.key = key or L.normalize_key(artist, title)
         self.enrich_version = enrich_version
         self.enrich_provenance = []
+        # Group EC identity widening (default empty, like a freshly-acquired track).
+        self.recording_mbid = recording_mbid
+        self.release_group_mbid = release_group_mbid
+        self.barcode = barcode
+        self.catno = catno
 
 
 def _patch_identify(monkeypatch_or_none, canonical):
@@ -663,6 +669,266 @@ def test_characterize_identify_prefers_text_when_acoustid_key_absent():
     finally:
         E.identify_text = orig  # type: ignore[assignment]
     assert got is txt, "no-key path must surface the text-match result"
+
+
+# --------------------------------------------------------------------------- #
+# Group EC — canonical identity widening (recording_mbid / release_group_mbid /
+# barcode / catno): capture from MB/AcoustID, persist via set_core_tags, round-trip
+# through BOTH backends, tolerant read of an old row lacking them.
+# --------------------------------------------------------------------------- #
+
+def test_ec_canonical_dataclass_carries_widened_fields():
+    """REQ-EC-001/002: Canonical carries the four widened identity fields, empty by default."""
+    c = E.Canonical()
+    assert c.recording_mbid == "" and c.release_group_mbid == ""
+    assert c.barcode == "" and c.catno == ""
+    c2 = E.Canonical(recording_mbid="rec-1", release_group_mbid="rg-1",
+                     barcode="0123456789012", catno="ABC-123")
+    assert c2.recording_mbid == "rec-1" and c2.release_group_mbid == "rg-1"
+    assert c2.barcode == "0123456789012" and c2.catno == "ABC-123"
+
+
+def test_ec_track_carries_widened_fields_with_empty_defaults():
+    """REQ-EC-001: the library Track carries the widened fields, defaulting empty so an old
+    record (no such keys) constructs cleanly."""
+    t = L.Track(path="/m/x.mp3", artist="A", title="B", key="a b")
+    assert t.recording_mbid == "" and t.release_group_mbid == ""
+    assert t.barcode == "" and t.catno == ""
+
+
+def test_ec_acoustid_path_lifts_recording_and_release_group_mbid():
+    """REQ-EC-001: the AcoustID->MB lift captures the recording id and the release-group id
+    already present in the `meta=recordings releasegroups` payload (no new call)."""
+    data = {
+        "status": "ok",
+        "results": [{
+            "score": 0.97,
+            "recordings": [{
+                "id": "rec-mbid-aaa",
+                "title": "Chimacum Rain",
+                "artists": [{"name": "Linda Perhacs"}],
+                "releasegroups": [{"id": "rg-mbid-bbb", "title": "Parallelograms"}],
+            }],
+        }],
+    }
+    c = E._canonical_from_acoustid(data)
+    assert c is not None
+    assert c.recording_mbid == "rec-mbid-aaa"
+    assert c.release_group_mbid == "rg-mbid-bbb"
+    assert c.album == "Parallelograms"
+    # AcoustID surfaces no barcode/catno -> they stay empty (graceful).
+    assert c.barcode == "" and c.catno == ""
+
+
+def test_ec_mb_text_path_lifts_mbids_barcode_catno():
+    """REQ-EC-001/002: the MB text path lifts the recording id, the chosen release's
+    release-group id, and (where the response carries them) barcode + catalog number."""
+    rec = {
+        "id": "rec-mbid-ccc",
+        "title": "Diamond Day",
+        "ext:score": "100",
+        "artist-credit": [{"artist": {"name": "Vashti Bunyan"}}],
+        "release-list": [{
+            "title": "Just Another Diamond Day",
+            "date": "1970",
+            "barcode": "5016958051228",
+            "label-info-list": [{"catalog-number": "DTD 21"}],
+            "release-group": {"id": "rg-mbid-ddd", "primary-type": "Album"},
+        }],
+    }
+    c = E._best_recording([rec], "Vashti Bunyan", "Diamond Day")
+    assert c is not None
+    assert c.recording_mbid == "rec-mbid-ccc"
+    assert c.release_group_mbid == "rg-mbid-ddd"
+    assert c.barcode == "5016958051228"
+    assert c.catno == "DTD 21"
+
+
+def test_ec_mb_text_path_mbids_present_even_when_album_name_suppressed():
+    """REQ-EC-002 nuance: the conservative album/year suppression (a comp release is worse than
+    blank) does NOT suppress the identity JOIN KEYS — a recording on a compilation still yields
+    its recording/release-group MBID even though the comp album NAME is withheld."""
+    rec = {
+        "id": "rec-mbid-eee",
+        "title": "Some Song",
+        "ext:score": "90",
+        "artist-credit": [{"artist": {"name": "Some Artist"}}],
+        "release-list": [{
+            "title": "Sci-Fi Collection Vol. 3",  # a compilation
+            "barcode": "9999999999999",
+            "release-group": {"id": "rg-mbid-fff", "primary-type": "Album",
+                              "secondary-type-list": ["Compilation"]},
+        }],
+    }
+    c = E._best_recording([rec], "Some Artist", "Some Song")
+    assert c is not None
+    assert c.album == "", "comp album NAME is still suppressed (accurate-or-empty)"
+    assert c.recording_mbid == "rec-mbid-eee", "identity MBID is still captured"
+    assert c.release_group_mbid == "rg-mbid-fff"
+    assert c.barcode == "9999999999999"
+
+
+def test_ec_set_core_tags_persists_widened_fields():
+    """REQ-EC-003: the extended _ENRICH_WRITABLE_FIELDS allowlist permits the four EC fields
+    through set_core_tags."""
+    lib = _fresh_library()
+    key = L.normalize_key("Vashti Bunyan", "Diamond Day")
+    lib._tracks[key] = L.Track(path="/m/d.mp3", artist="Vashti Bunyan", title="Diamond Day",
+                               key=key)
+    ok = lib.set_core_tags(key, {
+        "recording_mbid": "rec-1", "release_group_mbid": "rg-1",
+        "barcode": "5016958051228", "catno": "DTD 21",
+    })
+    assert ok is True
+    t = lib._tracks[key]
+    assert t.recording_mbid == "rec-1" and t.release_group_mbid == "rg-1"
+    assert t.barcode == "5016958051228" and t.catno == "DTD 21"
+
+
+def test_ec_set_core_tags_still_freezes_identity_after_widening():
+    """REQ-EC-003: the allowlist extension is ADDITIVE — it must NOT loosen the frozen
+    key / path / play-history fields (the freeze that protects the dedup slot)."""
+    lib = _fresh_library()
+    key = L.normalize_key("A", "B")
+    lib._tracks[key] = L.Track(path="/m/keep.mp3", artist="A", title="B", key=key,
+                               play_count=7, last_played=99.0)
+    lib.set_core_tags(key, {
+        "recording_mbid": "rec-x",
+        "key": "HIJACK", "path": "/etc/passwd", "play_count": 0, "last_played": 0.0,
+    })
+    t = lib._tracks[key]
+    assert t.recording_mbid == "rec-x", "the widened field IS written"
+    assert t.key == key, "dedup slug still frozen after the allowlist extension"
+    assert t.path == "/m/keep.mp3" and t.play_count == 7 and t.last_played == 99.0
+
+
+def test_ec_widened_fields_roundtrip_through_sqlite():
+    """REQ-EC-003 / DATASTORE-022 tolerance: the EC fields round-trip write->read through the
+    SQLite TrackStore (carried in the JSON data blob, no schema column change), surviving a
+    fresh Library open on the same brain.db."""
+    from brain import sqlite_store  # noqa: PLC0415
+    d = _tmpdir()
+    index = os.path.join(d, "library.json")
+    sqlite_store.reset_registry_for_tests()
+    lib = L.Library(music_dir=d, index_path=index, backend="sqlite")
+    key = L.normalize_key("Vashti Bunyan", "Diamond Day")
+    lib._tracks[key] = L.Track(path="/m/d.mp3", artist="Vashti Bunyan", title="Diamond Day",
+                               key=key)
+    lib.set_core_tags(key, {
+        "recording_mbid": "rec-rt", "release_group_mbid": "rg-rt",
+        "barcode": "5016958051228", "catno": "DTD 21",
+    })
+    # Reopen on the SAME sqlite file -> the widened fields must survive the round-trip.
+    sqlite_store.reset_registry_for_tests()
+    lib2 = L.Library(music_dir=d, index_path=index, backend="sqlite")
+    t = lib2._tracks[key]
+    assert t.recording_mbid == "rec-rt" and t.release_group_mbid == "rg-rt"
+    assert t.barcode == "5016958051228" and t.catno == "DTD 21"
+
+
+def test_ec_old_sqlite_row_lacking_widened_fields_loads_with_defaults():
+    """REQ-EC tolerance: a pre-EC SQLite row (its JSON blob lacks the four new keys) loads
+    cleanly with empty defaults — no migration breakage, the golden rule holds."""
+    from brain import sqlite_store  # noqa: PLC0415
+    d = _tmpdir()
+    db_path = os.path.join(d, "brain.db")
+    sqlite_store.reset_registry_for_tests()
+    store = sqlite_store.TrackStore(db_path)
+    key = L.normalize_key("Old", "Track")
+    # An OLD record: only the pre-EC fields, no recording_mbid/barcode/etc.
+    store.upsert(key, {"path": "/m/old.mp3", "artist": "Old", "title": "Track",
+                       "key": key, "enrich_version": 0})
+    # Open a Library on this brain.db (which already has the row) -> tolerant load fills defaults.
+    sqlite_store.reset_registry_for_tests()
+    lib = L.Library(music_dir=d, index_path=os.path.join(d, "library.json"), backend="sqlite")
+    t = lib._tracks[key]
+    assert t.artist == "Old" and t.title == "Track"
+    assert t.recording_mbid == "" and t.release_group_mbid == ""
+    assert t.barcode == "" and t.catno == ""
+
+
+def test_ec_old_library_json_row_lacking_widened_fields_loads_with_defaults():
+    """REQ-EC tolerance (JSON backend): a pre-EC library.json record lacking the new keys
+    loads with empty defaults via the tolerant loader."""
+    import json  # noqa: PLC0415
+    d = _tmpdir()
+    index = os.path.join(d, "library.json")
+    key = L.normalize_key("Old", "Track")
+    with open(index, "w", encoding="utf-8") as f:
+        json.dump({"tracks": [{"path": "/m/old.mp3", "artist": "Old", "title": "Track",
+                               "key": key}]}, f)
+    lib = L.Library(music_dir=d, index_path=index, backend="json")
+    t = lib._tracks[key]
+    assert t.recording_mbid == "" and t.barcode == "" and t.catno == ""
+
+
+def test_ec_enrich_one_persists_mbids_from_trustworthy_canonical():
+    """The wiring: when a TRUSTWORTHY identification (here an AcoustID match) carries MBIDs,
+    enrich_one lifts them into the set_core_tags payload — the shared join seam is populated
+    in the same pass that corrects the display tags."""
+    track = _Track("/music/dry.mp3", artist="", title="Diamond Day", enrich_version=0)
+    lib = _FakeLib([track])
+    worker = E.EnrichmentWorker(FakeCfg(write_files=False), lib, FakeState(),
+                                stop_event=_StopEvent())
+    canonical = E.Canonical(artist="Vashti Bunyan", title="Diamond Day",
+                            confidence=0.99, source=E.SRC_ACOUSTID,
+                            recording_mbid="rec-aaa", release_group_mbid="rg-bbb",
+                            barcode="5016958051228", catno="DTD 21")
+    orig = _patch_identify(None, canonical)
+    try:
+        worker.enrich_one(track.key)
+    finally:
+        E.identify = orig  # type: ignore[assignment]
+    payload = lib.persisted[track.key]
+    assert payload.get("recording_mbid") == "rec-aaa"
+    assert payload.get("release_group_mbid") == "rg-bbb"
+    assert payload.get("barcode") == "5016958051228"
+    assert payload.get("catno") == "DTD 21"
+
+
+def test_ec_enrich_one_does_not_record_mbids_from_bare_title_text_match():
+    """The spine extends to identity keys: an UNTRUSTWORTHY bare-title text match (empty artist,
+    clean title not carrying the canonical artist, MB-text source) must NOT record an MBID — we
+    never key the identity cluster on a guess. The display gate and the MBID gate share one
+    predicate (_is_trustworthy)."""
+    track = _Track("/music/bare.mp3", artist="", title="Wildfires", enrich_version=0)
+    lib = _FakeLib([track])
+    worker = E.EnrichmentWorker(FakeCfg(write_files=False), lib, FakeState(),
+                                stop_event=_StopEvent())
+    canonical = E.Canonical(artist="SomeoneElse", title="Wildfires",
+                            confidence=0.9, source=E.SRC_MUSICBRAINZ_TEXT,
+                            recording_mbid="rec-wrong", release_group_mbid="rg-wrong")
+    orig = _patch_identify(None, canonical)
+    try:
+        worker.enrich_one(track.key)
+    finally:
+        E.identify = orig  # type: ignore[assignment]
+    payload = lib.persisted[track.key]  # still marked (enrich_version) but NO identity keys
+    assert "recording_mbid" not in payload, "must not key identity on a bare-title guess"
+    assert "release_group_mbid" not in payload
+    assert payload["enrich_version"] == E.ENRICH_SCHEMA_VERSION
+
+
+def test_ec_enrich_one_never_clobbers_existing_mbid():
+    """Never-clobber, applied to identity keys: enrich_one only FILLS an empty EC field; a track
+    that already carries a recording_mbid keeps it (idempotent, no re-key)."""
+    track = _Track("/music/has.mp3", artist="Vashti Bunyan", title="Diamond Day",
+                   enrich_version=0, recording_mbid="rec-existing")
+    lib = _FakeLib([track])
+    worker = E.EnrichmentWorker(FakeCfg(write_files=False), lib, FakeState(),
+                                stop_event=_StopEvent())
+    canonical = E.Canonical(artist="Vashti Bunyan", title="Diamond Day",
+                            confidence=0.99, source=E.SRC_ACOUSTID,
+                            recording_mbid="rec-new", release_group_mbid="rg-new")
+    orig = _patch_identify(None, canonical)
+    try:
+        worker.enrich_one(track.key)
+    finally:
+        E.identify = orig  # type: ignore[assignment]
+    payload = lib.persisted[track.key]
+    assert "recording_mbid" not in payload, "existing recording_mbid must not be clobbered"
+    # an EMPTY field (release_group_mbid) is still filled.
+    assert payload.get("release_group_mbid") == "rg-new"
 
 
 # --------------------------------------------------------------------------- #

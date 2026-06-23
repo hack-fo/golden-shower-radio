@@ -13,6 +13,28 @@ issue_number: 12
 
 ## HISTORY
 
+- 2026-06-23 (v0.1.0b — Group EC BUILT): The CANONICAL identity widening (REQ-EC-001…004) is now
+  IMPLEMENTED and characterization-locked. `Canonical` (brain/enrich.py) and the library `Track`
+  (brain/library.py) carry `recording_mbid` / `release_group_mbid` / `barcode` / `catno`, all
+  empty by default. The capture is purely ADDITIVE and lifts ids ALREADY PRESENT in the responses
+  (no new external call): the AcoustID path (`_canonical_from_acoustid`) lifts `recordings[].id` +
+  `recordings[].releasegroups[].id`; the MB text path (`_release_album_year` → `_best_recording`)
+  lifts the recording `id`, the winning release's `release-group.id`, plus best-effort
+  release-level `barcode` + label-info `catalog-number` (REQ-EC-002). The conservative comp-album
+  NAME suppression does NOT suppress the identity JOIN KEYS. `_ENRICH_WRITABLE_FIELDS` is EXTENDED
+  with the four fields (REQ-EC-003, additive — `key`/`path`/play-history stay frozen); they persist
+  via `Library.set_core_tags` and round-trip through BOTH the JSON and SQLite (DATASTORE-022)
+  backends in the `data` blob with NO schema column change (old rows lacking the keys load with
+  empty defaults via the tolerant loaders — no migration breakage). The refuse-to-guess predicate
+  was extracted to a pure `_is_trustworthy` helper (propose() behaviour unchanged) and REUSED to
+  gate the MBID capture in `enrich_one`: identity keys are recorded ONLY from a TRUSTWORTHY
+  identification and only to FILL an empty field (never clobber an existing id) — the spine extends
+  to the identity cluster, we never key DEDUP/LOOKUPLOG/ALBUMART on a bare-title guess. 13 new
+  characterization tests in brain/test_enrich.py (capture from both paths, allowlist gate + identity
+  freeze, SQLite write→read round-trip, tolerant read of a pre-EC row on both backends, the
+  trustworthy/untrustworthy/never-clobber wiring). Suite: 181 passed, 1 deselected. **Group EX
+  (Discogs cross-check) remains DEFERRED.** This slice UNBLOCKS MBMIRROR-017 / DEDUP-014 /
+  LOOKUPLOG-023 (Group LM) / ALBUMART-021 (Group AK), which now join on these fields.
 - 2026-06-23 (v0.1.0a — DDD solidification slice): Characterized the SHIPPED Group EI engine and
   reconciled the one stale test. IMPLEMENTATION STATUS at this slice: **Group EI (identification
   pipeline + filename-corroboration + no-bare-title safety gate + locked write policy + mutagen

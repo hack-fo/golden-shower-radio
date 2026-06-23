@@ -56,7 +56,16 @@ SRC_MUSICBRAINZ_TEXT = "musicbrainz-text"
 
 @dataclass
 class Canonical:
-    """A resolved canonical recording from one identification path."""
+    """A resolved canonical recording from one identification path.
+
+    ENRICH-012 Group EC widens this with the canonical MusicBrainz identifiers
+    (``recording_mbid`` / ``release_group_mbid``) and the strongest Discogs join
+    keys (``barcode`` / ``catno``). These are LIFTED additively from ids already
+    present in the AcoustID / MusicBrainz responses — capturing them changes no
+    identification, scoring, or write decision (REQ-EC-001/002). A path that does
+    not surface an id leaves the corresponding field empty; every consumer
+    (LOOKUPLOG-023 / ALBUMART-021 / DEDUP-014 / Group EX) degrades gracefully.
+    """
     artist: str = ""
     title: str = ""
     album: str = ""
@@ -64,6 +73,11 @@ class Canonical:
     genre: str = ""
     confidence: float = 0.0  # [0..1]
     source: str = ""
+    # -- Group EC: canonical identity widening (additive; the shared join seam) --
+    recording_mbid: str = ""        # MB recording id (the specific performance)
+    release_group_mbid: str = ""    # MB release-group id (the album, for cover art)
+    barcode: str = ""               # release barcode (UPC/EAN) — Discogs join key
+    catno: str = ""                 # catalog number — Discogs join key
 
 
 @dataclass
@@ -167,7 +181,7 @@ def _best_recording(recs: List[Dict[str, Any]], want_artist: str, want_title: st
         sim_a = similarity(want_artist, artist) if want_artist else 0.0
         # If we have no usable artist (garbled/empty), lean on title + MB score only.
         sim = (sim_t + sim_a) / 2.0 if want_artist else sim_t
-        album, year, rel_rank = _release_album_year(rec)
+        album, year, rel_rank, rg_mbid, barcode, catno = _release_album_year(rec)
         # Small tie-breaker bonus so a recording that sits on a CLEAN STUDIO album outranks
         # the same song's compilation/live recording (whose only releases are comps). This
         # steers both the chosen identity AND the album toward the canonical studio release.
@@ -179,6 +193,9 @@ def _best_recording(recs: List[Dict[str, Any]], want_artist: str, want_title: st
                 artist=artist, title=title, album=album, year=year,
                 confidence=round(0.5 * mb_score + 0.5 * sim, 3),  # report identity confidence
                 source=SRC_MUSICBRAINZ_TEXT,
+                # Group EC: lift the canonical ids already in this recording/release (additive).
+                recording_mbid=str(rec.get("id", "") or ""),
+                release_group_mbid=rg_mbid, barcode=barcode, catno=catno,
             )
     return best
 
@@ -204,6 +221,15 @@ def _year_of(date_str: str) -> Optional[int]:
     return y if 1900 <= y <= 2100 else None
 
 
+def _catno_of(release: Dict[str, Any]) -> str:
+    """First catalog number from an MB release's label-info (best-effort, "" if absent)."""
+    for li in release.get("label-info-list") or []:
+        cn = (li.get("catalog-number") or "").strip()
+        if cn:
+            return cn
+    return ""
+
+
 def _release_album_year(rec: Dict[str, Any]):
     """Pick the CANONICAL album + original year from a recording's releases.
 
@@ -212,11 +238,21 @@ def _release_album_year(rec: Dict[str, Any]):
     beats anything else; ties broken by EARLIEST release year. This avoids tagging a track
     with a live bootleg or a "Sci-Fi Collection" compilation when the real studio album
     (and its original year) is present in the candidate list.
+
+    Returns ``(album, year, rank, release_group_mbid, barcode, catno)``. The last three are
+    Group EC identity widening LIFTED from the WINNING release (whatever rank): the
+    release-group id (for cover art / DEDUP), and the barcode + catalog number Group EX uses
+    as the strongest Discogs join keys. They are best-effort — a bare ``search_recordings``
+    may not carry barcode/label-info, in which case they fall back to "" (REQ-EC-002, and the
+    never-add-an-external-call rail). They are returned for the chosen release REGARDLESS of
+    the conservative album/year suppression below, since the recording identity is sound even
+    when the album NAME is a comp we decline to write.
     """
     releases = rec.get("release-list") or []
     best = ("", None)
     best_rank = 3  # 0 clean studio album, 1 plain album, 2 other release, 3 none
     best_key = None
+    rg_mbid = barcode = catno = ""
     for r in releases:
         g = r.get("release-group") or {}
         ptype = (g.get("primary-type") or "").lower()
@@ -230,15 +266,21 @@ def _release_album_year(rec: Dict[str, Any]):
             best_key = key
             best_rank = rank
             best = (r.get("title", "") or "", yr)
+            # Group EC: capture the chosen release's identity ids (additive; no scoring change).
+            rg_mbid = str(g.get("id", "") or "")
+            barcode = str(r.get("barcode", "") or "").strip()
+            catno = _catno_of(r)
     album, year = best
     # CONSERVATIVE: only trust album NAME and YEAR from a clean studio album (rank 0). A
     # compilation/live bootleg name — or a reissue/comp year — is worse than blank, so below
     # rank 0 we surface neither. (Accurate-or-empty beats confidently-wrong.) AcoustID /
-    # deeper release-group lookups can fill these later.
+    # deeper release-group lookups can fill these later. The MBID/barcode/catno are still
+    # returned: they are identity JOIN KEYS, not display tags, so the comp-name caution above
+    # does not apply to them.
     if best_rank != 0:
         album = ""
         year = None
-    return album, year, best_rank
+    return album, year, best_rank, rg_mbid, barcode, catno
 
 
 def identify_text(artist: str, title: str, cfg: Any) -> Optional[Canonical]:
@@ -338,14 +380,21 @@ def _canonical_from_acoustid(data: Dict[str, Any]) -> Optional[Canonical]:
         title = rec.get("title", "") or ""
         album = ""
         year: Optional[int] = None
+        # Group EC: lift the canonical ids already present in the AcoustID->MB join (additive).
+        # The AcoustID `meta=recordings releasegroups` payload carries the recording id and the
+        # release-group id directly; barcode/catno are not surfaced by AcoustID, so they stay "".
+        recording_mbid = str(rec.get("id", "") or "")
+        release_group_mbid = ""
         for rg in rec.get("releasegroups") or []:
             album = rg.get("title", "") or album
+            release_group_mbid = str(rg.get("id", "") or "")
             break
         if not title:
             continue
         return Canonical(
             artist=artist, title=title, album=album, year=year,
             confidence=round(score, 3), source=SRC_ACOUSTID,
+            recording_mbid=recording_mbid, release_group_mbid=release_group_mbid,
         )
     return None
 
@@ -389,6 +438,32 @@ def identify(path: str, artist: str, title: str, cfg: Any) -> Optional[Canonical
 # Proposal — the locked write policy (pure, NON-destructive)
 # --------------------------------------------------------------------------- #
 
+def _is_trustworthy(current: Dict[str, Any], canonical: "Canonical") -> bool:
+    """The refuse-to-guess predicate (REQ-EI-003), extracted so the write gate AND the
+    Group EC MBID capture share ONE source of truth.
+
+    A title-only MusicBrainz text match — empty/garbled input artist AND not fingerprint-
+    confirmed — routinely resolves the WRONG recording (e.g. "Wildfires" -> a random
+    same-titled track), so it is UNtrustworthy and neither writes display tags nor records an
+    MBID. Trustworthy iff: an AcoustID fingerprint match, OR a corroborating non-garbled input
+    artist, OR the input TITLE carries the canonical artist (the artist-folded-into-title
+    un-fold case). This is a PURE extraction — propose()'s behaviour is unchanged.
+    """
+    in_artist = str(current.get("artist") or "").strip()
+    in_title = str(current.get("title") or "")
+    return bool(
+        canonical.source == SRC_ACOUSTID
+        or (bool(in_artist) and not is_garbled("artist", in_artist))
+        or (bool(canonical.artist) and _contains(in_title, canonical.artist))
+    )
+
+
+# Group EC identity-widening fields lifted off a trustworthy Canonical onto the library Track.
+# They are NOT display tags (so propose() never touches them) — they are the shared join seam
+# persisted via set_core_tags. Only filled from a TRUSTWORTHY identification (see enrich_one).
+_EC_IDENTITY_FIELDS = ("recording_mbid", "release_group_mbid", "barcode", "catno")
+
+
 # @MX:ANCHOR: [AUTO] propose() is the locked ENRICH-012 write policy + refuse-to-guess safety gate.
 # @MX:REASON: FROZEN invariant per SPEC-RADIO-ENRICH-012 REQ-EI-003 — the spine of the engine. A
 #   bare-title text match (empty/garbled input artist, NOT AcoustID-confirmed, input title not
@@ -413,21 +488,7 @@ def propose(current: Dict[str, Any], canonical: Optional[Canonical], cfg: Any) -
     if canonical is None:
         return p
     # SAFETY GATE (no guessing from a bare title): only act on a TRUSTWORTHY identification.
-    # A title-only MusicBrainz text match — empty/garbled input artist AND not fingerprint-
-    # confirmed — routinely resolves the WRONG recording (e.g. "Wildfires" -> a random
-    # same-titled track), so we refuse to write artist/album/year derived from it. Trustworthy
-    # iff: AcoustID fingerprint match, OR a corroborating non-garbled input artist, OR the
-    # input TITLE carries the canonical artist (the artist-folded-into-title un-fold case).
-    # Otherwise keep everything as-is; AcoustID will resolve such tracks once their print is
-    # in the DB, and we never mis-tag the rest.
-    in_artist = str(current.get("artist") or "").strip()
-    in_title = str(current.get("title") or "")
-    trustworthy = (
-        canonical.source == SRC_ACOUSTID
-        or (bool(in_artist) and not is_garbled("artist", in_artist))
-        or (bool(canonical.artist) and _contains(in_title, canonical.artist))
-    )
-    if not trustworthy:
+    if not _is_trustworthy(current, canonical):
         return p  # unidentifiable from a bare title — never guess
     threshold = float(getattr(cfg, "enrich_confidence_threshold", 0.85))
     fill_bar = max(0.5, threshold - 0.15)
@@ -765,6 +826,17 @@ class EnrichmentWorker:
             # Append to any prior provenance rather than clobber it.
             prior = list(getattr(track, "enrich_provenance", []) or [])
             payload["enrich_provenance"] = prior + list(provenance)
+        # Group EC: persist the canonical identity ids (recording/release-group MBID, barcode,
+        # catno) — the shared join seam LOOKUPLOG-023 / ALBUMART-021 / DEDUP-014 / Group EX read.
+        # Only from a TRUSTWORTHY identification (same gate as the display write), and only to
+        # FILL an empty field — never clobber an id the track already carries. This is additive:
+        # it records identity keys without changing any display tag or the write policy.
+        if canonical is not None and _is_trustworthy(_current_fields(track), canonical):
+            for fname in _EC_IDENTITY_FIELDS:
+                new_id = str(getattr(canonical, fname, "") or "").strip()
+                cur_id = str(getattr(track, fname, "") or "").strip()
+                if new_id and not cur_id:
+                    payload[fname] = new_id
         try:
             self.library.set_core_tags(key, payload)
         except Exception as exc:  # noqa: BLE001 - persistence is best-effort
