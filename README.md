@@ -23,11 +23,11 @@ A small Docker Compose stack runs a public MP3 stream. **Liquidsoap** does conti
 playout and, instead of reading a static playlist, it *asks* a **Python "brain"** what to
 play next over HTTP. The brain is where the intelligence lives: it calls **Claude** (on a
 MAX subscription, via the official `claude-agent-sdk`) to curate a batch of real songs,
-**downloads** them from Soulseek (with a YouTube fallback), **analyzes** each track for
-tempo/key/energy/cue points, and periodically has Claude **write a short host link** that a
-local text-to-speech engine speaks between songs. A dated, sourced **editorial knowledge
-base** keeps the host from saying anything stale or made-up. Nothing about the creative
-output is hardcoded — the AI has full editorial authority.
+optionally **downloads** them from Soulseek (with a YouTube fallback), **analyzes** each
+track for tempo/key/energy/cue points, and periodically has Claude **write a short host
+link** that a local text-to-speech engine speaks between songs. A dated, sourced
+**editorial knowledge base** keeps the host from saying anything stale or made-up. Nothing
+about the creative output is hardcoded — the AI has full editorial authority.
 
 ---
 
@@ -107,7 +107,7 @@ batches.
 - A **Claude MAX subscription**, logged in once on the host with the Claude CLI so that
   `~/.claude/.credentials.json` exists (this is how the brain reaches Claude)
 - A few GB of free disk for downloaded music under `data/`
-- Optional: a network that allows Soulseek traffic, if you want autonomous acquisition
+- Optional: a network that allows Soulseek traffic, if you want autonomous P2P acquisition
 
 ### 1. Create your secrets file
 
@@ -151,15 +151,17 @@ Flags:
 
 | Flag | Effect |
 |------|--------|
-| `--with-slskd` / `--slskd` | Force Soulseek acquisition ON |
-| `--no-slskd` | Force it OFF (station plays its existing library) |
+| `--with-slskd` / `--slskd` | Enable Soulseek P2P acquisition |
+| `--no-slskd` | Force slskd OFF (station plays its existing library) |
 | `--no-build` | Skip the image rebuild (fast restart of unchanged services) |
 | `--check` | Deep post-up health tier (probes `/status` JSON, brain liveness) |
 | `--dry-run` | Print every heavy action instead of running it (zero side effects) |
 | `--help` | Print the usage banner and exit |
 
-slskd defaults: the flag wins, then `SLSKD_ENABLED` env, then an interactive prompt
-(default Yes), then ON when non-interactive.
+**slskd is off by default.** Pass `--with-slskd` to enable P2P acquisition, or set
+`SLSKD_ENABLED=1` in the environment. The brain tolerates slskd being absent at runtime —
+the acquisition path is entirely optional. On networks that block P2P traffic, leave it
+off; new music can always be dropped manually into `data/music/`.
 
 ### 3. Tune in
 
@@ -179,7 +181,7 @@ Open the stream URL in any audio player (VLC, a browser, your phone), or visit t
 |------------|------|--------|
 | Pull-based 24/7 playout (Liquidsoap + Icecast), gentle crossfade | CORE-001 | **Shipped** |
 | LLM program-director curation loop (Claude on MAX subscription) | CORE-001 | **Shipped** |
-| Autonomous acquisition: Soulseek (slskd) + yt-dlp fallback | CORE-001 | **Shipped** |
+| Autonomous acquisition: Soulseek (slskd, optional) + yt-dlp fallback | CORE-001 | **Shipped** |
 | Self-served station website + ground-truth now-playing | CORE-001 | **Shipped** |
 | Host talk links: Claude writes, local TTS speaks (Kokoro + Piper fallback) | VOICE-002 | **Shipped** |
 | Loudness-matched talk clips, clean talk transitions | VOICE-002 | **Shipped** |
@@ -272,6 +274,9 @@ golden-shower-radio/
 ├── scripts/
 │   ├── run.sh              # turnkey launcher (preflight → up → health verify)
 │   └── test-run.sh         # sources run.sh and unit-tests its functions
+├── docs/
+│   ├── ARCHITECTURE.md     # deep architecture — pull loop detail, data flow, storage
+│   └── components/         # per-subsystem maintainer docs (playout, acquisition, etc.)
 ├── .moai/specs/            # the SPEC suite (CORE / VOICE / OPS / ORCH / ANALYSIS / …)
 ├── secrets/                # gitignored — your secrets/.env lives here
 └── data/                   # gitignored — downloaded music, databases, logs
@@ -280,3 +285,6 @@ golden-shower-radio/
 For the deeper architecture — the pull loop in detail, each brain module's responsibility,
 the SPEC suite, the data flow, and the storage model — see
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+For per-subsystem maintainer documentation — how each part works, its data structures,
+configuration knobs, and gotchas — see [`docs/components/`](docs/components/).
