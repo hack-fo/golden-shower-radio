@@ -142,6 +142,12 @@ def render_website(cfg: Config) -> str:
   }}
   poll();
   setInterval(poll, 5000);
+  // A backgrounded tab gets its setInterval throttled by the browser (often to >=1/min),
+  // so the page can keep showing a stale track long after the stream moved on. Force an
+  // immediate refresh the instant the tab becomes visible or regains focus, so a returning
+  // listener always sees the true on-air track without waiting for the throttled timer.
+  document.addEventListener("visibilitychange", function() {{ if (!document.hidden) poll(); }});
+  window.addEventListener("focus", poll);
 </script>
 </body>
 </html>"""
