@@ -158,6 +158,27 @@ class Config:
     # both consume. A secret -> never committed (gitignored secrets/ or env only).
     discogs_token: str = field(default_factory=lambda: _env("BRAIN_DISCOGS_TOKEN", ""))
 
+    # --- LOOKUPLOG-023: identification-lookup ledger + query-dedup (negative) cache ---
+    # Master switch for the durable external-lookup AUDIT LEDGER + the query-dedup negative
+    # cache (brain/lookuplog.py). On (default) -> every MusicBrainz text-match lookup that
+    # routes through the cache seam is recorded in its own `lookups.db` (the append-only
+    # audit trail, REQ-LL-001), and a query that recently returned a CONFIRMED MISS/ERROR
+    # within the negative-cache window is NOT re-issued (REQ-LC-001 — the whole-library
+    # backfill stops re-hammering dead queries). Off (BRAIN_LOOKUPLOG_ENABLED=0) -> exactly
+    # today's behaviour: no row is written, no negative cache is consulted, the identification
+    # path is byte-for-byte unchanged (REQ-LG-004). The ledger is best-effort + exception-
+    # isolated: any store error degrades to a normal live lookup, NEVER fails enrichment
+    # (REQ-LG-003). It lives in its OWN WAL file per DATASTORE-022 (REQ-LG-001).
+    lookuplog_enabled: bool = field(default_factory=lambda: _env("BRAIN_LOOKUPLOG_ENABLED", "1") not in ("0", "false", "no"))
+    # The bounded NEGATIVE-cache TTL (seconds): how long a confirmed miss/error for a query
+    # key suppresses a re-query (REQ-LC-001/002). A query OUTSIDE this window does exactly
+    # today's live lookup. Default 7 days — long enough that a whole-library backfill never
+    # re-hammers a dead query, short enough that a genuinely-new MB entry is eventually seen.
+    lookuplog_negative_ttl_seconds: int = field(default_factory=lambda: int(_env("BRAIN_LOOKUPLOG_NEG_TTL_SEC", str(7 * 24 * 3600))))
+    # Retention bound (REQ-LG-002): cap the append-only ledger's row count; pruning removes
+    # the OLDEST rows first so the append-heavy store does not grow unbounded. 0 -> unbounded.
+    lookuplog_retention_max_rows: int = field(default_factory=lambda: int(_env("BRAIN_LOOKUPLOG_MAX_ROWS", "100000")))
+
     # --- ENRICH-012: core-tag enrichment (artist/title/album/year/genre) + write-back ---
     # Master switch for the core-tag enrichment engine (brain/enrich.py). Distinct from
     # enrichment_enabled (ANALYSIS-006 genre/mood derivation): this one IDENTIFIES the
@@ -309,6 +330,17 @@ class Config:
         table is MAPPED here; REFLECT-026 owns its lifecycle). Isolated growth/long-read
         store; cross-file reads use read-only ATTACH (REQ-DX-001)."""
         return os.path.join(self.db_dir, "events.db")
+
+    @property
+    def lookups_db_path(self) -> str:
+        """SPEC-RADIO-LOOKUPLOG-023 (REQ-LG-001, D-3): the OWN SQLite (WAL) file for the
+        external-identification-lookup AUDIT LEDGER + the query-dedup negative cache —
+        DISTINCT from brain.db / state.db / events.db / knowledge.db. A 5th file, an
+        append-heavy / debug-valuable / isolatable blast cell per the DATASTORE-022
+        partitioning rationale: its append churn and any corruption never contaminate the
+        core/precious stores (NFR-L-4). NOT folded into events.db (different lifecycle:
+        internal audit/debug, never listener analytics)."""
+        return os.path.join(self.db_dir, "lookups.db")
 
     @property
     def welcome_marker_path(self) -> str:

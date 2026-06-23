@@ -21,11 +21,14 @@ THE BEHAVIOUR-PRESERVATION CONTRACT (the golden rule of the live brain):
 
 This module NEVER raises into its callers. Every store interaction is exception-isolated.
 
-LOOKUPLOG-023 SEAM: this owns the MB-RESULT cache (the decoded payload keyed by query).
-The lookup LEDGER / in-flight query-dedup (recording every lookup ATTEMPT + outcome) is
-SPEC-RADIO-LOOKUPLOG-023's domain — it will wrap ``lookup_or_fetch`` to record attempts
-around the same seam; it does not replace this result store. The store table is named
-``mb_result_cache`` to stay disjoint from LOOKUPLOG-023's ``lookup_log``.
+LOOKUPLOG-023 SEAM (now wired): this owns the MB-RESULT cache (the decoded payload keyed by
+query). The lookup LEDGER + the query-dedup NEGATIVE cache (recording every lookup ATTEMPT +
+outcome, and suppressing a re-query for a recently-confirmed-dead query) is
+SPEC-RADIO-LOOKUPLOG-023's ``lookup_log`` table in its OWN ``lookups.db`` — a SEPARATE store.
+``lookup_or_fetch`` now calls ``brain.lookuplog`` (best-effort, exception-isolated) around the
+same seam: it consults the negative cache before a fetch and records every attempt after. This
+does NOT replace or alter this MB-RESULT store — the ``mb_result_cache`` HIT/put contract is
+untouched; the two tables (``mb_result_cache`` here vs ``lookup_log`` there) stay disjoint.
 """
 
 from __future__ import annotations
@@ -118,31 +121,86 @@ def lookup_or_fetch(
     Returns the cached or freshly-fetched result. NEVER raises: on any cache-layer error it
     falls back to ``fetch_fn`` (a live call), preserving today's behaviour exactly.
     """
-    store = _store_for(cfg)
-    if store is None:
-        # No cache available/enabled -> pure pass-through (today's behaviour).
-        return fetch_fn()
-
     key = cache_key(method, kwargs)
+    store = _store_for(cfg)
 
     # --- HIT: serve the cached result; no network, no throttle. ------------------
-    try:
-        hit = store.get(key)
-    except Exception as exc:  # noqa: BLE001 - read error -> degrade to a live fetch.
-        log_event(log, "mb_cache.get_failed", method=method, error=str(exc))
-        hit = None
-    if hit is not None:
-        return hit["payload"]
+    # (Only when the MBMIRROR-017 result cache is available; unchanged contract.)
+    if store is not None:
+        try:
+            hit = store.get(key)
+        except Exception as exc:  # noqa: BLE001 - read error -> degrade to a live fetch.
+            log_event(log, "mb_cache.get_failed", method=method, error=str(exc))
+            hit = None
+        if hit is not None:
+            # LOOKUPLOG-023: record the served-from-cache attempt (best-effort, isolated).
+            _ll_record(cfg, method, key, kwargs, lookuplog_outcome="cached", result=hit["payload"])
+            return hit["payload"]
+
+    # --- LOOKUPLOG-023 negative cache (REQ-LC-001): a query that recently returned a CONFIRMED
+    # miss/error within the bounded TTL is NOT re-issued — we return a miss (None) WITHOUT the
+    # network call. Transparent: the observable RESULT is identical to a live miss; only the
+    # wasted external round-trip is avoided. Best-effort: any error -> no suppression (live call).
+    if _ll_negative_hit(cfg, key):
+        _ll_record(cfg, method, key, kwargs, lookuplog_outcome="dedup-miss", result=None)
+        return None
 
     # --- MISS: do exactly what today's code does (the live, throttled fetch). -----
-    result = fetch_fn()
+    try:
+        result = fetch_fn()
+    except Exception:  # noqa: BLE001 - record the failed attempt, then re-raise as today.
+        _ll_record(cfg, method, key, kwargs, lookuplog_outcome="error", result=None)
+        raise
 
     # Only cache a real, non-empty result. A None / empty result is NOT cached, so a
     # transient miss is retried next time rather than poisoning the cache with a no-match
     # (cache-once applies to SUCCESSES, mirroring the project's enrich-on-success rule).
-    if result:
+    if result and store is not None:
         try:
             store.put(key, result, source)
         except Exception as exc:  # noqa: BLE001 - write error -> just skip caching.
             log_event(log, "mb_cache.put_failed", method=method, error=str(exc))
+
+    # LOOKUPLOG-023: record the live attempt + its outcome. A non-empty result is a HIT; an
+    # empty result is a MISS that seeds the negative cache (so a re-scan won't re-query it).
+    _ll_record(
+        cfg, method, key, kwargs,
+        lookuplog_outcome="hit" if result else "miss", result=result,
+    )
     return result
+
+
+def _ll_negative_hit(cfg: Any, key: str) -> bool:
+    """Consult the LOOKUPLOG-023 negative cache. Exception-isolated; False on any error."""
+    try:
+        from . import lookuplog  # noqa: PLC0415 - lazy; keeps mb_cache importable standalone.
+
+        return lookuplog.negative_dedup_hit(cfg, key)
+    except Exception:  # noqa: BLE001 - the dedup layer is best-effort; never suppresses on error.
+        return False
+
+
+def _ll_record(cfg: Any, method: str, key: str, kwargs: Dict[str, Any], *,
+               lookuplog_outcome: str, result: Optional[Dict[str, Any]]) -> None:
+    """Append one LOOKUPLOG-023 ledger row for this MB text-match attempt. Best-effort.
+
+    NEVER raises into ``lookup_or_fetch`` — a ledger failure is the ledger's problem, never the
+    identification path's. The ``Canonical`` MBID summary is recorded at the enrich_one level
+    (where the corroboration outcome is known); here we record the raw query + provider + outcome.
+    """
+    try:
+        from . import lookuplog  # noqa: PLC0415 - lazy import.
+
+        recs = (result or {}).get("recording-list") if isinstance(result, dict) else None
+        summary = {"candidates": len(recs)} if recs is not None else None
+        lookuplog.record_lookup(
+            cfg,
+            provider=lookuplog.PROVIDER_MB_TEXT,
+            query_key=key,
+            outcome=lookuplog_outcome,
+            query_inputs={"method": method, **{k: v for k, v in kwargs.items()}},
+            results_summary=summary,
+            source=lookuplog.PROVIDER_MB_TEXT if result else "",
+        )
+    except Exception:  # noqa: BLE001 - the ledger never breaks the lookup path.
+        pass

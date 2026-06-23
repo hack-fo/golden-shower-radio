@@ -1,6 +1,6 @@
 ---
 id: SPEC-RADIO-LOOKUPLOG-023
-version: 0.1.0
+version: 0.2.0
 status: draft
 created: 2026-06-23
 updated: 2026-06-23
@@ -12,6 +12,49 @@ issue_number: 23
 # SPEC-RADIO-LOOKUPLOG-023 — Identification-Lookup Ledger (External Lookup Audit Trail + Query-Dedup Cache)
 
 ## HISTORY
+
+- 2026-06-23 (v0.2.0): DDD ANALYZE-PRESERVE-IMPROVE slice — BUILT the ledger SUBSTRATE +
+  the negative-cache query-dedup, wrapped TRANSPARENTLY around the `mb_cache.lookup_or_fetch`
+  seam (the central MusicBrainz text-match chokepoint). Shipped:
+  - **Group LG (store)**: `lookups.db` is now the 5th distinct WAL file (D-3 resolved →
+    `Config.lookups_db_path`); `sqlite_store.LookupLogStore` holds the `lookup_log` table
+    (append-only audit ledger + negative cache), DISJOINT from MBMIRROR-017's
+    `mb_result_cache` (REQ-LG-001). Config toggle `BRAIN_LOOKUPLOG_ENABLED` (default on),
+    negative TTL `BRAIN_LOOKUPLOG_NEG_TTL_SEC` (7d), retention `BRAIN_LOOKUPLOG_MAX_ROWS`
+    (100k, oldest-first prune, REQ-LG-002/004). Best-effort + exception-isolated end to end:
+    a store/ledger failure degrades to a normal live lookup, never raises into enrichment
+    (REQ-LG-003) — proved by `test_ledger_failure_degrades_to_a_normal_live_lookup`.
+  - **Group LL (ledger)**: `lookuplog.record_lookup` appends one row per lookup ATTEMPT at the
+    seam (provider `musicbrainz-text`, query key, query inputs, outcome `hit/miss/error/cached/
+    dedup-miss`, candidate count, schema version, latency) — including misses/errors the
+    `enrich_provenance` record structurally cannot carry (REQ-LL-001/002). Append-only; a
+    re-lookup appends (REQ-LL-004).
+  - **Group LC (dedup)**: `negative_dedup_hit` consults the negative cache BEFORE the fetch; a
+    query that recently returned a confirmed miss/error (within the TTL window AND under the
+    current `ENRICH_SCHEMA_VERSION`) returns a TRANSPARENT miss (None) with NO network call
+    (REQ-LC-001); freshness is gated on TTL + schema version + the changed query key
+    (REQ-LC-002). The MBMIRROR-017 result-cache HIT/put contract is UNTOUCHED — proved by
+    `test_result_cache_contract_is_untouched_by_the_ledger`.
+  - **Group LM (MBID exposure)**: `LookupLogStore.recording_mbid_for_track` exposes the most
+    recent resolved recording MBID per track for DEDUP-014 to consume (REQ-LM-002). The D-4
+    dependency is RESOLVED in code: ENRICH-012's `Canonical` already carries `recording_mbid` +
+    `release_group_mbid` (enrich.py, via Group EC), so the MBID columns are non-degraded.
+  - 14 new offline/deterministic tests in `brain/test_lookuplog.py`; full suite 255 passed,
+    1 deselected, 0 skips. Behaviour-preserving: the 241 pre-existing tests stay green
+    unchanged (their cfg has no `lookups_db_path` → the ledger degrades to pass-through).
+  - **DEFERRED (documented, not built)**: (a) the AcoustID-site recording in
+    `enrich.identify_acoustid` (the httpx lookup is NOT routed through `mb_cache`, so its
+    `provider=acoustid` rows + fpcalc fingerprint as the content-identity key are not yet
+    captured — only the `musicbrainz-text` seam is wrapped); (b) the full content-identity
+    KEY (Group LK) — today the negative-cache key is the normalized MB query key, not the
+    Chromaprint fingerprint / file-content fallback (REQ-LK-001/002/003 unbuilt); (c) the
+    ACTION-taxonomy linkage at `enrich_one` (the `action`/`track_key`/`file_path`/MBID-summary
+    columns exist but are filled only from the seam, where the corroboration outcome is not yet
+    known — REQ-LL-003 row-level linkage is partial); (d) the explicit MBMIRROR-017 Group MC
+    backing wiring (REQ-LC-003 — the cache operates as an independent audit+dedup store today);
+    (e) STATS-013 / listener-surface consumers. These are larger, more invasive slices kept out
+    to preserve the 241-green / result-cache-untouched contract. D-1/D-2/D-3/D-4 followed their
+    spec RECOMMENDATIONS.
 
 - 2026-06-23 (v0.1.0): Initial draft, occupying the new global-incrementing LOOKUPLOG-023 id.
   The IDENTIFICATION-LOOKUP LEDGER subsystem of the golden-shower-radio autonomous AI radio

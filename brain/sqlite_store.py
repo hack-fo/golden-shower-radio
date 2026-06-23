@@ -818,3 +818,192 @@ class MbCacheStore:
                 "DELETE FROM mb_result_cache WHERE cache_key=?", (cache_key,)
             )
             self.handle.conn.commit()
+
+
+# --------------------------------------------------------------------------- #
+# lookups.db — lookup_log (LOOKUPLOG-023: audit ledger + query-dedup negative cache)
+# --------------------------------------------------------------------------- #
+
+
+class LookupLogStore:
+    """``lookup_log`` table in ``lookups.db`` — the external-identification AUDIT LEDGER
+    plus the query-dedup NEGATIVE cache (SPEC-RADIO-LOOKUPLOG-023, Groups LL/LC/LM/LG).
+
+    APPEND-ONLY (REQ-LL-004): a re-lookup APPENDS a new row (autoincrement ``id``); rows are
+    immutable once written. The retention prune (REQ-LG-002) — removing the OLDEST rows when
+    the row-count bound is exceeded — is the ONLY mutation of the ledger.
+
+    TABLE-DISCIPLINE SEAM (REQ-LG-001): this is a SEPARATE table in a SEPARATE file from
+    MBMIRROR-017's ``mb_result_cache`` (the decoded MB RESULT cache, in ``brain.db``). The two
+    are disjoint by design: ``mb_result_cache`` stores the SUCCESSFUL decoded payload keyed by
+    query; ``lookup_log`` stores the per-attempt AUDIT TRAIL + the negative (confirmed-miss)
+    dedup cache. They never collide and never merge.
+
+    NEGATIVE cache (REQ-LC-001/002): a row whose ``outcome`` is a confirmed miss/error, recorded
+    under the CURRENT ``schema_version`` and within the negative-TTL window, suppresses a re-query
+    for the same ``query_key`` — so a re-scan never re-hammers a dead query. Freshness is gated on
+    (a) the query key (a changed file / changed inputs yields a different key → natural miss) and
+    (b) the schema version (a lookup recorded under an older ENRICH schema may be re-queried on a
+    deliberate schema-bump re-pass) — mirroring MBMIRROR-017 REQ-MC-004; never a silent timer-only
+    expiry beyond the explicit TTL bound.
+
+    It lives in its OWN WAL file (``lookups.db``) with its own connection + write lock — an
+    isolatable, append-heavy blast cell (NFR-L-4).
+    """
+
+    # Outcome taxonomy (REQ-LL-002). A confirmed-dead outcome (the negative-cache set) is
+    # ``miss`` or ``error``; ``hit`` / ``cached`` / ``dedup-miss`` are non-negative.
+    NEGATIVE_OUTCOMES = ("miss", "error")
+
+    def __init__(self, db_path: str):
+        self.handle = _conn_for(db_path)
+        _ensure_meta(self.handle)
+        with self.handle.lock:
+            self.handle.conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS lookup_log (
+                    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts                 INTEGER NOT NULL,
+                    provider           TEXT NOT NULL,
+                    query_key          TEXT NOT NULL,
+                    track_key          TEXT DEFAULT '',
+                    file_path          TEXT DEFAULT '',
+                    query_inputs       TEXT DEFAULT '',
+                    outcome            TEXT NOT NULL,
+                    results_summary    TEXT DEFAULT '',
+                    recording_mbid     TEXT DEFAULT '',
+                    release_group_mbid TEXT DEFAULT '',
+                    confidence         REAL DEFAULT 0,
+                    source             TEXT DEFAULT '',
+                    action             TEXT DEFAULT '',
+                    schema_version     INTEGER DEFAULT 0,
+                    latency_ms         INTEGER DEFAULT 0
+                );
+                CREATE INDEX IF NOT EXISTS idx_lookup_query_key ON lookup_log(query_key, id);
+                CREATE INDEX IF NOT EXISTS idx_lookup_track_key ON lookup_log(track_key, id);
+                """
+            )
+            self.handle.conn.commit()
+
+    def append(self, row: Dict[str, Any]) -> int:
+        """Append one ledger row (REQ-LL-001/004). Returns the new autoincrement id.
+
+        Unknown keys are ignored; missing keys take the column default. ``ts`` defaults to now.
+        This is the ONLY write path besides ``prune`` — history is never overwritten.
+        """
+        ts = int(row.get("ts") if row.get("ts") is not None else time.time())
+        with self.handle.lock:
+            cur = self.handle.conn.execute(
+                """INSERT INTO lookup_log(
+                       ts, provider, query_key, track_key, file_path, query_inputs,
+                       outcome, results_summary, recording_mbid, release_group_mbid,
+                       confidence, source, action, schema_version, latency_ms)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    ts,
+                    str(row.get("provider", "")),
+                    str(row.get("query_key", "")),
+                    str(row.get("track_key", "") or ""),
+                    str(row.get("file_path", "") or ""),
+                    str(row.get("query_inputs", "") or ""),
+                    str(row.get("outcome", "")),
+                    str(row.get("results_summary", "") or ""),
+                    str(row.get("recording_mbid", "") or ""),
+                    str(row.get("release_group_mbid", "") or ""),
+                    float(row.get("confidence", 0) or 0),
+                    str(row.get("source", "") or ""),
+                    str(row.get("action", "") or ""),
+                    int(row.get("schema_version", 0) or 0),
+                    int(row.get("latency_ms", 0) or 0),
+                ),
+            )
+            self.handle.conn.commit()
+            return int(cur.lastrowid or 0)
+
+    # @MX:ANCHOR: [AUTO] The negative-cache freshness predicate — the LOOKUPLOG-023 dedup gate.
+    # @MX:REASON: the single source of truth for "is this query confirmed-dead and still fresh?"
+    #   (REQ-LC-001/002). Three gates, all required: the MOST RECENT row for the key must have a
+    #   NEGATIVE outcome (miss/error), its schema_version must equal the current one (a bump
+    #   re-opens it), and it must be within the TTL window (ttl<=0 disables). A later success for
+    #   the same key (a non-negative most-recent row) MUST NOT suppress. Mis-gating either
+    #   re-hammers external APIs (too loose) or never re-discovers a newly-available MB entry
+    #   (too tight). Locked by test_negative_freshness_expires_with_ttl /
+    #   test_negative_freshness_gated_on_schema_version / test_negative_cache_does_not_suppress_a_successful_query.
+    # @MX:SPEC: SPEC-RADIO-LOOKUPLOG-023 REQ-LC-001 / REQ-LC-002
+    def negative_hit(self, query_key: str, *, ttl_seconds: int,
+                     schema_version: int, now: Optional[int] = None) -> bool:
+        """REQ-LC-001/002: True if a recent CONFIRMED miss/error for ``query_key`` is still
+        fresh — recorded under the current ``schema_version`` and within ``ttl_seconds``.
+
+        Freshness gates: (a) the negative entry's ``schema_version`` must equal the current one
+        (a schema bump re-opens the query), and (b) it must be within the TTL window. A
+        ``ttl_seconds <= 0`` disables the negative cache (no entry is ever fresh). The MOST
+        RECENT row for the key decides: if its outcome is non-negative (a later success/hit),
+        there is no negative suppression even if an older miss exists.
+        """
+        if ttl_seconds <= 0:
+            return False
+        cutoff = int(now if now is not None else time.time()) - int(ttl_seconds)
+        with self.handle.lock:
+            cur = self.handle.conn.cursor()
+            cur.execute(
+                "SELECT outcome, ts, schema_version FROM lookup_log "
+                "WHERE query_key=? ORDER BY id DESC LIMIT 1",
+                (query_key,),
+            )
+            row = cur.fetchone()
+        if row is None:
+            return False
+        if row["outcome"] not in self.NEGATIVE_OUTCOMES:
+            return False
+        if int(row["schema_version"]) != int(schema_version):
+            return False
+        return int(row["ts"]) >= cutoff
+
+    def recording_mbid_for_track(self, track_key: str) -> str:
+        """REQ-LM-002: the most-recent resolved canonical recording MBID for a track, the
+        precise duplicate key DEDUP-014 consumes (read-only; LOOKUPLOG never re-resolves)."""
+        with self.handle.lock:
+            cur = self.handle.conn.cursor()
+            cur.execute(
+                "SELECT recording_mbid FROM lookup_log "
+                "WHERE track_key=? AND recording_mbid != '' ORDER BY id DESC LIMIT 1",
+                (track_key,),
+            )
+            row = cur.fetchone()
+        return str(row["recording_mbid"]) if row else ""
+
+    def count(self) -> int:
+        with self.handle.lock:
+            cur = self.handle.conn.cursor()
+            cur.execute("SELECT COUNT(*) AS n FROM lookup_log")
+            return int(cur.fetchone()["n"])
+
+    def prune(self, max_rows: int) -> int:
+        """REQ-LG-002: bound growth — keep the newest ``max_rows`` rows, delete the oldest.
+
+        Returns the number of rows removed. ``max_rows <= 0`` means unbounded (no prune).
+        Pruning the oldest rows is the ONLY mutation of the append-only ledger (REQ-LL-004);
+        the current/most-recent resolution per track stays within the retained window.
+        """
+        if max_rows <= 0:
+            return 0
+        with self.handle.lock:
+            cur = self.handle.conn.cursor()
+            cur.execute("SELECT COUNT(*) AS n FROM lookup_log")
+            total = int(cur.fetchone()["n"])
+            if total <= max_rows:
+                return 0
+            # Delete every row whose id is at or below the (total-max_rows)-th oldest id.
+            cur.execute(
+                "SELECT id FROM lookup_log ORDER BY id ASC LIMIT 1 OFFSET ?",
+                (total - max_rows,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return 0
+            boundary_id = int(row["id"])
+            cur.execute("DELETE FROM lookup_log WHERE id < ?", (boundary_id,))
+            removed = cur.rowcount
+            self.handle.conn.commit()
+            return int(removed)
