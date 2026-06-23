@@ -132,6 +132,26 @@ class Config:
     # MusicBrainz User-Agent (their API requires an identifying UA).
     musicbrainz_user_agent: str = field(default_factory=lambda: _env("BRAIN_MB_USER_AGENT", "GoldenShowerRadio/1.0 (radio brain)"))
 
+    # --- ENRICH-012: core-tag enrichment (artist/title/album/year/genre) + write-back ---
+    # Master switch for the core-tag enrichment engine (brain/enrich.py). Distinct from
+    # enrichment_enabled (ANALYSIS-006 genre/mood derivation): this one IDENTIFIES the
+    # canonical recording and CORRECTS artist/title/album on the file + library.
+    enrich_tags_enabled: bool = field(default_factory=lambda: _env("BRAIN_ENRICH_TAGS_ENABLED", "1") not in ("0", "false", "no"))
+    # Confidence floor [0..1] to APPLY a correction. Below it: leave as-is + log. Fill of an
+    # EMPTY field uses a lower bar (see enrich.py); OVERWRITING an existing value needs this.
+    enrich_confidence_threshold: float = field(default_factory=lambda: float(_env("BRAIN_ENRICH_CONFIDENCE", "0.85")))
+    # AcoustID fingerprint identification (Chromaprint fpcalc -> AcoustID -> MusicBrainz).
+    # Requires the fpcalc binary in the image AND an AcoustID application API key. With no
+    # key the fingerprint path is SKIPPED and text-match is used (graceful degradation).
+    acoustid_api_key: str = field(default_factory=lambda: _env("BRAIN_ACOUSTID_API_KEY", ""))
+    acoustid_fpcalc_path: str = field(default_factory=lambda: _env("BRAIN_FPCALC_PATH", "fpcalc"))
+    # WRITE-BACK to the audio file (mutagen). When False, corrections update library.json
+    # only (non-destructive). Default True per the locked decision (fix the files too).
+    enrich_write_files: bool = field(default_factory=lambda: _env("BRAIN_ENRICH_WRITE_FILES", "1") not in ("0", "false", "no"))
+    # Background BACKFILL pass over the existing library (bounded, resumable). When False,
+    # only newly-downloaded files are enriched (on-acquire).
+    enrich_backfill_enabled: bool = field(default_factory=lambda: _env("BRAIN_ENRICH_BACKFILL", "1") not in ("0", "false", "no"))
+
     # --- ANALYSIS-006: library watch / auto-ingest (REQ-AP-007) ---
     watch_enabled: bool = field(default_factory=lambda: _env("BRAIN_WATCH_ENABLED", "1") not in ("0", "false", "no"))
     # Interval (seconds) for the periodic METADATA-ONLY (os.scandir+stat) scan that

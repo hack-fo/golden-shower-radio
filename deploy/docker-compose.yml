@@ -66,6 +66,13 @@ services:
     # bills pay-per-use credits (this is what broke the old brain). The brain must
     # authenticate via the mounted ~/.claude OAuth subscription creds, so we pass
     # ONLY the vars it needs and leave ANTHROPIC_API_KEY unset.
+    # Brain-only secrets (ENRICH-012 AcoustID key, etc.). A SEPARATE file from
+    # secrets/.env — it MUST NOT contain ANTHROPIC_API_KEY (see note above). Optional:
+    # the brain runs fine without it (AcoustID skipped -> text-match fallback). Path is
+    # relative to this compose file (deploy/) -> repo-root/secrets/brain.env.
+    env_file:
+      - path: ../secrets/brain.env
+        required: false
     environment:
       SLSKD_URL: http://slskd:5030
       SLSKD_API_KEY: ${SLSKD_API_KEY}
