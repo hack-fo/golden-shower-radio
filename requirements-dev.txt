@@ -13,3 +13,9 @@
 pytest>=8,<10
 pytest-cov>=5,<8
 coverage>=7,<8
+
+# Runtime dep mirrored here for TESTS ONLY: the audio-tag enrichment tests exercise
+# mutagen (a real runtime dep declared in requirements.txt). Listing it here lets CI
+# and developers run the COMPLETE suite instead of self-skipping the 9 tag tests.
+# Keep this pin in sync with requirements.txt.
+mutagen>=1.47,<2.0
