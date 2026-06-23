@@ -1,6 +1,6 @@
 ---
 id: SPEC-RADIO-OPS-004
-version: 0.9.1
+version: 0.9.3
 status: draft
 created: 2026-06-22
 updated: 2026-06-23
@@ -301,6 +301,54 @@ issue_number: null
   OB-013/OY-006 relabeled Unwanted→Ubiquitous in the Section 18 index; REQ-OB-014 and REQ-OD-009
   recast to name "the system" as the subject (OB-014 in explicit If/then Unwanted form), keeping
   their Unwanted label.
+- 2026-06-23 (v0.9.2): Three surgical additions to the autonomous-operator contract (relayed
+  during authoring — confirm with user; R-O-33/34/35). (1) WISHLIST DISCOVERY INPUT into Group OH.
+  NEW REQ-OH-007 (Event-driven [HARD]): an off-catalog listener request becomes a NON-BINDING
+  WISHLIST DISCOVERY SIGNAL into the EXISTING slskd-first / yt-dlp-last acquisition pipeline
+  (REQ-OH-002), never an acquisition command. [HARD] NEVER auto-acquire on a single request — a
+  wishlist entry crosses into acquisition only after it clears DEDUPLICATION + accumulates a
+  configurable WANT-COUNT + passes the AI's curatorial DISCRETION (want-count is curatorial
+  CONTEXT, never an optimization target, per REQ-OF-004 / NFR-O-7). The catalog-search REQUEST
+  BOX + typeahead (search miss = discovery signal for an off-catalog title) is OWNED by
+  SPEC-RADIO-REQUEST-011 Group RM, NOT OPS-004; REQ-OB-009 here is the separate website FEEDBACK
+  FORM channel, not the request search-box. The request UI / matcher / wishlist store are
+  OWNED by SPEC-RADIO-REQUEST-011 (referenced, not re-owned); OH-007 owns only the cross-into-
+  pipeline POLICY. Any acquisition that fires flows through the unchanged OH-002 ranking, OH-006
+  bounded queue/throttle, and the new OH-008 disk-guard — adds candidates, bypasses no rail. (2)
+  NEVER-CUT-SHORT INVARIANT. NEW NFR-O-12 (Ubiquitous [HARD]): a song ALWAYS plays to its natural
+  end; no truncate/skip/cut-short once on air. The temporal twin of NFR-O-11 (NFR-O-11 = HOW a
+  transition sounds at the boundary; NFR-O-12 = WHEN a track is allowed to end at all) — together
+  no abrupt cut AND no premature end. Two distinct paths, never conflated: the NORMAL breaking-
+  news path is REQ-OG-008 (insert at a SAFE boundary — natural song end, never mid-vocal — never
+  cuts short); the cut-short EXCEPTION is owned SOLELY by NFR-O-12 and invoked ONLY for a
+  genuinely urgent major-breaking event where waiting for the song's natural end is unacceptable.
+  REQ-OG-008 carries NO cut-short path. No routine transition, daypart/format-
+  clock boundary, schedule edit, persona/show lifecycle transition, or taste/variety preference
+  may ever cut a playing song short — they compose AROUND song boundaries. Does not silence the
+  stream (OG-008 MUST NOT silence). (3) ACQUISITION DISK-GUARD with hysteresis. NEW REQ-OH-008
+  (State-driven [HARD]): a watcher monitors free space on the DOWNLOAD volume; below a configurable
+  PAUSE threshold (min-free GB or %) it PAUSES new acquisition, above a SEPARATE HIGHER RESUME
+  threshold it RESUMES; [HARD] resume > pause (HYSTERESIS) so it does not FLAP; logs/alerts every
+  transition (NFR-O-6 health/status). [HARD] NEVER affects PLAYOUT — pausing acquisition only stops
+  growing the library; the stream keeps playing the EXISTING library uninterrupted (acquisition
+  pipeline ONLY, never the pull/playout path). COMPLEMENTS REQ-OH-004 evict-least-valuable (OH-004
+  frees space by eviction; OH-008 stops new inflow) and REQ-OH-006 queue bound/throttle (OH-006
+  bounds queue depth; OH-008 gates on download-volume free space). Reference-not-re-own throughout:
+  REQUEST-011 owns the wishlist/UI/matcher; ORCH-005 owns the interrupt reaction tier; CORE-001
+  owns the pull/playout path. No new datastore, no Liquidsoap change, brain-only. Net: +2 REQ
+  (OH-007, OH-008) + 1 NFR (NFR-O-12). Total: 97 REQ + 12 NFR = 109, 1:1 REQ↔AC preserved.
+- 2026-06-23 (v0.9.3): Audit fix pass — cross-spec ownership reconciliation (no requirement
+  added/removed; 97 REQ + 12 NFR = 109, 1:1 REQ↔AC preserved). (D1) NFR-O-12 / REQ-OG-008
+  reconciled: the urgent "MAY cut a song short" exception is now owned SOLELY by NFR-O-12 and is
+  no longer described as "routed through REQ-OG-008". The two paths are now explicitly distinct —
+  REQ-OG-008 is the NORMAL breaking-news path that interrupts at a SAFE boundary (natural song
+  end, never mid-vocal) and carries NO cut-short; the cut-short EXCEPTION fires only for a
+  genuinely urgent major-breaking event and lives here in NFR-O-12. REQ-OG-008/AC-OG-008 remain
+  safe-boundary-only (no cut-short path added). (D3-align) Search-box ownership clarified in
+  REQ-OH-007 / AC-OH-007 / the v0.9.2 narrative: the catalog-search REQUEST BOX + typeahead is
+  owned by SPEC-RADIO-REQUEST-011 Group RM, NOT OPS-004; REQ-OB-009 is the separate website
+  FEEDBACK FORM channel (a distinct listener signal), not the request search-box. Both AC files
+  updated in lockstep with their REQs; spec.md and acceptance.md frontmatter versions matched.
 
 ---
 
@@ -1806,6 +1854,51 @@ config; the stats are exposed in health/status (NFR-O-6).
 
 **Acceptance criteria:** see acceptance.md AC-OH-006.
 
+### REQ-OH-007 — Wishlist discovery input: off-catalog requests are a NON-BINDING acquisition signal (Event-driven) [HARD]
+
+When a listener requests a track that is NOT in the amassed library (an off-catalog
+request), the system shall treat that request as a NON-BINDING WISHLIST DISCOVERY
+SIGNAL into the EXISTING slskd-first / yt-dlp-last acquisition pipeline (REQ-OH-002),
+never as an acquisition command. [HARD] The system shall NEVER auto-acquire on a single
+request: a wishlist entry becomes an acquisition CANDIDATE only after it clears
+deduplication (the same desired track is coalesced into one wishlist entry, not N) AND
+accumulates a configurable want-count (multiple distinct listeners wanting the same
+off-catalog track) AND passes the AI's curatorial discretion (the director decides
+WHETHER and WHEN to acquire — a high want-count is curatorial CONTEXT, never an
+optimization target or a binding trigger, consistent with the anti-appeal rails
+REQ-OF-004 / NFR-O-7). The catalog-search REQUEST BOX + typeahead (a search miss for an
+off-catalog title is a discovery signal alongside the explicit request channel) is OWNED
+by SPEC-RADIO-REQUEST-011 Group RM, NOT by OPS-004; REQ-OB-009 here is the separate
+website FEEDBACK FORM channel, not the request search-box. The request UI, the
+request→library matcher, and the wishlist store itself are all OWNED by
+SPEC-RADIO-REQUEST-011 (referenced, not re-owned here); OH-007 owns only the POLICY by
+which a wishlist entry crosses into this acquisition pipeline. Any acquisition that does
+fire flows through the unchanged REQ-OH-002 ranking, the REQ-OH-006 bounded queue /
+throttle, and the REQ-OH-008 disk-guard — the wishlist adds candidates, it does not
+bypass any acquisition rail.
+
+**Acceptance criteria:** see acceptance.md AC-OH-007.
+
+### REQ-OH-008 — Acquisition disk-guard with hysteresis; never affects playout (State-driven) [HARD]
+
+While running, a disk-space WATCHER shall monitor free space on the DOWNLOAD volume.
+When free space falls below a configurable PAUSE threshold (an absolute min-free GB or a
+percentage), the system shall PAUSE new acquisition (no new slskd/yt-dlp downloads
+started, no new wishlist candidates promoted to download); when free space rises above a
+SEPARATE, HIGHER configurable RESUME threshold, the system shall RESUME new acquisition.
+[HARD] The resume threshold shall be strictly greater than the pause threshold
+(HYSTERESIS) so the guard does not FLAP rapidly around a single boundary. The guard
+shall LOG/ALERT on every pause and resume transition (surfaced in health/status,
+NFR-O-6). [HARD] The disk-guard shall NEVER affect PLAYOUT: pausing acquisition only
+stops growing the library; the stream keeps playing the EXISTING library uninterrupted —
+the guard touches the acquisition pipeline ONLY, never the pull/playout path. This
+COMPLEMENTS the REQ-OH-004 evict-least-valuable disk management (OH-004 frees space by
+eviction; OH-008 stops new inflow before space runs critical) and the REQ-OH-006 queue
+bound/throttle (OH-006 bounds the queue depth; OH-008 gates on the download-volume free
+space with hysteresis). Pause/resume thresholds are TUNABLE config.
+
+**Acceptance criteria:** see acceptance.md AC-OH-008.
+
 ---
 
 ## 12b. Requirement Group OX — Topic-Bank Inventory
@@ -2297,6 +2390,28 @@ Richer DJ-style beatmatch/EQ mixing applies only to club/dance shows by the AI's
 context choice; the no-sharp-cutoff floor applies everywhere. See acceptance.md
 AC-NFR-O-11.
 
+### NFR-O-12 — Never-cut-short invariant: a song always plays to its natural end (Ubiquitous) [HARD]
+[HARD] A song shall ALWAYS play to its natural end. The system shall not truncate,
+skip, or cut a song short once it is on air — the ONLY permitted exception is a genuinely
+urgent MAJOR breaking-news event, and that cut-short exception is OWNED SOLELY by this
+NFR-O-12. This is the temporal invariant that pairs with NFR-O-11's no-sharp-cutoff
+(NFR-O-11 governs HOW a transition sounds at the boundary; NFR-O-12 governs WHEN a track
+is allowed to end at all): together they guarantee no abrupt cut and no premature end.
+
+Two distinct paths exist and MUST NOT be conflated. (1) The NORMAL breaking-news path is
+REQ-OG-008: a breaking-news item is inserted out of cadence at a SAFE boundary — the
+natural end of the current song, never mid-vocal — and the clock resumes cleanly. This is
+the default for breaking news and it never cuts a playing song short. (2) The cut-short
+EXCEPTION is owned HERE by NFR-O-12 and invoked ONLY when the AI judges an event a
+genuinely urgent major-breaking event for which waiting for the current song's natural end
+would be unacceptable; only then may a playing song be cut short. REQ-OG-008 does NOT carry
+a cut-short path — it interrupts at a safe boundary only. No routine transition, daypart
+boundary, format-clock change, schedule edit, persona/show lifecycle transition, or
+taste/variety preference may ever cut a playing song short — those compose AROUND song
+boundaries, never through them. This invariant does not silence the stream (REQ-OG-008
+MUST NOT silence) and never overrides the continuous-operation rails. See acceptance.md
+AC-NFR-O-12.
+
 ---
 
 ## 16. Open Questions / Risks
@@ -2684,6 +2799,8 @@ are in acceptance.md Section B).
 | REQ-OH-004 | Library Management & Acquisition Policy | High | State | AC-OH-004 |
 | REQ-OH-005 | Library Management & Acquisition Policy | Medium | Event | AC-OH-005 |
 | REQ-OH-006 | Library Management & Acquisition Policy | High | State | AC-OH-006 |
+| REQ-OH-007 | Library Management & Acquisition Policy | Medium | Event | AC-OH-007 |
+| REQ-OH-008 | Library Management & Acquisition Policy | High | State | AC-OH-008 |
 | REQ-OX-001 | Topic-Bank Inventory | High | Ubiquitous | AC-OX-001 |
 | REQ-OX-002 | Topic-Bank Inventory | High | Event | AC-OX-002 |
 | REQ-OX-003 | Topic-Bank Inventory | High | State | AC-OX-003 |
@@ -2708,3 +2825,4 @@ are in acceptance.md Section B).
 | NFR-O-9 | Non-Functional | High | Ubiquitous | AC-NFR-O-9 |
 | NFR-O-10 | Non-Functional | High | Ubiquitous | AC-NFR-O-10 |
 | NFR-O-11 | Non-Functional | High | Ubiquitous | AC-NFR-O-11 |
+| NFR-O-12 | Non-Functional | High | Ubiquitous | AC-NFR-O-12 |

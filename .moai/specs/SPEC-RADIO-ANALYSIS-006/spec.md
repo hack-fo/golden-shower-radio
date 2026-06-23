@@ -1,9 +1,9 @@
 ---
 id: SPEC-RADIO-ANALYSIS-006
-version: 0.4.0
+version: 0.4.2
 status: draft
 created: 2026-06-22
-updated: 2026-06-22
+updated: 2026-06-23
 author: charlie
 priority: High
 issue_number: null
@@ -91,6 +91,40 @@ issue_number: null
   distinguished on sonic character + lineage, not just genre tag — referenced, not restated).
   +2 risks (R-A-12 sonic/LLM-grounding, R-A-13 consensus thresholds). Net: +2 REQ (AE-006,
   AT-007). Total: 29 REQ + 7 NFR = 36, 1:1 REQ↔AC preserved.
+- 2026-06-23 (v0.4.1): Two additive extensions, no behavior change to existing detectors.
+  (1) PROVENANCE FIELDS on the Track record (this SPEC owns it, REQ-AD-001): +REQ-AD-006
+  [HARD] adds `acquired_at` (acquisition timestamp, DISTINCT from the file's `added_at`/mtime),
+  `requested_by` (enum: director-curated | user-requested | ingest-scan | seed-reference), and
+  `grab_reason` (the director's stated reason, stored VERBATIM as an UNVERIFIED claim — never
+  promoted to a verified fact alongside consensus-backed features). [HARD] Written ONLY through
+  the existing allowlist writer (REQ-AD-001); the frozen identity/dedup fields
+  (path/artist/title/`Track.key`) are NEVER touched by provenance updaters; persisted at
+  DECISION TIME as a pure stored breakdown (not recomputed later). The POPULATING LOGIC (who
+  decides + what reason text) is owned by SPEC-RADIO-PROGRAMMING-007 Group PL (taste
+  self-learning) — referenced, not re-owned; ANALYSIS-006 owns only the fields + the write
+  discipline. (2) ADDITIVE SPECTRAL-FLUX BOUNDARY FEATURE in Group AT: +REQ-AT-008 [HARD]
+  computes a spectral-flux / spectrogram-derived onset & offset as an ADDITIONAL per-track
+  feature ALONGSIDE the existing energy-envelope cue-in/cue-out/true-end (REQ-AT-001/002/003)
+  — [HARD] it does NOT replace the energy-envelope detector, which stays the playout-critical
+  path. The spectral-flux signal CORROBORATES/enriches the cue points and feeds the AI's
+  transition reasoning (REQ-AT-007) as another GROUNDED input (the grounded-features-feed-the-LLM
+  principle); kept bounded/off-playout under the AE rails. Net: +2 REQ (AD-006, AT-008). Total:
+  31 REQ + 7 NFR = 38, 1:1 REQ↔AC preserved.
+- 2026-06-23 (v0.4.2): Cross-spec audit fix pass (no behavior change, no REQ count change).
+  (1) [D1 canonical] REQ-AD-006 keeps `grab_reason` as the canonical Track field; the
+  [Boundary] note now cites PROGRAMMING-007 REQ-PL-008 as the owner of the POPULATING LOGIC
+  that writes `grab_reason`/`requested_by` through this SPEC's allowlist writer, and adds a
+  [HARD] no-double-storage note reconciling `requested_by` (the acquisition ACTOR CLASS, owned
+  + stored only here) vs PROGRAMMING-007 REQ-PL-001 `source`/`acquired_for` (channel/target,
+  not a duplicate of the actor). (2) [D2] Scoped the [HARD] CPU-only/offline/no-network rail
+  OFF the OPTIONAL LLM path in REQ-AE-006, REQ-AT-007, and AC-AE-006: the rail applies to the
+  audio-FEATURE extraction (core DSP, NFR-A-1) only; the optional LLM sonic-description /
+  music-theory application uses the brain's EXISTING LLM access, OFF the playout path, cached +
+  idempotent (mirroring the OA-011 metadata-API exemption from the no-network rail) — removing
+  the literally-unsatisfiable "LLM call runs with no network" [HARD] AC. (3) [EARS] Reclassified
+  REQ-AM-004 from Ubiquitous to Event-driven (its text is already event-worded: "When a track
+  has garbled/filename-parsed tags…"); header + Traceability Index now agree. Net: +0 REQ.
+  Total unchanged: 31 REQ + 7 NFR = 38, 1:1 REQ↔AC preserved.
 
 ---
 
@@ -304,6 +338,8 @@ Consumed VOICE-002 concept:
 | **Backfill** | The bounded, throttled, resumable pass that analyzes the EXISTING library (tracks ingested before analysis existed), as distinct from the on-ingest analysis of new downloads. |
 | **Taste profile** | A persona/show-scoped set of feature constraints (include/exclude genres + bpm/key/energy/era bounds) used by curation (CORE-001/OPS-004) to select a DISTINCT candidate pool. ANALYSIS-006 provides the queryable dimensions; the profiles themselves are the AI's/user's. |
 | **Confidence** | A per-feature reliability score (especially for key and BPM) recorded with the feature so consumers can refuse low-confidence values rather than act on a wrong one. |
+| **Spectral flux** | A frame-to-frame measure of how fast the spectrum is changing. A spectral-flux / spectrogram-derived onset & offset is an ADDITIONAL boundary estimate (REQ-AT-008) computed differently from the energy-envelope cue points, used to CORROBORATE them and enrich transition reasoning — never to replace the playout-critical energy-envelope detector. |
+| **Acquisition provenance** | The stored record of WHY/HOW a track entered the library (REQ-AD-006): `acquired_at` (the acquisition-decision timestamp, distinct from file mtime/`added_at`), `requested_by` (director-curated / user-requested / ingest-scan / seed-reference), and `grab_reason` (the director's stated reason, stored verbatim as an UNVERIFIED claim — never a verified fact). |
 
 ---
 
@@ -318,9 +354,11 @@ Consumed VOICE-002 concept:
   bounded backfill of the existing library; per-feature confidence + low-confidence
   flagging.
 - **Group AT — Transition Intelligence (the Q3 answer).** Cue-in, cue-out/outro, true-end
-  + trailing-silence, beat grid + downbeats for club beat-align; music-theory-informed
-  harmonic/modal/structural reasoning on the verified features; the per-item `annotate:`
-  emission contract to playout; the safe-default behavior for unanalyzed tracks.
+  + trailing-silence, beat grid + downbeats for club beat-align; an ADDITIVE spectral-flux /
+  spectrogram-derived onset & offset that corroborates the energy-envelope cue points (without
+  replacing them); music-theory-informed harmonic/modal/structural reasoning on the verified
+  features; the per-item `annotate:` emission contract to playout; the safe-default behavior for
+  unanalyzed tracks.
 - **Group AM — Metadata, Genre & Mood Derivation (the Q4 genre answer).** Genre derivation
   from external metadata (OA-011 sources) + embedded tags + audio-feature hints + optional
   LLM classification; mood + descriptive tags; multi-source CONSENSUS reconciliation
@@ -328,7 +366,9 @@ Consumed VOICE-002 concept:
 - **Group AD — Track-Intelligence Data Model & Queryable Catalog.** Extend the `Track`
   model with feature fields (no store fork); a queryable catalog over the feature
   dimensions; the per-persona/per-show DISTINCT TASTE PROFILE enabler; DJ-set / harmonic /
-  energy-arc queryability; schema versioning + the `Track.key` naming-collision guard.
+  energy-arc queryability; schema versioning + the `Track.key` naming-collision guard; the
+  acquisition-provenance fields (acquired_at / requested_by / grab_reason) written through the
+  allowlist writer without touching the frozen identity fields.
 - **Group AP — Analysis Pipeline, Throttling & Graceful Degradation.** On-ingest analysis
   hook; bounded resumable backfill queue throttled with acquisition (OH-006); strictly
   non-blocking to `/api/next`; graceful degradation when analysis lags; a serialized
@@ -465,11 +505,23 @@ strictly in the extracted features + reconciled metadata.
 and reconciled metadata support — it MUST NOT free-hallucinate sonic claims the features do
 not back (e.g. it may not call a track "acoustic" when the features read electronic). The
 features are the evidence; the description is a grounded summary of them, not invention.
-This is the "pre-listen and understand" capability. It runs CPU-only, offline, cached, and
-idempotent under the same rails as Group AE (NFR-A-1/2, REQ-AE-002/003), and feeds the data
-model (REQ-AD-001) + the per-persona separability (REQ-AD-003), distinguishing personas on
-SONIC CHARACTER, not only the genre tag (PROGRAMMING-007 REQ-PR-004 anti-convergence
-firewall consumes this — referenced, not restated).
+This is the "pre-listen and understand" capability.
+
+[HARD rail scoping] The [HARD] CPU-only / offline / no-network rail (NFR-A-1, REQ-AE-003)
+applies to the audio-FEATURE extraction — the core DSP (spectral/MFCC/energy/dynamics +
+Essentia high-level descriptors + the optional content embedding), which is computed
+CPU-only and offline on files at rest. The OPTIONAL LLM-generated sonic description is NOT
+on the no-network DSP path: it uses the brain's EXISTING LLM access (the same provider the
+brain already calls), exactly mirroring the OPS-004 OA-011 external-metadata-API exemption
+from the no-network rail — it is OFF the playout/`/api/next` path, its result is CACHED and
+IDEMPOTENT with the feature record (REQ-AE-002), and a track that has not had (or skips) the
+LLM description still has its complete CPU-derived feature/sonic-character record. The LLM
+description is therefore optional enrichment over the offline features, never a precondition
+of analysis and never a network dependency of the core DSP.
+
+This feeds the data model (REQ-AD-001) + the per-persona separability (REQ-AD-003),
+distinguishing personas on SONIC CHARACTER, not only the genre tag (PROGRAMMING-007
+REQ-PR-004 anti-convergence firewall consumes this — referenced, not restated).
 
 **Acceptance criteria:** see acceptance.md AC-AE-006.
 
@@ -560,7 +612,50 @@ hints that FEED Group AT (REQ-AT-004/005 beat-grid + annotate emission) and cura
 (REQ-AD-004 harmonic/energy-arc queries); it does NOT restate the mixing policy (OPS-004
 REQ-OA-014) or the adjacency decision (REQ-OA-006), which consume these hints.
 
+[HARD rail scoping] The [HARD] CPU-only / offline / no-network rail (NFR-A-1, REQ-AE-003)
+applies to the FEATURES this requirement reasons over — the key/tempo/cue/beat-grid/energy
+record is the CPU-only, offline DSP output. The APPLICATION of music theory itself is an LLM
+reasoning step that uses the brain's EXISTING LLM access (the same provider the brain already
+calls), mirroring the OPS-004 OA-011 metadata-API exemption from the no-network rail: it runs
+OFF the playout/`/api/next` path, and its theory-informed hints are CACHED + IDEMPOTENT with
+the feature record (REQ-AE-002). The grounded-features-feed-the-LLM principle stands — the
+offline features are the evidence, the LLM only reasons over them — so the theory step is
+optional enrichment over the offline record, never a network dependency of the core DSP and
+never a precondition of playout (an un-reasoned track still transitions on its CPU-derived
+cue points or the safe defaults, REQ-AT-006).
+
 **Acceptance criteria:** see acceptance.md AC-AT-007.
+
+### REQ-AT-008 — Additive spectral-flux boundary feature alongside the energy envelope (Event-driven) [HARD]
+
+When analyzing a track, the system shall compute an ADDITIONAL boundary signal from a
+spectral-flux / spectrogram-derived onset & offset analysis — onset (a flux-based estimate of
+where musical content begins) and offset (a flux-based estimate of where it ends / the outro
+onset) — and persist it ALONGSIDE the existing energy-envelope cue-in / cue-out / true-end /
+trailing-silence (REQ-AT-001 / REQ-AT-002 / REQ-AT-003). The spectral-flux signal is a SECOND,
+complementary estimate of the same boundaries from a different measurement (frame-to-frame
+spectral change rather than RMS energy), recorded as its own fields with a confidence
+(REQ-AE-005 pattern).
+
+[HARD] This feature is STRICTLY ADDITIVE. It SHALL NOT replace, displace, or alter the
+energy-envelope detector of REQ-AT-001/002/003 — that detector remains the PLAYOUT-CRITICAL
+path that computes the cue points actually emitted to playout via `annotate:` (REQ-AT-005). The
+spectral-flux boundary is a corroborating / enriching input only: it CORROBORATES the
+energy-envelope cue points (agreement raises cue confidence; disagreement flags a boundary as
+uncertain) and feeds the AI's transition reasoning (REQ-AT-007 music-theory-informed analysis)
+as another GROUNDED input — consistent with the grounded-features-feed-the-LLM principle (the
+features are the evidence; the reasoning summarizes them, it does not invent). The brain MAY use
+the corroborated/cross-checked boundary in transition reasoning, but the energy-envelope cue
+remains the authoritative emitted value unless a future requirement says otherwise.
+
+[HARD] It is bounded and OFF the playout path under the same AE rails: CPU-only, offline,
+cached + idempotent (REQ-AE-002 / REQ-AE-003, NFR-A-1/2), and SHALL NOT block, slow, or be on
+the sub-1s `/api/next` pull (REQ-AP-003); a track with no spectral-flux boundary yet still
+plays on the energy-envelope cue points (or the safe defaults, REQ-AT-006). This requirement
+produces the additional feature; it does NOT change the `annotate:` contract or the mixing
+policy (OPS-004 REQ-OA-014).
+
+**Acceptance criteria:** see acceptance.md AC-AT-008.
 
 ---
 
@@ -630,7 +725,7 @@ consensus and KNOWLEDGE-008 supplies the fact consensus; neither re-owns the oth
 
 **Acceptance criteria:** see acceptance.md AC-AM-003.
 
-### REQ-AM-004 — Garbled-tag correction is referenced, not re-owned (Ubiquitous)
+### REQ-AM-004 — Garbled-tag correction is referenced, not re-owned (Event-driven)
 
 When a track has garbled/filename-parsed tags (e.g. "Sly & the Familt Stone"), the system
 shall route correction through OPS-004 REQ-OA-010 (tag correction/normalization) and shall
@@ -656,9 +751,13 @@ replaygain_gain_db, cue_in, cue_out, true_end, trailing_silence, beat_grid (or a
 to it), genre, sub_genre, mood, tags, year, the SONIC-CHARACTER profile (REQ-AE-006:
 timbre/texture, production character, instrumentation feel, vocal_instrumental,
 acoustic_electronic, dynamics, an optional sonic_description + an optional content
-embedding-or-ref), per-value consensus level + provenance (REQ-AM-003), and an analysis
-schema_version + analyzed_at — keeping the SAME store and persistence mechanism (no fork, no
-separate database). Fields default to empty/None so a pre-analysis `Track` remains valid.
+embedding-or-ref), per-value consensus level + provenance (REQ-AM-003), the
+acquisition-provenance fields (REQ-AD-006: acquired_at / requested_by / grab_reason), and an
+analysis schema_version + analyzed_at — keeping the SAME store and persistence mechanism (no
+fork, no separate database). Fields default to empty/None so a pre-analysis `Track` remains
+valid. All field mutations go through the controlled allowlist writer; the frozen
+identity/dedup fields (path/artist/title/`Track.key`) are never mutated by feature or
+provenance updaters (REQ-AD-005 / REQ-AD-006).
 
 **Acceptance criteria:** see acceptance.md AC-AD-001.
 
@@ -724,6 +823,56 @@ with or overwrite the existing `Track.key` field, which is the DEDUP SLUG (artis
 not a musical key. [HARD] The dedup `Track.key` semantics MUST be preserved unchanged.
 
 **Acceptance criteria:** see acceptance.md AC-AD-005.
+
+### REQ-AD-006 — Acquisition-provenance fields on the Track record (Ubiquitous) [HARD]
+
+The system shall extend the `Track` record (REQ-AD-001, the record this SPEC owns) with three
+ACQUISITION-PROVENANCE fields that record WHY and HOW a track entered the library, distinct from
+its analyzed audio features:
+- `acquired_at` — the ACQUISITION timestamp: when the track was acquired/decided-on. [HARD] This
+  is DISTINCT from the file's `added_at` / filesystem mtime (when the bytes landed on disk):
+  acquired_at is the decision/acquisition moment, not the file-write moment, and the two MUST NOT
+  be conflated.
+- `requested_by` — an enum recording who/what caused the acquisition:
+  `director-curated` (the AI director chose it) | `user-requested` (a human asked for it) |
+  `ingest-scan` (discovered by the library-watch stat scan, REQ-AP-007, no explicit request) |
+  `seed-reference` (came in as part of the seed/reference library, not a fresh acquisition).
+- `grab_reason` — the director's STATED REASON for the grab, stored VERBATIM. [HARD] This is an
+  UNVERIFIED CLAIM: it is the AI's own words at decision time, NOT a consensus-backed,
+  provenance-recorded fact like a genre (REQ-AM-003). It SHALL NEVER be promoted to or treated as
+  a verified feature; it carries no consensus level and is never presented as established fact —
+  it is provenance/audit narrative only.
+
+[HARD] Write discipline: these provenance fields are written ONLY through the existing allowlist
+writer of REQ-AD-001 (the same controlled mutation path the feature fields use). [HARD] The
+FROZEN identity/dedup fields — `path`, `artist`, `title`, and the dedup-slug `Track.key`
+(REQ-AD-005) — are NEVER touched by any provenance updater; a provenance write may set only the
+three fields above (plus, idempotently, leave everything else untouched).
+
+[HARD] Persisted at DECISION TIME as a pure STORED breakdown: the provenance is recorded once
+when the acquisition decision is made and is NOT recomputed/derived later from other state. It is
+a stored historical record, not a live-derived view.
+
+[Boundary] ANALYSIS-006 owns the FIELDS and the allowlist write-discipline only. The
+POPULATING LOGIC — which actor sets `requested_by`, and the text of `grab_reason` (the
+director's taste reasoning) — is owned by SPEC-RADIO-PROGRAMMING-007 Group PL (taste
+self-learning), specifically REQ-PL-008, and the acquisition path (CORE-001 / OPS-004);
+referenced, not re-owned here. PROGRAMMING-007 REQ-PL-008 WRITES `grab_reason` (and sets
+`requested_by`) through this SPEC's allowlist writer; ANALYSIS-006 guarantees the record can
+carry these fields safely (through the allowlist writer, never touching frozen fields) and
+that `grab_reason` is stored verbatim as an unverified claim.
+
+[Boundary — no double-storage of the acquisition actor] `requested_by` here is the ACTOR
+CLASS that caused the acquisition (the enum director-curated | user-requested | ingest-scan |
+seed-reference), and it is owned/stored ONLY in this field. It is DISTINCT from
+PROGRAMMING-007 REQ-PL-001's `source` / `acquired_for` (the channel/target the populating
+logic reasons about — e.g. which persona or show slot the grab serves): those are
+PROGRAMMING-007's populating-logic concepts, not duplicate copies of the acquisition actor.
+[HARD] The acquisition actor is stored in exactly one place — this `requested_by` field —
+and is NOT re-stored under REQ-PL-001's source/acquired_for; PROGRAMMING-007 sets
+`requested_by` via the allowlist writer rather than mirroring it into a second field.
+
+**Acceptance criteria:** see acceptance.md AC-AD-006.
 
 ---
 
@@ -1036,15 +1185,17 @@ Section B).
 | REQ-AT-005 | Transition Intelligence | High | Event | AC-AT-005 |
 | REQ-AT-006 | Transition Intelligence | High | Unwanted | AC-AT-006 |
 | REQ-AT-007 | Transition Intelligence | High | Event | AC-AT-007 |
+| REQ-AT-008 | Transition Intelligence | High | Event | AC-AT-008 |
 | REQ-AM-001 | Metadata, Genre & Mood | High | Event | AC-AM-001 |
 | REQ-AM-002 | Metadata, Genre & Mood | Medium | Event | AC-AM-002 |
 | REQ-AM-003 | Metadata, Genre & Mood | High | Event | AC-AM-003 |
-| REQ-AM-004 | Metadata, Genre & Mood | Medium | Ubiquitous | AC-AM-004 |
+| REQ-AM-004 | Metadata, Genre & Mood | Medium | Event | AC-AM-004 |
 | REQ-AD-001 | Data Model & Catalog | High | Ubiquitous | AC-AD-001 |
 | REQ-AD-002 | Data Model & Catalog | High | Ubiquitous | AC-AD-002 |
 | REQ-AD-003 | Data Model & Catalog | High | Ubiquitous | AC-AD-003 |
 | REQ-AD-004 | Data Model & Catalog | Medium | Event | AC-AD-004 |
 | REQ-AD-005 | Data Model & Catalog | High | Ubiquitous | AC-AD-005 |
+| REQ-AD-006 | Data Model & Catalog | High | Ubiquitous | AC-AD-006 |
 | REQ-AP-001 | Analysis Pipeline | High | Event | AC-AP-001 |
 | REQ-AP-002 | Analysis Pipeline | High | State | AC-AP-002 |
 | REQ-AP-003 | Analysis Pipeline | High | Unwanted | AC-AP-003 |

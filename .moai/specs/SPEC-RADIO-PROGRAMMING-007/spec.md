@@ -1,6 +1,6 @@
 ---
 id: SPEC-RADIO-PROGRAMMING-007
-version: 0.7.1
+version: 0.7.3
 status: draft
 created: 2026-06-22
 updated: 2026-06-23
@@ -303,6 +303,54 @@ issue_number: null
   PV-017 relabeled "Unwanted" → "Ubiquitous" — each is an unconditional "The system shall NOT ..."
   prohibition with no If/then trigger, which is the Ubiquitous-prohibition form. PV-008 kept as
   "Event" (it correctly carries a When trigger). 1:1 REQ↔AC parity preserved.
+- 2026-06-23 (v0.7.2): ACQUISITION-LOOP integrity — extended Group PL with four additions that
+  close a verified curation/acquisition gap (from a brain code audit: a big-batch curator that
+  re-proposes items already in the catalog or already-failed, so the acquisition gate silently
+  drops them and a batch yields near-zero NEW acquisitions while burning subscription quota). The
+  unifying spine is HONESTY + the [HARD] TWO-NO-REPEAT SEPARATION: a persistent ACQUISITION
+  anti-re-fetch layer (this group) is kept STRICTLY SEPARATE from the ephemeral PLAYOUT rotation
+  layer (OPS-004 REQ-OA-003a + ORCH-005 REQ-RW-006 + PROGRAMMING REQ-PR-009) — they answer
+  different questions (what to ACQUIRE vs what to PLAY next) and are never merged. Added:
+  REQ-PL-008 GRAB-REASON CAPTURE [HARD] — the director's reason for an acquisition is captured as
+  STRUCTURED per-item output ({artist, title, reason}) AT GRAB TIME (criterion-guided, citing the
+  prompt's seed/recent/exclusion context — NOT free-form retrospective narrative, the documented
+  hallucination failure mode), threaded into the REQ-PL-001 provenance (`acquired_context`,
+  extending the ANALYSIS-006 `Track` REQ-AD-001 in place), and stored as an UNVERIFIED director
+  CLAIM that is NEVER airable-as-certain (consistent with REQ-PG-002 grounding + KNOWLEDGE-008
+  REQ-KS-006 consensus + the ANALYSIS-006 hedged-vs-confident discipline — a grab reason is not a
+  KNOWLEDGE-008 sourced fact and can never enter the REQ-PG-001 fact contract as fact). REQ-PL-009
+  EXCLUSION-FEEDBACK [HARD] (highest leverage, coupled to REQ-PL-004) — the curator prompt MUST be
+  fed recently-ACQUIRED (`already_have`) + recently-ATTEMPTED/FAILED (`recently_rejected`) items as
+  explicit EXCLUSION context, ALONGSIDE the recently-played `recent` the director already passes;
+  without it the LLM re-proposes the same items and the batch wastes quota. REQ-PL-010 DIARY
+  OUTCOMES — refines REQ-PL-003 in place and owns the OUTCOME taxonomy {success | failed |
+  no-candidate} so the diary audit-trail covers attempted-but-not-acquired items too, feeding both
+  REQ-PL-009 `recently_rejected` and the REQ-PL-005 taste signals. REQ-PL-011 CATALOG-DIVERSITY
+  RE-RANK [HARD] — an ACQUISITION-TIME anti-repetition re-rank (MMR-style relevance+diversity,
+  biasing against re-grabbing same-artist/same-cluster) over the ANALYSIS-006 features (REQ-AD-003)
+  + the KNOWLEDGE-008 similar-artist graph (REQ-KG-001/003), with the diversity pressure GATED on
+  catalog size and REQUIRED to RELAX below the wishlist low-watermark so it never starves a small/new
+  catalog (mirroring the OPS-004 REQ-OA-003b / continuity-wins relaxation at the acquisition layer).
+  [HARD] REQ-PL-011 is DISTINCT from the playout no-repeat (OPS-004 REQ-OA-003a / PROGRAMMING
+  REQ-PR-009): it re-ranks what to ACQUIRE, never what to PLAY. NFR-P-7 AMENDED with axis (e): the
+  grab reason is an unverified claim never aired-as-certain, the two no-repeat systems stay separate,
+  and the diversity re-rank relaxes-not-starves on a thin catalog. References (not re-owned):
+  ANALYSIS-006 REQ-AD-001/AD-003, KNOWLEDGE-008 REQ-KS-006/KG-001/KG-003, OPS-004 Group OH
+  (REQ-OH-001/002 acquisition pipeline + balance) + REQ-OD-007/008 ledger/diary + REQ-OA-003a/003b/
+  OA-008, ORCH-005 REQ-RW-006, and PROGRAMMING REQ-PL-001/003/004/005 + REQ-PR-009/PG-001/PG-002.
+  Net: +4 REQ (PL-008…PL-011), 0 new NFR (NFR-P-7 amended); REQ-PL-003 refined in place. Total:
+  71 REQ + 9 NFR = 80, 1:1 REQ↔AC preserved.
+- 2026-06-23 (v0.7.3): Audit fix pass — cross-spec canonical-decision convergence. Two changes, no
+  scope/REQ/NFR/AC-count change. (1) REQ-PL-008 grab-reason now states the canonical ownership split:
+  it POPULATES the ANALYSIS-006 REQ-AD-006 `grab_reason` field (ANALYSIS owns the field +
+  write-discipline on the `Track` record; Group PL owns the POPULATING logic), replacing the prior
+  "threaded into REQ-PL-001 `acquired_context` / no new field schema beyond PL-001" wording — the
+  unverified-director-claim / never-airable-as-certain semantics are UNCHANGED, and AC-PL-008 (+ the
+  B-7a GWT) is updated in lockstep. (2) Six REQ section HEADERS relabeled "(Unwanted) [HARD]" →
+  "(Ubiquitous) [HARD]" — PC-004, PT-005, PG-002, PG-004, PV-006, PV-017 — to match the Section 14
+  Traceability Index already relabeled in v0.7.1 (each is a bare unconditional "The system shall
+  NOT ..." prohibition = the Ubiquitous-prohibition form); requirement TEXT unchanged. Total:
+  71 REQ + 9 NFR = 80, 1:1 REQ↔AC preserved.
 
 ---
 
@@ -378,6 +426,13 @@ more requirements:
    recency, listener-signal context, never appeal); a one-time seed enrichment bootstrap;
    the manual-drop attribution case (Group PL). Grounded in a code audit: the current
    brain has ZERO learning loop — this group specs the GREENFIELD gap (Section 1.7).
+   (Added v0.7.2 — acquisition-loop integrity:) a structured at-grab-time GRAB-REASON
+   CAPTURE stored as an unverified claim (REQ-PL-008); EXCLUSION-FEEDBACK of already-have +
+   recently-rejected items into the curator prompt so a batch proposes NEW candidates instead
+   of burning quota re-deciding duplicates the acquisition gate silently drops (REQ-PL-009);
+   a diary OUTCOME taxonomy covering attempted-but-not-acquired items (REQ-PL-010); and an
+   acquisition-time CATALOG-DIVERSITY RE-RANK that relaxes on a thin catalog (REQ-PL-011) —
+   all kept SEPARATE from the playout no-repeat (the two-no-repeat separation).
 6. **Grounded host voice & quality gate [HARD]** (added v0.3.0) — how the host stays
    knowledgeable-but-honest and non-slop: a closed-world FACT CONTRACT (a verified
    TrackContext from ANALYSIS-006 + optional sourced ShowPrep facts from KNOWLEDGE-008 are
@@ -485,6 +540,22 @@ These are the ONLY things this SPEC fixes; everything else creative is the AI's 
   listener-signal/contact-form input and the human's manual drops are human-curatorial
   CONTEXT the station MAY use, NEVER an engagement/appeal/popularity target; the seed
   enrichment is reference, never a constraint (REQ-PL-004/005/006/007, NFR-P-7).
+- **Two no-repeat systems, kept separate.** [HARD] (added v0.7.2) The PERSISTENT ACQUISITION
+  anti-re-fetch layer (don't re-grab what you already have or already failed — REQ-PL-009; bias
+  against re-grabbing the same artist/cluster — REQ-PL-011) is STRICTLY SEPARATE from the
+  EPHEMERAL PLAYOUT rotation layer (don't play the same track/artist back-to-back — OPS-004
+  REQ-OA-003a + ORCH-005 REQ-RW-006 + PROGRAMMING REQ-PR-009). They answer different questions
+  (what to ACQUIRE vs what to PLAY) over different state (acquisition history vs the play window)
+  and are NEVER merged.
+- **A grab reason is an unverified claim, never aired-as-certain.** [HARD] (added v0.7.2) The
+  director's structured at-grab-time reason ({artist, title, reason}, REQ-PL-008) is captured for
+  the diary/audit/taste-signal but is an UNVERIFIED director CLAIM — it never enters the fact
+  contract (REQ-PG-001) as a fact and a host never states it as a certainty (grounding REQ-PG-002,
+  consensus KNOWLEDGE-008 REQ-KS-006).
+- **Acquisition-diversity relaxes, never starves.** [HARD] (added v0.7.2) The catalog-diversity
+  re-rank (REQ-PL-011) is gated on catalog size and RELAXES below the wishlist low-watermark so a
+  small/new catalog is never starved — breadth yields to filling the catalog (mirrors OPS-004
+  REQ-OA-003b continuity-wins at the acquisition layer).
 - **Warmth in delivery, restraint in content.** [HARD] (added v0.4.0) The governing principle
   for all host talk: delivery warmth/energy/intimacy may be turned UP (rhythm, timing, leaning
   in), but content stays RESTRAINED (no extra claims, no adjective piles, no hype). Turning
@@ -770,6 +841,12 @@ Consumed KNOWLEDGE-008 concepts (added v0.3.0, by concept — sibling SPEC):
 | **Measured taste-evolution** | The discipline that a taste profile changes GRADUALLY — bounded rate, cooldown between applied changes, no thrashing — so a persona's identity stays stable while still refining. Modeled on the OPS-004 measured-self-change rails (REQ-OD-006), applied to taste (REQ-PL-006, NFR-P-7). |
 | **Seed enrichment** | A ONE-TIME bootstrap that enriches the initial per-persona profiles from the non-binding personal seed (Spotify `tritnaha` `/me/tracks` + YouTube `@tritnaha1345` liked, one-time OAuth). Wires the existing `config.SEED_ENRICHMENT_STUBS` + `director._seed_reference()` stubs. The seed is REFERENCE, never a constraint (REQ-PL-007). |
 | **Unattributed / house** | The provenance attribution for a track with no acquiring persona — a manually-dropped file or a house-level acquisition. It is a VALID, attributable state and the file is fully curatable by whichever persona's taste it fits (REQ-PL-002). |
+| **Grab reason (director claim)** | (v0.7.2) The director's reason for grabbing a candidate, captured as STRUCTURED per-item output `{artist, title, reason}` AT GRAB TIME (criterion-guided, citing the prompt's seed/recent/exclusion context — NOT a free-form retrospective narrative, which is the documented hallucination failure mode). Threaded into the REQ-PL-001 `acquired_context` provenance + the acquisition diary. It is an UNVERIFIED director CLAIM — useful for audit + taste signal but NEVER airable-as-certain: it never enters the fact contract (REQ-PG-001) and a host never states it as fact (grounding REQ-PG-002, consensus KNOWLEDGE-008 REQ-KS-006) (REQ-PL-008). |
+| **Exclusion-feedback** | (v0.7.2) The explicit EXCLUSION context fed into the curator prompt so the LLM does not re-propose items the station already has or already failed to acquire: `already_have` (recently-ACQUIRED, from catalog + provenance) and `recently_rejected` (recently-ATTEMPTED/FAILED/no-candidate, from the diary outcomes + OPS-004 acquisition attempts). ADDITIVE to the recently-played `recent` exclusion the director already passes; the persistent ACQUISITION-history side of the two-no-repeat separation (REQ-PL-009). |
+| **Acquisition outcome taxonomy** | (v0.7.2) The fixed outcome field the acquisition diary records per proposed item: `success` (acquired + indexed), `failed` (an acquisition was attempted but did not complete), or `no-candidate` (no source found to even attempt). Refines REQ-PL-003 so the audit trail covers attempted-but-not-acquired items; feeds the REQ-PL-009 `recently_rejected` set + the REQ-PL-005 taste signals (REQ-PL-010). |
+| **Catalog-diversity re-rank** | (v0.7.2) An ACQUISITION-TIME anti-repetition re-rank (MMR-style maximal-marginal-relevance: score each candidate on profile-relevance AND diversity vs the existing catalog) that biases against re-grabbing the same artist / same sonic cluster, using the ANALYSIS-006 features + the KNOWLEDGE-008 similar-artist graph (REQ-KG-001/003). DISTINCT from the playout no-repeat (it re-ranks what to ACQUIRE, not what to PLAY). Catalog-size-gated; RELAXES below the wishlist low-watermark so it never starves a thin catalog (REQ-PL-011). |
+| **Wishlist low-watermark** | (v0.7.2) The configured catalog/backlog-depth threshold below which the catalog-diversity re-rank's diversity pressure RELAXES toward pure profile-relevance, so a small/new catalog is filled rather than starved. The acquisition-need signal tied to the OPS-004 REQ-OH-001 play-from-library-vs-acquisition balance; above it diversity ramps in, below it breadth yields to filling (REQ-PL-011). |
+| **Two-no-repeat separation** | (v0.7.2) The [HARD] rail that the PERSISTENT ACQUISITION anti-re-fetch layer (REQ-PL-009 don't re-grab already-have/recently-rejected; REQ-PL-011 don't over-acquire same-artist/cluster) is kept STRICTLY SEPARATE from the EPHEMERAL PLAYOUT rotation layer (OPS-004 REQ-OA-003a + ORCH-005 REQ-RW-006 + PROGRAMMING REQ-PR-009 don't play the same track/artist back-to-back). They answer different questions (what to ACQUIRE vs what to PLAY) over different state and are never merged. |
 | **Fact contract** | The closed-world rule that the talk-script LLM receives exactly ONE fact bundle — a verified `TrackContext` (from ANALYSIS-006) + optional `ShowPrep` facts each carrying a `source_url` (from KNOWLEDGE-008) — and that bundle is the ONLY allowed source of fact for the break (REQ-PG-001). |
 | **TrackContext** | The verified per-track fact bundle handed to the talk LLM: artist/title/album, year-or-null, genres[], folksonomy_tags[], mood/energy/bpm/key, the ANALYSIS-006 sonic-character profile (REQ-AE-006), similar_artists[{name, match_score}], the prior_track, and the next item as a MOOD hint (not a name). Assembled from ANALYSIS-006 data (REQ-PG-001). |
 | **ShowPrep fact** | An optional researched fact from KNOWLEDGE-008's grounding feed, each with a `source_url` (provenance) and an as-of date, supplied alongside the TrackContext for a prepped show. The host may state it because it is sourced; an un-sourced claim is not a ShowPrep fact (REQ-PG-001). |
@@ -836,7 +913,14 @@ Consumed KNOWLEDGE-008 concepts (added v0.3.0, by concept — sibling SPEC):
   profile that EVOLVES from the Group PR charter seed; the taste-evolution signals
   (play-through/skip, recency, listener-signal context, never appeal); the MEASURED,
   rate-limited evolution loop; and a one-time seed-enrichment bootstrap (Spotify/YouTube).
-  Specs the GREENFIELD gap — the current brain has zero learning loop (Section 1.7).
+  Specs the GREENFIELD gap — the current brain has zero learning loop (Section 1.7). (Added
+  v0.7.2 — acquisition-loop integrity:) the structured at-grab-time grab-reason capture stored
+  as an unverified claim never airable-as-fact (REQ-PL-008); the exclusion-feedback of
+  already-have + recently-rejected items into the curator prompt (REQ-PL-009); the diary
+  outcome taxonomy success/failed/no-candidate covering attempted-but-not-acquired items
+  (REQ-PL-010); and the acquisition-time catalog-diversity MMR re-rank, catalog-size-gated and
+  relaxed below the wishlist low-watermark (REQ-PL-011) — the PERSISTENT ACQUISITION anti-re-fetch
+  layer, kept STRICTLY SEPARATE from the EPHEMERAL PLAYOUT rotation no-repeat.
 - **Group PG — Grounded Host Voice & Quality Gate** (added v0.3.0). The closed-world fact
   contract (TrackContext from ANALYSIS-006 + sourced ShowPrep facts from KNOWLEDGE-008 as
   the only allowed source of fact); the grounding rule (speak only from context; perceptual
@@ -1021,6 +1105,26 @@ Consumed KNOWLEDGE-008 concepts (added v0.3.0, by concept — sibling SPEC):
 - [HARD] **Seed is reference, never a constraint** (added v0.2.0). The one-time
   Spotify/YouTube seed enrichment bootstraps initial profiles but never pins or constrains
   ongoing taste (operating-philosophy seed-as-reference).
+- [HARD] **Grab reason is a structured at-grab-time claim, never aired-as-certain** (added
+  v0.7.2). The director's acquisition reason is captured as structured `{artist, title, reason}`
+  AT GRAB TIME (never a free-form retrospective narrative — the hallucination failure mode),
+  threaded into the REQ-PL-001 provenance, and stored as an UNVERIFIED director CLAIM that never
+  enters the fact contract (REQ-PG-001) and is never spoken as a certainty (grounding REQ-PG-002,
+  consensus KNOWLEDGE-008 REQ-KS-006) (REQ-PL-008).
+- [HARD] **Exclusion-feedback into the curator prompt** (added v0.7.2). The curator prompt carries
+  explicit `already_have` (recently-acquired) + `recently_rejected` (recently-attempted/failed/
+  no-candidate) exclusion context ALONGSIDE the recently-played `recent` the director already
+  passes, so a batch proposes NEW candidates instead of re-deciding duplicates the acquisition gate
+  silently drops (REQ-PL-009).
+- [HARD] **Two no-repeat systems kept separate** (added v0.7.2). The persistent ACQUISITION
+  anti-re-fetch (REQ-PL-009/REQ-PL-011) is separate from the ephemeral PLAYOUT rotation no-repeat
+  (OPS-004 REQ-OA-003a + ORCH-005 REQ-RW-006 + PROGRAMMING REQ-PR-009); they operate over different
+  state and are never merged.
+- [HARD] **Catalog-diversity re-rank relaxes, never starves** (added v0.7.2). The acquisition-time
+  MMR-style relevance+diversity re-rank biases against re-grabbing same-artist/same-cluster using
+  the ANALYSIS-006 features + the KNOWLEDGE-008 similar-artist graph, but its diversity pressure is
+  GATED on catalog size and RELAXES below the wishlist low-watermark so a small/new catalog is never
+  starved (mirrors OPS-004 REQ-OA-003b continuity-wins) (REQ-PL-011).
 - [HARD] **Closed-world fact contract** (added v0.3.0). The talk-script LLM speaks ONLY from
   the supplied fact bundle (TrackContext from ANALYSIS-006 + sourced ShowPrep facts from
   KNOWLEDGE-008); free-recall facts are forbidden. A fact not in context is not stated;
@@ -1313,7 +1417,7 @@ backtiming is the AI's killer advantage over a human DJ guessing the intro lengt
 
 **Acceptance criteria:** see acceptance.md AC-PC-003.
 
-### REQ-PC-004 — What hosts DON'T say: anti-cheese firewall (Unwanted) [HARD]
+### REQ-PC-004 — What hosts DON'T say: anti-cheese firewall (Ubiquitous) [HARD]
 
 The system shall NOT produce cheese/cliché talk content: it shall NOT use the banned
 filler phrases ("stay tuned", "coming up", "up next", "don't go anywhere",
@@ -1525,7 +1629,7 @@ fixed format; the persona's story is AI-authored (subject to REQ-PT-005).
 
 **Acceptance criteria:** see acceptance.md AC-PT-004.
 
-### REQ-PT-005 — Solstice Hour guest is an AI-authored ORIGINAL FICTIONAL persona (Unwanted) [HARD]
+### REQ-PT-005 — Solstice Hour guest is an AI-authored ORIGINAL FICTIONAL persona (Ubiquitous) [HARD]
 
 The system shall make the Solstice Hour "guest" an AI-authored ORIGINAL FICTIONAL
 persona ONLY: it shall NEVER present the guest as, impersonate, or attribute fabricated
@@ -1590,6 +1694,18 @@ the seed-enrichment bootstrap; it REFERENCES (does not fork) the ANALYSIS-006 `T
 record + auto-ingest, the OPS-004 ledger/diary + acquisition pipeline + measured-self-change
 rails + anti-appeal posture.
 
+(Added v0.7.2 — acquisition-loop integrity:) the group also owns the GRAB-REASON CAPTURE
+(REQ-PL-008), the EXCLUSION-FEEDBACK into the curator prompt (REQ-PL-009), the DIARY OUTCOME
+taxonomy (REQ-PL-010, refining REQ-PL-003 in place), and the ACQUISITION-TIME CATALOG-DIVERSITY
+RE-RANK (REQ-PL-011). These four share one [HARD] load-bearing seam: a PERSISTENT ACQUISITION
+anti-re-fetch layer (don't re-grab what you already have or already failed; bias against
+re-grabbing the same artist/cluster) is kept STRICTLY SEPARATE from the EPHEMERAL PLAYOUT
+rotation layer (don't play the same track/artist back-to-back). They answer different questions
+— what to ACQUIRE vs what to PLAY next — over different state (acquisition history vs the play
+rotation window), and are NEVER merged. The playout no-repeat is OPS-004 REQ-OA-003a + ORCH-005
+REQ-RW-006 + PROGRAMMING REQ-PR-009 (referenced, not re-owned); the acquisition anti-re-fetch is
+REQ-PL-009 + REQ-PL-011 (owned here).
+
 ### REQ-PL-001 — Track provenance: acquired_for / acquired_context / source (Event-driven) [HARD]
 
 When a track enters the library — whether acquired by a curation decision or dropped in
@@ -1629,7 +1745,9 @@ the OPS-004 ledger/diary memory substrate (REQ-OD-007 append-only ledger / REQ-O
 director diary); it does NOT add a new store and is distinct from the current orphaned
 `attempts.json` (which records only success/fail+method and is not fed back into taste,
 Section 1.7). The diary feeds the taste-evolution signals (REQ-PL-005). The diary CONTENT
-is the AI's; that a per-batch decision-chain entry is recorded is the rail.
+is the AI's; that a per-batch decision-chain entry is recorded is the rail. (Refined v0.7.2:)
+the OUTCOME field's taxonomy and its coverage of attempted-but-not-acquired items is owned by
+REQ-PL-010; REQ-PL-003 otherwise UNCHANGED.
 
 **Acceptance criteria:** see acceptance.md AC-PL-003.
 
@@ -1692,6 +1810,110 @@ config-gated; the seed never blocks operation if unavailable.
 
 **Acceptance criteria:** see acceptance.md AC-PL-007.
 
+### REQ-PL-008 — Grab-reason capture: structured per-item claim at grab time (Event-driven) [HARD]
+
+When the director proposes an acquisition (a curation batch decides to grab a candidate), the
+system shall capture the director's REASON as STRUCTURED per-item output — `{artist, title,
+reason}` — produced AT GRAB TIME, criterion-guided by and citing the prompt's own
+seed/recent/exclusion context (REQ-PL-007 seed, REQ-PL-009 exclusion context, REQ-PR-006 charter /
+REQ-PL-004 profile). [HARD] The reason shall NOT be a free-form RETROSPECTIVE narrative generated
+after the fact — retrospective "why did I grab this" narration is the DOCUMENTED HALLUCINATION
+failure mode (the LLM confabulates a plausible-sounding reason it did not actually act on); the
+structured at-grab-time form binds the reason to the actual decision input. The captured reason
+POPULATES the ANALYSIS-006 REQ-AD-006 `grab_reason` field (ANALYSIS owns the field + the
+write-discipline on the `Track` record REQ-AD-001 in place — no fork; Group PL owns the
+POPULATING logic) and is threaded into the track provenance alongside the REQ-PL-001
+`acquired_context` field and into the acquisition diary (REQ-PL-003).
+
+[HARD] The grab reason is stored and used as an UNVERIFIED DIRECTOR CLAIM and is NEVER
+AIRABLE-AS-CERTAIN: it is the director's self-reported rationale, not a corroborated editorial
+fact. It shall NOT enter the closed-world fact contract (REQ-PG-001) as a fact, and a host shall
+NOT state it as a certainty on air (consistent with the grounding rule REQ-PG-002 — speak only
+verified context facts — the multi-source-consensus discipline KNOWLEDGE-008 REQ-KS-006 — don't
+state the uncorroborated as certain — and the ANALYSIS-006 hedged-vs-confident grounding). The
+grab reason is valuable for the diary/audit-trail and as a taste-evolution signal input
+(REQ-PL-005); its status as an UNVERIFIED claim, never aired-as-fact, is the fixed rail. The
+reason CONTENT is the AI's; the structured-at-grab-time form and the unverified-claim status are
+the rails.
+
+**Acceptance criteria:** see acceptance.md AC-PL-008.
+
+### REQ-PL-009 — Exclusion-feedback: feed already-have + recently-rejected into the curator prompt (Event-driven) [HARD]
+
+When the system assembles the curator/acquisition prompt for a persona (the prompt driven by the
+REQ-PL-004 per-persona taste profile), it shall include explicit EXCLUSION CONTEXT so the LLM does
+NOT re-propose items the station already has or has already failed to acquire: (a) `already_have` —
+a recently-ACQUIRED set drawn from the catalog + provenance (REQ-PL-001 `acquired_for`/`source`),
+and (b) `recently_rejected` — a recently-ATTEMPTED-but-FAILED / NO-CANDIDATE set drawn from the
+acquisition diary outcomes (REQ-PL-003/REQ-PL-010) and the OPS-004 acquisition attempts (Group OH).
+[HARD] This is ADDITIVE to the recently-played `recent` exclusion the director ALREADY passes —
+`recent` is the EPHEMERAL PLAYOUT-rotation window (what's been played), whereas `already_have` /
+`recently_rejected` are the PERSISTENT ACQUISITION history (what's been acquired / attempted); the
+two sets are SEPARATE and serve different layers (the two-no-repeat separation, REQ-PL group intro).
+
+RATIONALE (the verified gap this closes): without the exclusion context the LLM re-proposes the
+SAME items every batch, the OPS-004 acquisition gate (Group OH) silently drops them as duplicates
+or known-failures, and a big-batch curation yields near-ZERO new acquisitions while burning
+subscription quota on re-deciding items that can never be acquired. Feeding the exclusion context
+makes each batch propose genuinely NEW candidates. The window sizes (how far back `already_have` /
+`recently_rejected` reach) and the prompt format are TUNABLE config; that the curator prompt
+carries explicit already-have + recently-rejected exclusion context alongside `recent` is the
+fixed rail. This requirement OWNS the exclusion-feedback POLICY; OPS-004 Group OH owns the
+acquisition gate that the exclusion context spares from re-deciding duplicates.
+
+**Acceptance criteria:** see acceptance.md AC-PL-009.
+
+### REQ-PL-010 — Acquisition diary outcome taxonomy: success / failed / no-candidate (Event-driven)
+
+When a curation/acquisition batch resolves each proposed item, the system shall record the item's
+OUTCOME in the acquisition diary (REQ-PL-003) as exactly one of a fixed taxonomy: `success` (the
+track was acquired and indexed), `failed` (an acquisition was ATTEMPTED via the OPS-004 pipeline
+but did not complete — e.g. no slskd source, yt-dlp error, quality reject), or `no-candidate` (the
+director wanted the item but NO acquisition candidate/source was found to even attempt). This
+REFINES REQ-PL-003 in place: the diary's audit trail now covers ATTEMPTED-BUT-NOT-ACQUIRED items
+too (closing the audited gap where the orphaned `attempts.json` recorded only success/fail+method
+and `no-candidate` items vanished, Section 1.7). The outcome record is written into the OPS-004
+ledger/diary substrate (REQ-OD-007/008) as part of the same diary VIEW — NO new store. The outcome
+feeds (a) the REQ-PL-009 `recently_rejected` exclusion set (so a failed / no-candidate item is not
+endlessly re-proposed) and (b) the REQ-PL-005 taste-evolution signals (an outcome is human-
+curatorial context, NEVER an appeal/engagement target, inherited OPS-004 REQ-OF-004). The taxonomy
+values are the fixed rail; per-outcome detail (error cause, source tried) is the AI's to record.
+
+**Acceptance criteria:** see acceptance.md AC-PL-010.
+
+### REQ-PL-011 — Catalog-diversity re-rank: acquisition-time anti-repetition, relaxed on a thin catalog (State-driven) [HARD]
+
+While selecting which proposed candidates to ACQUIRE in a batch, the system shall apply a
+CATALOG-DIVERSITY RE-RANK that biases AGAINST re-grabbing the same artist or the same sonic
+cluster the catalog is already dense in: a similarity-aware SKIP / MMR-style (maximal-marginal-
+relevance) re-rank that scores each candidate on BOTH its relevance to the persona profile
+(REQ-PL-004 / REQ-PR-006 over the ANALYSIS-006 dimensions REQ-AD-003) AND its DIVERSITY versus
+what the catalog already holds, using the ANALYSIS-006 features (artist, genre/sub_genre, mood,
+era, bpm/key/energy) and the KNOWLEDGE-008 similar-artist graph (REQ-KG-001 relationship model /
+REQ-KG-003 related-music query) to measure same-artist / similar-artist / same-cluster density.
+
+[HARD] This is ACQUISITION-TIME anti-repetition and is DISTINCT from the playout no-repeat: it
+re-ranks what to ACQUIRE (so the catalog grows broad, not lopsided), NEVER what to PLAY next (the
+playout rotation no-repeat / least-recently-played / per-track cross-show exclusivity are OPS-004
+REQ-OA-003a + ORCH-005 REQ-RW-006 + PROGRAMMING REQ-PR-009, referenced not re-owned). The two
+systems operate over different state and are kept separate (the two-no-repeat separation).
+
+[HARD] GATED ON CATALOG SIZE; RELAX BELOW THE WISHLIST LOW-WATERMARK (REQUIRED, not optional): the
+diversity PRESSURE shall be conditional on catalog depth and shall RELAX — toward pure
+profile-relevance with little/no diversity penalty — when the library/backlog is below a configured
+WISHLIST LOW-WATERMARK, so a small or new catalog is never STARVED (the re-rank must not refuse to
+grow a thin catalog merely because a candidate resembles the few tracks already present). This
+mirrors the OPS-004 REQ-OA-003b empty-legal-set / continuity-wins relaxation (REQ-OA-008) at the
+acquisition layer, and ties to the OPS-004 REQ-OH-001 play-from-library-vs-acquisition balance (the
+low-watermark is the acquisition-need signal). Above the watermark the diversity pressure ramps in;
+below it, breadth-of-acquisition yields to filling the catalog. The MMR relevance/diversity weights
+and the watermark value are TUNABLE config; that the re-rank is catalog-size-gated and relaxes (not
+starves) below the watermark is the fixed rail. This requirement OWNS the acquisition-diversity
+re-rank POLICY; ANALYSIS-006 owns the features, KNOWLEDGE-008 owns the similar-artist graph, and
+OPS-004 Group OH owns the acquisition pipeline + balance.
+
+**Acceptance criteria:** see acceptance.md AC-PL-011.
+
 ---
 
 ## 9b. Requirement Group PG — Grounded Host Voice & Quality Gate
@@ -1722,7 +1944,7 @@ does not produce the facts, it contracts how they are supplied).
 
 **Acceptance criteria:** see acceptance.md AC-PG-001.
 
-### REQ-PG-002 — Grounding rule: speak only from context; silence beats a wrong fact (Unwanted) [HARD]
+### REQ-PG-002 — Grounding rule: speak only from context; silence beats a wrong fact (Ubiquitous) [HARD]
 
 The system shall NOT state any fact that is not present in the fact contract (REQ-PG-001):
 a year, label, producer, band members, chart position, award, location, or anecdote that is
@@ -1750,7 +1972,7 @@ TUNABLE; the grounded-only rule and the fusion-formula ban are fixed rails.
 
 **Acceptance criteria:** see acceptance.md AC-PG-003.
 
-### REQ-PG-004 — Anti-slop register: banned music-slop + LLM-tells + positive rules (Unwanted) [HARD]
+### REQ-PG-004 — Anti-slop register: banned music-slop + LLM-tells + positive rules (Ubiquitous) [HARD]
 
 The system shall NOT produce music-slop or LLM-tell language in host copy. It shall reject a
 banned register — music-slop phrases ("sonic journey", "lush soundscapes", "effortlessly
@@ -1911,7 +2133,7 @@ latitude — the spine is preserved verbatim.
 
 **Acceptance criteria:** see acceptance.md AC-PV-005.
 
-### REQ-PV-006 — Extended banned list: existing bans + filler-as-crutch + no shared cross-persona filler set (Unwanted) [HARD]
+### REQ-PV-006 — Extended banned list: existing bans + filler-as-crutch + no shared cross-persona filler set (Ubiquitous) [HARD]
 
 The system shall NOT produce any banned-register talk, PRESERVING every existing ban
 verbatim — cliché filler ("stay tuned", "coming up", "up next", "don't go anywhere",
@@ -2144,7 +2366,7 @@ token detection is the fixed rail.
 
 **Acceptance criteria:** see acceptance.md AC-PV-016.
 
-### REQ-PV-017 — Dated / try-hard-slang ban: register currency + authenticity (Unwanted) [HARD]
+### REQ-PV-017 — Dated / try-hard-slang ban: register currency + authenticity (Ubiquitous) [HARD]
 
 The system shall NOT produce DATED or TRY-HARD slang in host copy — the "how do you do, fellow
 kids" register of a bot reaching for faux-cool or young-sounding words. [HARD] It shall reject a
@@ -2323,6 +2545,28 @@ research verdict on this carve-out's checkability was contested — the concrete
   seed enrichment is a one-time non-binding reference; it never pins or gates ongoing taste.
 - **(Group PL) Real-time / per-pull taste recomputation** — the taste profile evolves on a
   measured, cooldown-gated cadence in the async loop, never on the sub-1s playout pull path.
+- **(Group PL, added v0.7.2) Airing the grab reason as a verified fact** — the director's
+  structured at-grab-time grab reason (REQ-PL-008) is an UNVERIFIED claim for the diary/audit/taste
+  signal; it never enters the fact contract (REQ-PG-001) and a host never states it as a certainty
+  (grounding REQ-PG-002, consensus KNOWLEDGE-008 REQ-KS-006).
+- **(Group PL, added v0.7.2) Free-form retrospective grab-reason narration** — the reason is
+  captured as structured `{artist, title, reason}` AT GRAB TIME citing the actual prompt context;
+  after-the-fact "why did I grab this" narration (the hallucination/confabulation failure mode) is
+  excluded (REQ-PL-008).
+- **(Group PL, added v0.7.2) Merging the acquisition anti-re-fetch with the playout rotation** —
+  the persistent ACQUISITION anti-re-fetch (REQ-PL-009/011) and the ephemeral PLAYOUT no-repeat
+  (OPS-004 REQ-OA-003a + ORCH-005 REQ-RW-006 + PROGRAMMING REQ-PR-009) are SEPARATE systems over
+  different state; they are never unified into one no-repeat mechanism (the two-no-repeat
+  separation).
+- **(Group PL, added v0.7.2) A catalog-diversity re-rank that starves a thin catalog** — the
+  acquisition-diversity re-rank (REQ-PL-011) is catalog-size-gated and REQUIRED to relax below the
+  wishlist low-watermark; a diversity penalty that refuses to grow a small/new catalog is excluded.
+- **(Group PL, added v0.7.2) Re-owning the acquisition pipeline, the similar-artist graph, or the
+  ledger/diary store** — REQ-PL-008..011 own the grab-reason/exclusion/outcome/re-rank POLICIES;
+  OPS-004 Group OH owns the acquisition gate + balance, KNOWLEDGE-008 owns the similar-artist graph
+  (REQ-KG-001/003), ANALYSIS-006 owns the features (REQ-AD-003) + the `Track` record (REQ-AD-001,
+  extended in place), and OPS-004 REQ-OD-007/008 owns the ledger/diary substrate (the diary is a
+  VIEW, no new store).
 - **(Group PG, added v0.3.0) The FACTS themselves + their research/dating/sourcing** — owned
   by KNOWLEDGE-008 (the grounding feed, freshness model, provenance) and ANALYSIS-006 (the
   TrackContext features + sonic-character). Group PG owns HOW the host speaks from facts, not
@@ -2442,8 +2686,15 @@ anti-convergence firewall (REQ-PR-004) against every other persona — refinemen
 plurality (NFR-P-1). Provenance (REQ-PL-001) shall never block or stall ingest, and a
 manual-drop with "unattributed/house" provenance (REQ-PL-002) shall always be a curatable
 catalog member, never an orphan. No taste-evolution path shall use an appeal/engagement
-metric as an optimization target (REQ-PL-005, inherited OPS-004 NFR-O-7). See acceptance.md
-AC-NFR-P-7.
+metric as an optimization target (REQ-PL-005, inherited OPS-004 NFR-O-7). (Amended v0.7.2 —
+axis (e):) the acquisition-loop additions shall be MEASURABLY safe: (i) the director's structured
+grab reason (REQ-PL-008) is an UNVERIFIED claim — it never enters the fact contract (REQ-PG-001)
+and no aired host break states it as a certainty (grounding REQ-PG-002); (ii) the two no-repeat
+systems stay SEPARATE — the persistent acquisition anti-re-fetch (REQ-PL-009/011) and the ephemeral
+playout rotation (OPS-004 REQ-OA-003a + ORCH-005 REQ-RW-006 + PROGRAMMING REQ-PR-009) operate over
+different state and are never merged; and (iii) the catalog-diversity re-rank (REQ-PL-011) RELAXES
+below the wishlist low-watermark so a small/new catalog is never starved (it grows the catalog,
+never refuses to). See acceptance.md AC-NFR-P-7.
 
 ### NFR-P-8 — Grounding integrity: a FAIL never airs, facts trace to context (Ubiquitous) — Priority High
 Every aired host break shall be GROUNDED and gate-passed: no spoken factual claim (year,
@@ -2716,6 +2967,10 @@ Section B).
 | REQ-PL-005 | Taste Self-Learning, Provenance & Feedback | High | Event | AC-PL-005 |
 | REQ-PL-006 | Taste Self-Learning, Provenance & Feedback | High | State | AC-PL-006 |
 | REQ-PL-007 | Taste Self-Learning, Provenance & Feedback | Medium | Event | AC-PL-007 |
+| REQ-PL-008 | Taste Self-Learning, Provenance & Feedback | High | Event | AC-PL-008 |
+| REQ-PL-009 | Taste Self-Learning, Provenance & Feedback | High | Event | AC-PL-009 |
+| REQ-PL-010 | Taste Self-Learning, Provenance & Feedback | Medium | Event | AC-PL-010 |
+| REQ-PL-011 | Taste Self-Learning, Provenance & Feedback | High | State | AC-PL-011 |
 | REQ-PG-001 | Grounded Host Voice & Quality Gate | High | Event | AC-PG-001 |
 | REQ-PG-002 | Grounded Host Voice & Quality Gate | High | Ubiquitous | AC-PG-002 |
 | REQ-PG-003 | Grounded Host Voice & Quality Gate | High | State | AC-PG-003 |
@@ -2756,7 +3011,7 @@ Section B).
 
 ---
 
-Version: 0.7.0
+Version: 0.7.2
 Status: draft
-Last Updated: 2026-06-22
-Total: 67 REQ + 9 NFR = 76, 1:1 REQ↔AC.
+Last Updated: 2026-06-23
+Total: 71 REQ + 9 NFR = 80, 1:1 REQ↔AC.

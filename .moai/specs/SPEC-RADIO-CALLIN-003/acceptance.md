@@ -1,6 +1,6 @@
 ---
 id: SPEC-RADIO-CALLIN-003-acceptance
-version: 0.3.1
+version: 0.3.3
 status: draft
 created: 2026-06-22
 updated: 2026-06-23
@@ -19,9 +19,23 @@ Where a criterion is marked [HARD] it is a must-pass gate (no compensation by ot
 
 Group prefixes: CT (Media Ingress & Air Path) / CL (Conversation Loop & Latency) / CD (Broadcast
 Delay) / CM (Moderation & Dump) / CC (Conduct & Drop/Ban) / CF (Social/Listener Feeds) / CS (Scheduled
-Windows) / CG (Legal/Consent). [v0.3.0] 37 AC + 9 AC-NFR = 46, matching spec.md 37 REQ + 9 NFR
+Windows) / CG (Legal/Consent). [v0.3.2] 38 AC + 9 AC-NFR = 47, matching spec.md 38 REQ + 9 NFR
 (v0.2.0 added AC-CT-006 for the Discord complement; v0.3.0 added AC-CL-007 for the swappable STT
-engine).
+engine; v0.3.2 added AC-CF-005 for the SONG_REQUEST routing seam).
+
+[v0.3.3] 2026-06-23 audit fix pass (no count change; 1:1 REQ↔AC parity preserved): AC-NFR-C-6's
+phantom "CORE-001 REQ-OF-004 / NFR-O-7" anchor corrected to "CORE-001 REQ-D-008" (REQ-OF-004 / NFR-O-7
+are OPS-004's apolitical rail, not CORE-001 IDs; the already-correct OPS-004-attributed AC-CF-003 site
+was left intact); AC-CC-001 conditioned on a per-ingress, accept-time-resolvable identity key (Discord
+user ID / website session/sign-in), with the ban rail DEGRADING to best-effort for accept-anonymous
+web callers and high-risk containment shifting to the named-caller-only policy (REQ-CM-006 / R-C-9),
+matching the corrected REQ-CC-001. Count unchanged at 47.
+
+[v0.3.2] 2026-06-23 Group CF SONG_REQUEST routing addition (1:1 REQ↔AC parity preserved): added
+AC-CF-005 for REQ-CF-005 — recognize a SONG_REQUEST-typed inbound message, normalize into REQ-D-008,
+moderate identically (REQ-CM-007), no-pandering inherited (REQ-CF-003), route to the
+SPEC-RADIO-REQUEST-011 backend (referenced, not re-owned), and degrade gracefully if REQUEST-011 is
+absent. Count 46→47.
 
 [v0.3.1] 2026-06-23 audit convergence fixes (no count change; 1:1 REQ↔AC parity preserved): AC-NFR-C-5
 extended to carry NFR-C-5's official-Telegram-Bot-API (text-only) ALLOW + the MTProto/userbot
@@ -220,11 +234,23 @@ to STT-stage-only with the NFR-C-9 simplicity-tension caveat, matching the corre
 
 ### Group CC — Conduct & Drop/Ban
 
-**AC-CC-001 (REQ-CC-001 — persisted ban list checked at accept):**
-- GIVEN a banned caller identity (E.164 / handle), WHEN it calls/messages, THEN it is rejected at
-  call-accept before reaching air.
-- [HARD] A re-dial from a banned identity is rejected; the ban persists across daemon restarts in
-  the existing store seam (no new datastore). The reject is enforceable without the host LLM.
+**AC-CC-001 (REQ-CC-001 — persisted ban list checked at accept, on a resolvable per-ingress identity key):**
+- GIVEN a banned caller identity resolvable at accept (a Discord user ID for the Discord complement,
+  or a website session / sign-in identity for the primary WebRTC widget), WHEN it calls/messages,
+  THEN it is rejected at call-accept before reaching air.
+- [HARD] A re-connect from a banned, durably-resolved identity is rejected; the ban persists across
+  daemon restarts in the existing store seam (no new datastore). The reject is enforceable without
+  the host LLM.
+- [HARD] [HONESTY] For accept-ANONYMOUS web callers (a WebRTC widget with no sign-in/session
+  identity), the ban rail DEGRADES to BEST-EFFORT: a banned actor MAY return under a fresh anonymous
+  session, and no artifact overstates the ban as unconditionally enforceable against anonymous
+  ingress (asserted: anonymous WebRTC callers are not claimed durably bannable).
+- [HARD] When the identity key is anonymous/unresolvable, high-risk containment SHIFTS to the
+  NAMED-CALLER-ONLY policy (REQ-CM-006 / R-C-9): high-risk topics require a sign-in-resolved caller,
+  the off-air pre-screen (REQ-CC-002) + the live floor/classifier/dump (Group CM) remain always-on,
+  and anonymous high-risk participation is denied rather than relying on the ban list. Whether the
+  WebRTC widget requires sign-in (durable ban) or accepts anonymous callers (best-effort ban +
+  named-caller-only high-risk) is config.
 
 **AC-CC-002 (REQ-CC-002 — off-air pre-screen before harbor switch):**
 - GIVEN an accepted call, WHEN auditioned, THEN it runs OFF-air (the air mix is not yet on the
@@ -275,6 +301,29 @@ to STT-stage-only with the NFR-C-9 simplicity-tension caveat, matching the corre
 - GIVEN the social path, WHEN reviewed, THEN it is a TEXT channel (no telephony, no realtime STT
   loop) and no autonomous OUTBOUND social posting exists.
 - [HARD] Outbound posting is absent (deferred to SPEC-RADIO-SOCIAL); not partially built.
+
+**AC-CF-005 (REQ-CF-005 — recognize SONG_REQUEST + route normalized to SPEC-RADIO-REQUEST-011):** [v0.3.2]
+- GIVEN an inbound message on the existing Group CF text path (call-in text-read / Meta Graph API /
+  Telegram Bot API / website form), WHEN it is recognized as a SONG_REQUEST ("play X by Y", a
+  track/artist name, or equivalent intent), THEN it is normalized into the CORE-001 REQ-D-008
+  listener-signal contract (REQ-CF-002) with a request-typed marker and ROUTED to the
+  SPEC-RADIO-REQUEST-011 backend.
+- [HARD] CALLIN-003 owns ONLY the recognize-and-route-normalized seam; it does NOT re-own, fork, or
+  specify the song-request matcher, the library lookup, the wishlist, the request queue, or any
+  fulfilment policy (asserted: no matcher/wishlist code in CALLIN-003; REQUEST-011 is referenced by
+  ID). 
+- [HARD] A SONG_REQUEST is moderated IDENTICALLY to any other listener text: it passes the SAME
+  deterministic floor + LLM classifier (REQ-CM-001/002) before any on-air read and the host's spoken
+  read passes PG-005 (REQ-CM-003); a song-request is NOT a moderation-exempt class (REQ-CM-007 applies
+  verbatim — asserted: a SONG_REQUEST failing the floor/classifier is NOT read on air).
+- [HARD] The no-pandering rail is inherited verbatim: a song request is human-curatorial input the
+  host MAY honor, decline with character, or ignore; REQUEST-011 fulfilment is never an
+  appeal/engagement-optimization target (REQ-CF-003 / NFR-C-6).
+- [HARD] If the SPEC-RADIO-REQUEST-011 backend is absent/disabled, the SONG_REQUEST signal degrades
+  gracefully to an ordinary queued REQ-D-008 listener signal and the ingest worker does NOT crash
+  (asserted with REQUEST-011 unavailable; ties to NFR-C-7).
+- The intent-recognition mechanism (classifier vs heuristic) and the REQUEST-011 routing endpoint are
+  config/implementation detail.
 
 ### Group CS — Scheduled Interaction Windows
 
@@ -345,7 +394,7 @@ used. [HARD] [v0.2.0]
 
 **AC-NFR-C-6 (NFR-C-6 — no pandering):** No code path makes listener signals an appeal/engagement
 optimization target; the host reads/weighs/ignores them with autonomy as one human-curatorial input
-among many (inherits CORE-001 REQ-OF-004 / NFR-O-7). [HARD]
+among many (inherits CORE-001 REQ-D-008). [HARD]
 
 **AC-NFR-C-7 (NFR-C-7 — resilience):** A telephony error / WS drop / STT-classifier-host-LLM failure
 / harbor disconnect / Meta or Telegram webhook error / moderation-module error logs and degrades to music
@@ -435,7 +484,7 @@ THEN the air returns cleanly to music (no dead air)                             
 # enforceable code+state, not a prompt wish (refuted claim 3).
 ```
 
-### B-5 — Inbound social read on air, with autonomy and no pandering (CF-001…004, CM-007, CS-003, NFR-C-5/C-6)
+### B-5 — Inbound social read on air, with autonomy and no pandering (CF-001…005, CM-007, CS-003, NFR-C-5/C-6)
 
 ```
 GIVEN provisioned Meta tokens (and/or a Telegram bot token) and the existing website form
@@ -443,15 +492,25 @@ WHEN a WhatsApp/Messenger/IG DM, a Telegram text message, or a form message arri
 THEN it is ingested via the OFFICIAL Meta Graph API / Telegram Bot API only (no scraping,
      no MTProto/userbot) as TEXT                                                                   # CF-001 / NFR-C-5 [v0.2.0]
   AND normalized into the CORE-001 REQ-D-008 listener-signal contract as untrusted input          # CF-002
+GIVEN an inbound message recognized as a SONG_REQUEST ("play X by Y")
+WHEN it is processed
+THEN it is normalized into REQ-D-008 with a request-typed marker and ROUTED to the
+     SPEC-RADIO-REQUEST-011 backend (CALLIN-003 owns no matcher/wishlist)                          # CF-005 [v0.3.2]
+  AND it passes the SAME floor + classifier before any on-air read (not moderation-exempt)         # CF-005 / CM-007
+  AND if the REQUEST-011 backend is absent, it degrades to an ordinary queued REQ-D-008 signal
+      without crashing the ingest worker                                                           # CF-005 / NFR-C-7
 GIVEN an open interaction window
 WHEN the host considers the message
 THEN it MAY read, weigh, riff on, or IGNORE it — never chasing engagement/appeal                  # CF-003 / NFR-C-6
+  AND a song request is human-curatorial input the host may honor/decline/ignore — REQUEST-011
+      fulfilment is never an appeal-optimization target                                            # CF-005 / CF-003
   AND if read on air, the text passes the floor + classifier and the host read passes PG-005      # CM-007
 GIVEN no open window
 WHEN a message arrives
 THEN it MAY be queued but is NOT read on air; the line is closed and the air is music             # CS-003
 WHEN the implementation is reviewed
 THEN no autonomous outbound social posting exists (deferred to SPEC-RADIO-SOCIAL)                  # CF-004
+  AND no song-request matcher / wishlist / queue exists in CALLIN-003 (owned by REQUEST-011)       # CF-005 [v0.3.2]
 ```
 
 ### B-6 — Consent + audit + honest legal posture (CG-001…003, CM-006, NFR-C-4)
@@ -474,8 +533,8 @@ THEN the recording-consent rule (one/two-party), the minors policy, and PII rete
 
 ### C.1 Definition of Done
 
-- [ ] All 37 REQ acceptance entries (Section A) pass. [v0.2.0: +AC-CT-006 Discord complement;
-      v0.3.0: +AC-CL-007 swappable STT engine.]
+- [ ] All 38 REQ acceptance entries (Section A) pass. [v0.2.0: +AC-CT-006 Discord complement;
+      v0.3.0: +AC-CL-007 swappable STT engine; v0.3.2: +AC-CF-005 SONG_REQUEST routing seam.]
 - [ ] All 9 NFR acceptance entries (Section A) pass.
 - [ ] All 6 Section B scenarios pass — including B-3 and B-4 with the host LLM STUBBED (the
       enforceability proof).
@@ -531,4 +590,7 @@ THEN the recording-consent rule (one/two-party), the minors policy, and PII rete
       safe-boundary discipline, the CORE-001 REQ-D-008 listener contract + radio.liq playout engine,
       or the OPS-004 REQ-OB-009 website form — each is referenced by number/seam (Section 1.4,
       Section 2).
+- [ ] [v0.3.2] CALLIN-003 re-owns NONE of the SPEC-RADIO-REQUEST-011 song-request backend (matcher /
+      library lookup / wishlist / queue / fulfilment policy); it only recognizes a SONG_REQUEST and
+      routes the normalized REQ-D-008 signal to that backend (REQ-CF-005), referenced by ID.
 - [ ] The C-prefix REQ namespace (CT/CL/CD/CM/CC/CF/CS/CG) does not collide with any prior SPEC.
