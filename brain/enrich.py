@@ -855,7 +855,37 @@ class EnrichmentWorker:
         except Exception as exc:  # noqa: BLE001 - persistence is best-effort
             log_event(log, "enrich.persist_error", key=key, error=str(exc))
             return False
+
+        # ALBUMART-021 Group AW (REQ-AW-001): AFTER identification + the tag write, embed the
+        # front cover keyed on the release-group MBID the identification just captured. Rides
+        # this same enrich_one pass (backfill + on-download), never re-runs identification,
+        # never stands up a second worker. Exception-isolated end-to-end (REQ-AS-003) — a
+        # CAA/embed failure here NEVER fails the enrichment or stalls the worker; it degrades
+        # to "no art" and stamps the independent art skip-marker so the backfill moves on.
+        self._embed_art(key)
         return bool(changes)
+
+    def _embed_art(self, key: str) -> None:
+        """ALBUMART-021: fetch + embed the front cover for ``key``, then stamp art_version.
+
+        Re-snapshots the track (set_core_tags above may have just stamped its MBID), runs the
+        art step when due (skip-marker / force-refresh, REQ-AW-002), and persists the
+        INDEPENDENT ``art_version`` marker so the backfill does not re-fetch it — even on a
+        CAA miss (REQ-AF-003). Best-effort + fully isolated: never raises, never blocks.
+        """
+        try:
+            from . import albumart  # noqa: PLC0415 - lazy: art layer is optional/additive
+            track = self._get_track_copy(key)
+            if track is None or not albumart.should_run_for(track, self.cfg):
+                return
+            albumart.embed_art_for_track(track, self.cfg)
+            # Stamp the marker whether art was embedded OR the fetch was a confirmed miss, so
+            # the backfill skips this track next pass (unless force-refresh). Independent of
+            # enrich_version so an art-only sweep never forces a re-identification.
+            self.library.set_core_tags(
+                key, {"art_version": albumart.ALBUMART_SCHEMA_VERSION})
+        except Exception as exc:  # noqa: BLE001 - the art step is best-effort + isolated
+            log_event(log, "enrich.art_error", key=key, error=str(exc))
 
     def _get_track_copy(self, key: str) -> Optional[Any]:
         """Best-effort snapshot of one track by key via the library's locked accessor."""

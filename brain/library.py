@@ -154,6 +154,15 @@ class Track:
     barcode: str = ""
     catno: str = ""
 
+    # -- ALBUMART-021 Group AW: the art skip-marker (REQ-AW-002) -----------------
+    # INDEPENDENT of enrich_version so the art backfill is resumable on its own (art
+    # added to CAA later, or a force-refresh sweep) WITHOUT forcing a re-identification.
+    # 0 = the art step has never run for this track; once it runs (cover embedded, OR a
+    # confirmed CAA miss) it is stamped to ALBUMART_SCHEMA_VERSION so the backfill skips
+    # it unless force-refresh. Default 0 keeps an old library.json/sqlite row loading
+    # cleanly via the tolerant loaders.
+    art_version: int = 0
+
 
 # Identity / dedup fields that set_analysis MUST NEVER overwrite (M5 allowlist
 # hard-exclusions). A metadata provider returning a field literally named "key"
@@ -183,7 +192,10 @@ _ENRICH_WRITABLE_FIELDS = frozenset(
     {"artist", "title", "album", "year", "genre", "enrich_version", "enrich_provenance",
      # Group EC (REQ-EC-003): the canonical identity widening — additive, never touches the
      # frozen key / path / play-history fields. ALBUMART-021 Group AK consumes this extension.
-     "recording_mbid", "release_group_mbid", "barcode", "catno"}
+     "recording_mbid", "release_group_mbid", "barcode", "catno",
+     # ALBUMART-021 Group AW (REQ-AW-002): the independent art skip-marker, persisted via the
+     # same allowlist accessor so it can never touch the frozen identity / play-history fields.
+     "art_version"}
 )
 
 

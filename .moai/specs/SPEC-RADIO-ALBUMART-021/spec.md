@@ -13,6 +13,29 @@ issue_number: 21
 
 ## HISTORY
 
+- 2026-06-23 (v0.1.1): DDD implementation slice (ANALYZE-PRESERVE-IMPROVE). Group AK was found ALREADY
+  BUILT by ENRICH-012 Group EC — `release_group_mbid` is captured on both identification paths, carried
+  on `Canonical`, persisted on `Track`, and in `_ENRICH_WRITABLE_FIELDS` — so the CAA key requirement was
+  already satisfied (the `release_mbid` secondary fallback key is NOT yet captured, so the AF release-MBID
+  fallback path exists in the fetcher but is dormant until that field lands; DEFERRED). Groups AF/AC/AS/AW/AG
+  were UNBUILT and are now implemented additively in a new `brain/albumart.py`: CAA front-cover fetch
+  (`fetch_front_cover`, httpx, bounded `front-500` thumbnail, polite throttle mirroring
+  `metadata._mb_throttle`, 404/non-image/network all graceful-skip → None); per-format embed
+  (`embed_front_cover` → id3 APIC / FLAC PICTURE / m4a covr, embed-only preserve-everything-else,
+  idempotent skip-if-present, force-refresh override); the end-to-end art step (`embed_art_for_track`,
+  shares `BRAIN_ENRICH_WRITE_FILES` gate with dry-run logging when off, fully exception-isolated). Wired
+  into `enrich.EnrichmentWorker.enrich_one` via a new `_embed_art` step AFTER the tag write (rides the
+  existing worker, never a second thread; reached by both the backfill loop and the acquire.py
+  on-download hook through the same `enrich_one`). Added the INDEPENDENT `Track.art_version` skip-marker
+  (REQ-AW-002, distinct from `enrich_version`) + `_ENRICH_WRITABLE_FIELDS` extension, and config knobs
+  `BRAIN_ALBUMART_ENABLED` (default on), `BRAIN_ALBUMART_SIZE` (default `front-500`),
+  `BRAIN_ALBUMART_FORCE_REFRESH` (default off). Note REQ-AS-002 "baseline-backup discipline": ENRICH-012
+  has no separate `.bak` mechanism — its discipline IS the in-place-mutate-existing-tag-object (never
+  rebuild) pattern, which the embed mirrors exactly. 31 offline/deterministic tests added
+  (`brain/test_albumart.py`: mocked-CAA fetch incl. 404/network-error/non-image/release-fallback,
+  real mutagen APIC+PICTURE+covr round-trips, idempotency, embed-only preservation incl. non-front
+  pictures, gate-off dry-run, exception-isolation, and the enrich_one worker-wiring path). Full suite:
+  210 → 241 passed, 1 deselected, 0 skips, 0 failures.
 - 2026-06-23 (v0.1.0): Initial draft, occupying the new global-incrementing ALBUMART-021 id. The
   twenty-first authored SPEC in the golden-shower-radio RADIO series and a FOCUSED EXTENSION of the
   ENRICH-012 core-tag enrichment engine: where ENRICH-012 IDENTIFIES the canonical recording and

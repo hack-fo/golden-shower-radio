@@ -178,6 +178,23 @@ class Config:
     # only newly-downloaded files are enriched (on-acquire).
     enrich_backfill_enabled: bool = field(default_factory=lambda: _env("BRAIN_ENRICH_BACKFILL", "1") not in ("0", "false", "no"))
 
+    # --- ALBUMART-021: Cover-Art-Archive front-cover acquisition + embed (Group AG) ---
+    # ENABLE TOGGLE for the album-art engine (brain/albumart.py). When False, no art is
+    # fetched or embedded. Default ON (REQ-AG-001). NOTE: the FILE-MUTATION authority is
+    # the SHARED enrich_write_files gate (REQ-AS-001) — this toggle only controls whether
+    # the art step runs at all. The art is embedded IN THE FILE ONLY, never on the website
+    # ([HARD][USER DECISION], REQ-AC-001).
+    albumart_enabled: bool = field(default_factory=lambda: _env("BRAIN_ALBUMART_ENABLED", "1") not in ("0", "false", "no"))
+    # ART THUMBNAIL SIZE — the CAA thumbnail variant (REQ-AF-002, NFR-AA-6). Default
+    # ``front-500`` (<=500px) keeps a typical embedded cover in the tens-to-low-hundreds of
+    # KB, not multiple MB. The CAA endpoint is coverartarchive.org/release-group/{mbid}/{size}.
+    albumart_size: str = field(default_factory=lambda: _env("BRAIN_ALBUMART_SIZE", "front-500"))
+    # FORCE-REFRESH toggle (REQ-AG-002). When True, OVERRIDES the idempotent skip — re-fetch
+    # + re-embed the front cover even for files that already have one (and re-evaluate tracks
+    # whose art skip-marker is already set). Still obeys the write-files gate + the
+    # preserve-everything-else discipline; it overrides ONLY the skip, never the safety.
+    albumart_force_refresh: bool = field(default_factory=lambda: _env("BRAIN_ALBUMART_FORCE_REFRESH", "0") not in ("0", "false", "no"))
+
     # --- ANALYSIS-006: library watch / auto-ingest (REQ-AP-007) ---
     watch_enabled: bool = field(default_factory=lambda: _env("BRAIN_WATCH_ENABLED", "1") not in ("0", "false", "no"))
     # Interval (seconds) for the periodic METADATA-ONLY (os.scandir+stat) scan that
