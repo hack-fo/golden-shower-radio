@@ -47,3 +47,34 @@ the code and a SPEC disagree, document the code and note the SPEC as the plan.
 
 A pull request that changes `brain/` or `deploy/` should also touch the docs, or
 say explicitly why it doesn't. Stale docs are a defect, the same as a failing test.
+
+## Session checkpoint (don't lose work across a 5h-limit / session end)
+
+`scripts/session-checkpoint.py` is a Claude Code **Stop / SessionEnd hook** that snapshots
+the *deterministic* session state — git HEAD + recent commits + dirty diffstat, the in-flight
+background tasks (workflows/agents), the transcript pointer + last message, and a project
+metric (library size + enrichment backfill) — to `.moai/checkpoints/checkpoint-latest.md`
+(gitignored; keeps the last ~20 stamped copies). It writes on **session-end always**, and on a
+**turn-end only when there is still work to lose** (in-flight `background_tasks`/crons, or an
+uncommitted/dirty tree). It never blocks the turn (always exits 0).
+
+Why a per-turn hook and not a "fire at 99% of the 5h window": Claude Code does **not** expose
+the 5-hour usage-window percentage to any hook, env var, or CLI — so threshold detection is
+impossible. Checkpointing every turn (when work remains) instead means whatever the cutoff
+hits, the saved state is at most one turn stale. The script captures the *deterministic* state;
+the *narrative* ("what we were reasoning about / planning") still lives in the auto-memory
+`build-state` save-point + the transcript the checkpoint points to.
+
+Registration (in `.claude/settings.local.json`, which is gitignored so `moai update` can't
+clobber it — re-add on a fresh clone):
+
+```json
+{
+  "hooks": {
+    "Stop": [{ "hooks": [{ "type": "command",
+      "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/session-checkpoint.py\"", "timeout": 30 }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "command",
+      "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/session-checkpoint.py\" --session-end", "timeout": 30 }] }]
+  }
+}
+```

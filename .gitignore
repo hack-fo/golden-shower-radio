@@ -181,6 +181,7 @@ secret-*.*
 .moai/status_line.sh
 .moai/memory/
 .moai/worktrees/
+.moai/checkpoints/
 
 # ===========================================
 # Evolution Telemetry (local-only usage data)
