@@ -142,6 +142,8 @@ These are shared across multiple modules; import from `brain.config`, not locall
 | `BRAIN_DL_TIMEOUT_SEC` | `180` | Per-file download timeout |
 | `BRAIN_YTDLP_TIMEOUT_SEC` | `120` | yt-dlp subprocess timeout |
 | `BRAIN_MIN_BITRATE` | `192` | Minimum acceptable lossy bitrate (kbps) |
+| `BRAIN_MAX_DOWNLOAD_MB` | `200` | Reject downloads larger than this (MB). slskd: `size > max_size_bytes` skipped in `acceptable()` + guarded in `best_candidate()`. yt-dlp: `--max-filesize {N}M`. `0` disables. |
+| `BRAIN_MAX_DURATION_SEC` | `2400` | Reject downloads longer than this (seconds, 40 min default). yt-dlp `--match-filter "duration < {N}"`. Guards against hour-long mixes/podcasts. `0` disables. |
 
 #### Director Loop
 

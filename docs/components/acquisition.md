@@ -95,6 +95,7 @@ A file is accepted as a download candidate if ALL of the following hold:
 - The peer response is not flagged `isPrivate`.
 - The file is not flagged `isLocked`.
 - The file extension is in `AUDIO_EXTS` (`.flac .wav .aiff .aif .alac .mp3 .m4a .ogg .opus .aac`).
+- The file `size` does not exceed the download cap (`max_download_mb`, **200 MB** default) when both the size and the cap are known — applies to lossless and lossy alike, guarding against multi-GB rips. Unknown size (`0`) is kept (the cap cannot apply).
 - If the extension is lossless (`LOSSLESS_EXTS`): **always accepted**.
 - If lossy AND bitrate is known AND `bitrate < min_lossy_bitrate`: **rejected**.
 - If lossy AND bitrate is **unknown**: **kept** (many clients do not broadcast bitrate; rejecting them would starve the library). These files are downranked, not dropped.
@@ -109,6 +110,25 @@ Candidates are sorted descending by a 4-tuple:
 4. File size (larger = tiebreaker).
 
 The winner is the top of this sorted list.
+
+---
+
+## Download size & duration caps
+
+To keep oversized rips and hour-long non-music files (DJ mixes, podcasts, audiobooks,
+multi-hour ambient loops) out of the library, both acquisition paths reject content over
+a size/duration cap **before** the download starts:
+
+- **slskd** — `max_size_bytes` (derived from `max_download_mb`, 200 MB default) is threaded
+  through `acceptable()` → `collect_candidates()` → `best_candidate()`. A candidate whose
+  `size` exceeds the cap is filtered out, and `best_candidate()` applies a final guard so an
+  oversized top pick is never enqueued. A cap of `0` (or unknown size) disables the check.
+- **yt-dlp** — `ytdlp.fetch()` passes `--max-filesize {max_download_mb}M` and
+  `--match-filter "duration < {max_download_duration_seconds}"` (2400 s / 40 min default), so
+  yt-dlp itself refuses to download anything too large or too long.
+
+This is the first (cheapest) tier of the planned content-vetting cascade (VETTING-027);
+duration alone never bans a track — see that SPEC for the keyword and speech-vs-music tiers.
 
 ---
 
