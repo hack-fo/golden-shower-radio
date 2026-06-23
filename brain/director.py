@@ -29,12 +29,18 @@ log = logging.getLogger("brain.director")
 
 
 class Director:
-    def __init__(self, cfg: Config, library: Library, acquirer: Acquirer, state, stop_event: threading.Event):
+    def __init__(self, cfg: Config, library: Library, acquirer: Acquirer, state, stop_event: threading.Event,
+                 show_engine=None):
         self.cfg = cfg
         self.library = library
         self.acquirer = acquirer
         self.state = state
         self.stop_event = stop_event
+        # SHOWS-020 (Group SD/SB, REQ-SD-001/SB-001): the editorial show engine is OPTIONAL +
+        # backward-compatible. When None (or cfg.shows_enabled is off, or no show is active) the
+        # curation is BYTE-IDENTICAL to before this SPEC — the seed reference stays empty and the
+        # picker keeps full autonomy. An active show's selection lens only BIASES the batch.
+        self.show_engine = show_engine
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
@@ -47,7 +53,31 @@ class Director:
     def _seed_reference(self) -> List[str]:
         # FUTURE: pull the user's Spotify/YouTube liked tracks here as NON-BINDING
         # reference context (see brain.config.SEED_ENRICHMENT_STUBS). Phase 1: none.
-        return []
+        #
+        # SHOWS-020 REQ-SD-001 (D-S-2): when an active show exists, fold its selection-lens
+        # descriptors in as a NON-BINDING reference hint — exactly the seed_reference seam, never
+        # a director rewrite. Best-effort + exception-swallowed: [HARD] with the engine absent /
+        # shows disabled / no active show this returns [] and the batch is UNCHANGED (NFR-S-5).
+        return self._show_lens_reference()
+
+    def _show_lens_reference(self) -> List[str]:
+        """The active show's lens as non-binding curation hints (REQ-SD-001). [] when off."""
+        if self.show_engine is None or not getattr(self.cfg, "shows_enabled", False):
+            return []
+        try:
+            show = self.show_engine.active_show()
+            if show is None:
+                return []
+            hints: List[str] = []
+            if show.theme:
+                hints.append(f"show theme: {show.theme}")
+            for key, val in (show.selection_lens or {}).items():
+                if val:
+                    hints.append(f"{key}: {val}")
+            return hints
+        except Exception as exc:  # noqa: BLE001 - the show hint is best-effort; never blocks
+            log_event(log, "director.show_lens_error", error=str(exc))
+            return []
 
     def _tick(self) -> None:
         recent = self._recent_strings()

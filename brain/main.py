@@ -17,17 +17,21 @@ import os
 import signal
 import threading
 
+from . import llm
 from .acquire import Acquirer
 from .analyzer import Analyzer
 from .config import load_config
 from .director import Director
 from .enrich import EnrichmentWorker
 from .filename import FilenameWorker
+from .humandj import HumanDjRegistry
 from .knowledge import KnowledgeStore
+from .lastfm import LastfmResearch
 from .library import Library
 from .logging_setup import log_event, setup_logging
 from .research import Researcher
 from .server import make_server
+from .shows import ShowEngine
 from .state import StationState
 from .talk import TalkDirector
 from .website import render_website
@@ -78,7 +82,24 @@ def run() -> int:
 
     library = Library(cfg.music_dir, cfg.library_path, backend=cfg.store_backend)
     acquirer = Acquirer(cfg, library, state, stop_event)
-    director = Director(cfg, library, acquirer, state, stop_event)
+    # SPEC-RADIO-SHOWS-020: the editorial show-variation engine (Groups SG/SX/SP/SD). OFF by
+    # default (cfg.shows_enabled) and best-effort: an init hiccup leaves show_engine None and the
+    # director + talk loops behave exactly as before this SPEC (byte-identical). When on, an
+    # active show's lens biases curation (non-binding) + its theme/grounded talking points feed
+    # the talk context. It consumes the Last.fm research client (Group LF) + the human-DJ signal
+    # registry (Groups SK/SM) as angle FUEL; both are themselves key/flag-gated + graceful.
+    show_engine = None
+    if cfg.shows_enabled:
+        try:
+            show_engine = ShowEngine(
+                cfg, llm=llm,
+                lastfm=LastfmResearch(cfg),
+                humandj=HumanDjRegistry(cfg),
+            )
+        except Exception as exc:  # noqa: BLE001 - the show engine is best-effort, never fatal
+            log_event(log, "main.show_engine_init_failed", error=str(exc))
+            show_engine = None
+    director = Director(cfg, library, acquirer, state, stop_event, show_engine=show_engine)
     # KNOWLEDGE-008: the dated, sourced, relational editorial-knowledge store (SQLite in
     # /db). Best-effort - if disabled or the store can't open, the host simply talks from
     # genre/feel only. NEVER on the <1s /api/next pull path. Built before TalkDirector +
@@ -95,8 +116,10 @@ def run() -> int:
             knowledge = None
     # TALKING layer (phase 2a): pre-renders host talk clips between songs. Best-effort -
     # if disabled or TTS/LLM fails, the station stays pure music. Carries the KNOWLEDGE-008
-    # grounding feed (verified facts) when the store is available (REQ-KI-001).
-    talk_director = TalkDirector(cfg, library, state, stop_event, knowledge=knowledge)
+    # grounding feed (verified facts) when the store is available (REQ-KI-001) + the SHOWS-020
+    # active-show theme/talking points when the show engine is on (REQ-SD-002).
+    talk_director = TalkDirector(cfg, library, state, stop_event, knowledge=knowledge,
+                                 show_engine=show_engine)
     # First-run WELCOME (one-shot opening): arm it only when talk is on, it's enabled, and
     # the genesis marker is absent — so it plays once at the station's first start and a
     # later brain restart mid-broadcast does NOT re-welcome. The TalkDirector prepares it

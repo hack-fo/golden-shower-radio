@@ -31,7 +31,7 @@ import json
 import logging
 import os
 import re
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from .logging_setup import log_event
 
@@ -427,8 +427,46 @@ def _build_talk_prompt(context: Dict) -> str:
             "curiosa or anecdote about the track — at most one, kept brief — drawn ONLY from "
             "the facts above; do not invent or imply any anecdote not listed here."
         )
+
+    # SPEC-RADIO-SHOWS-020 (REQ-SD-002/003): when an active show is presenting, offer its
+    # editorial THEME as framing (NOT a fact) + any GROUNDED talking points (the airable ones —
+    # the show engine pre-filters; an ungrounded show-design note never reaches here). Additive
+    # + backward-compatible: with no active show the keys are absent and the prompt is
+    # byte-identical. A talking point is still a fact token subject to the unchanged grounding
+    # gate downstream — the show theme licenses no ungrounded claim (REQ-SD-003).
+    show_lines = _format_show_context(context.get("show_theme"),
+                                      context.get("show_talking_points"))
+    if show_lines:
+        parts.extend(show_lines)
+
     parts.append("Keep it tight - this is a link, not a monologue.")
     return "\n".join(parts)
+
+
+def _format_show_context(theme, talking_points) -> List[str]:
+    """Render the active show's theme + grounded talking points into OPTIONAL prompt lines
+    (SPEC-RADIO-SHOWS-020 REQ-SD-002/003).
+
+    Returns [] when neither is present so the prompt stays byte-identical (graceful omission).
+    The theme is EDITORIAL FRAMING (the kind of show this is), explicitly NOT an airable fact;
+    the talking points are grounded notes the host MAY voice — still subject to the unchanged
+    forbidden-fact gate downstream. A compelling theme never licenses an ungrounded claim.
+    """
+    lines: List[str] = []
+    theme_text = str(theme or "").strip()
+    if theme_text:
+        lines.append(
+            f"This show's editorial theme (framing for your tone — NOT a fact to assert): "
+            f"{theme_text}."
+        )
+    points = [str(p).strip() for p in (talking_points or []) if str(p).strip()]
+    if points:
+        lines.append(
+            "Grounded show talking points you MAY weave in (speak ONLY from these — they are "
+            "already grounded; do not invent any other show fact):"
+        )
+        lines.extend(f"- {p}" for p in points)
+    return lines
 
 
 def _format_year_album(year, album) -> List[str]:
@@ -661,3 +699,98 @@ def design_persona_identity(model: str, primary_territory: str,
     except Exception as exc:  # noqa: BLE001 - identity design is best-effort; never crash mint
         log_event(log, "llm.identity_error", error=str(exc), model=model)
     return {}
+
+
+# =====================================================================================
+# SHOW-ANGLE layer (SPEC-RADIO-SHOWS-020 Group SX, REQ-SX-001): editorial-angle design.
+#
+# The variation engine asks the LLM to PROPOSE a fresh editorial angle for a persona,
+# grounded in supplied research (Last.fm Group LF / human-DJ Group SM thread hypotheses) +
+# the persona's taste. The angle is editorial INVENTION grounded in real research, NOT an
+# engagement/popularity-optimized theme (inherited anti-pandering). Best-effort: on any error
+# / empty parse it returns {} and the engine falls back to a taste-only angle (never stalls).
+# Same cheap tools-off, one-turn, subscription-auth path as curation/talk/identity.
+# =====================================================================================
+
+# A tight system prompt for the show-angle designer. Anti-slop + anti-pandering + grounded.
+SHOW_ANGLE_PERSONA = (
+    "You are a radio host inventing the editorial ANGLE for your next show on an autonomous "
+    "freeform station. Given your musical taste and some research leads, you propose ONE "
+    "fresh, specific editorial angle (a theme/lens — e.g. 'the producers behind the sound', "
+    "'1979 in one hour', 'artists adjacent to X'), grounded in the research + your taste, in "
+    "your own voice — never an engagement-bait or popularity-chasing theme, never a repeat of "
+    "a recent angle. Respond with ONLY a JSON object "
+    '{"theme": ..., "angle": ..., "lens": ..., "talking_points": [...]} — no commentary, no '
+    "markdown fences. 'lens' is a short catalog filter phrase (a genre/era/mood/tag/'similar "
+    "to X'); 'talking_points' are 1-3 short grounded notes you MIGHT voice."
+)
+
+
+def _build_show_angle_prompt(persona_desc: str, research: Optional[List[str]],
+                             recent_angles: Optional[List[str]]) -> str:
+    """Turn the persona description + research leads + recent angles into a one-shot prompt.
+
+    ``research`` are short grounded leads (Last.fm similar artists / tags, human-DJ threads);
+    ``recent_angles`` are this persona's recently-run angles to AVOID repeating (REQ-SX-002)."""
+    parts = [
+        "Invent the editorial angle for your next show.",
+        f"Your taste / who you are: {persona_desc or 'an eclectic freeform host'}.",
+    ]
+    leads = [r for r in (research or []) if r]
+    if leads:
+        parts.append("Research leads to draw on (colour, not facts to state verbatim): "
+                     + "; ".join(leads[:12]) + ".")
+    recent = [a for a in (recent_angles or []) if a]
+    if recent:
+        parts.append("Do NOT repeat the kind of these recent shows you already ran: "
+                     + "; ".join(recent[:8]) + ".")
+    parts.append("Return ONLY the JSON object described.")
+    return "\n".join(parts)
+
+
+def design_show_angle(model: str, persona_desc: str,
+                      research: Optional[List[str]] = None,
+                      recent_angles: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Design a SHOW ANGLE for a persona (SPEC-RADIO-SHOWS-020 REQ-SX-001). NEVER raises.
+
+    Returns ``{"theme", "angle", "lens", "talking_points"}`` (keys may be absent), or ``{}``
+    on any SDK error / quota / empty parse so the variation engine falls back to a taste-only
+    angle. Grounded in the supplied research + the persona's taste; the angle is editorial
+    invention, never engagement-optimized (inherited anti-pandering)."""
+    prompt = _build_show_angle_prompt(persona_desc, research, recent_angles)
+    try:
+        text = asyncio.run(_query_text(prompt, model, system_prompt=SHOW_ANGLE_PERSONA))
+        angle = _extract_show_angle(text)
+        if angle.get("angle") or angle.get("theme"):
+            log_event(log, "llm.show_angle", model=model, theme=angle.get("theme", ""))
+            return angle
+        log_event(log, "llm.show_angle_empty_parse", model=model, raw_len=len(text or ""))
+    except Exception as exc:  # noqa: BLE001 - angle design is best-effort; never stall the engine
+        log_event(log, "llm.show_angle_error", error=str(exc), model=model)
+    return {}
+
+
+def _extract_show_angle(text: str) -> Dict[str, Any]:
+    """Pull a {theme, angle, lens, talking_points} dict out of arbitrary model text. Returns
+    {} if nothing usable is found. Mirrors the JSON-anywhere strategy of _extract_identity."""
+    if not text:
+        return {}
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return {}
+    try:
+        data = json.loads(text[start : end + 1])
+    except (json.JSONDecodeError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out: Dict[str, Any] = {}
+    for key in ("theme", "angle", "lens"):
+        val = str(data.get(key) or "").strip()
+        if val:
+            out[key] = val
+    tps = data.get("talking_points") or data.get("talkingPoints") or []
+    if isinstance(tps, list):
+        out["talking_points"] = [str(t).strip() for t in tps if str(t).strip()]
+    return out

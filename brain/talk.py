@@ -45,7 +45,7 @@ class TalkDirector:
     """
 
     def __init__(self, cfg: Config, library: Library, state, stop_event: threading.Event,
-                 knowledge=None):
+                 knowledge=None, show_engine=None):
         self.cfg = cfg
         self.library = library
         self.state = state
@@ -54,6 +54,11 @@ class TalkDirector:
         # GROUNDING SOURCE for the talk script. Optional + backward-compatible: when None
         # (or empty) the host talks from genre/feel only, exactly as before this SPEC.
         self.knowledge = knowledge
+        # SHOWS-020 (Group SD/SB, REQ-SD-002): the editorial show engine is OPTIONAL +
+        # backward-compatible. When None (or cfg.shows_enabled off, or no active show) the talk
+        # context is BYTE-IDENTICAL to before this SPEC — no show keys are added. An active show
+        # only ADDS its theme + grounded talking points to the existing context bundle.
+        self.show_engine = show_engine
         self._thread: Optional[threading.Thread] = None
         self._provider = voice.make_provider(cfg)
         self._last_prune = 0.0
@@ -197,7 +202,35 @@ class TalkDirector:
         # qualified facts hedged. Empty-safe: an unresearched artist yields nothing and the
         # host falls back to genre/feel talk (Scenario B-6). Never raises into the loop.
         self._attach_grounding(context)
+        # SPEC-RADIO-SHOWS-020 (REQ-SD-002): when an active show is presenting, ADD its theme +
+        # its GROUNDED talking points to the SAME context bundle, so the host's break reflects
+        # the show. Best-effort + exception-swallowing exactly like _attach_grounding; [HARD]
+        # with the engine absent / shows disabled / no active show the keys are simply not added
+        # and the context is byte-identical (REQ-SB-001/002). Never on the /api/next pull path.
+        self._attach_show_context(context)
         return context
+
+    def _attach_show_context(self, context: dict) -> None:
+        """Fold the active show's theme + GROUNDED talking points into the talk context
+        (REQ-SD-002/003). Only GROUNDED talking points are offered (the airable ones); the show
+        theme is editorial FRAMING, not a fact. Backward-compatible: no engine / shows disabled /
+        no active show -> the keys are not added and the prompt is unchanged."""
+        if self.show_engine is None or not getattr(self.cfg, "shows_enabled", False):
+            return
+        try:
+            show = self.show_engine.active_show()
+            if show is None:
+                return
+            theme = str(getattr(show, "theme", "") or "").strip()
+            if theme:
+                context["show_theme"] = theme
+            # [HARD] Only GROUNDED talking points are airable (REQ-SG-004/SD-003). An ungrounded
+            # show-design note is internal planning material and is NEVER offered to the prompt.
+            points = [tp.text for tp in show.airable_talking_points if tp.text.strip()]
+            if points:
+                context["show_talking_points"] = points
+        except Exception as exc:  # noqa: BLE001 - show context is best-effort, never blocks talk
+            log_event(log, "talk.show_context_error", error=str(exc))
 
     def _attach_year_album(self, context: dict, path) -> None:
         """Fold the just-played track's VERIFIED year + album into the talk context

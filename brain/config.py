@@ -306,6 +306,53 @@ class Config:
         default_factory=lambda: _env("BRAIN_STORE_BACKEND", "sqlite").strip().lower()
     )
 
+    # --- SHOWS-020: editorial show-variation engine (Groups LF/SK/SM/SG/SX/SP/SD/SB) ---
+    # Master switch for the SHOW layer: the per-persona editorial show model + variation
+    # engine + the show-drives-curation/talk wiring (Groups SG/SX/SP/SD/SB). [HARD] OFF by
+    # default — with it off the director + talk loops behave EXACTLY as before this SPEC
+    # (no active show, no lens bias, no show keys in the talk context). Additive + opt-in.
+    shows_enabled: bool = field(default_factory=lambda: _env("BRAIN_SHOWS_ENABLED", "0") not in ("0", "false", "no"))
+    # Editorial-variation novelty (REQ-SX-002, D-S-4): the per-persona recent-shows WINDOW
+    # (how many recent angles a new proposal is checked against), the deterministic
+    # text-similarity THRESHOLD above which an angle is "too similar" and rejected, and the
+    # bounded MAX REGENERATE attempts before falling back to a taste-only angle (REQ-SX-004).
+    shows_novelty_window: int = field(default_factory=lambda: int(_env("BRAIN_SHOWS_NOVELTY_WINDOW", "8")))
+    shows_novelty_threshold: float = field(default_factory=lambda: float(_env("BRAIN_SHOWS_NOVELTY_THRESHOLD", "0.6")))
+    shows_max_regenerate: int = field(default_factory=lambda: int(_env("BRAIN_SHOWS_MAX_REGEN", "3")))
+    # Per-persona forward "planned shows" queue bound (REQ-SD-005): the max upcoming
+    # novelty-passed shows queued ahead of a persona. Bounded so the queue never grows
+    # unboundedly; an empty queue degrades to just-in-time angle proposal.
+    shows_planned_queue_max: int = field(default_factory=lambda: int(_env("BRAIN_SHOWS_PLANNED_MAX", "5")))
+
+    # --- SHOWS-020 Group LF: the Last.fm RESEARCH client (brain/lastfm.py) ---
+    # A SEPARATE research client from the metadata.py genre-consensus provider (D-S-3). It
+    # runs ONLY with ``lastfm_api_key`` (already declared above); with no key it logs once
+    # and returns empty (REQ-LF-001). These knobs are its rate/timeout/cache discipline
+    # (REQ-LF-002, NFR-S-8). The polite default is <=1 req/s (research.md §3.2).
+    lastfm_min_interval_seconds: float = field(default_factory=lambda: float(_env("BRAIN_LASTFM_MIN_INTERVAL_SEC", "1.0")))
+    lastfm_http_timeout_seconds: float = field(default_factory=lambda: float(_env("BRAIN_LASTFM_HTTP_TIMEOUT_SEC", "8.0")))
+    # Identifiable User-Agent on every request (Last.fm ToS 4.2, NFR-S-8).
+    lastfm_user_agent: str = field(default_factory=lambda: _env("BRAIN_LASTFM_USER_AGENT", "GoldenShowerRadio/1.0 (research)"))
+    # Response cache TTL (seconds): caching is a Last.fm ToS REQUIREMENT (4.3.4), not an
+    # optimization (REQ-SK-002/NFR-S-8). Repeated planning ticks reuse a recent result.
+    lastfm_cache_ttl_seconds: int = field(default_factory=lambda: int(_env("BRAIN_LASTFM_CACHE_TTL_SEC", "86400")))
+
+    # --- SHOWS-020 Groups SK/SM: human-DJ signal providers (brain/humandj.py) ---
+    # [HARD] EVERY provider is OFF by default behind its own per-source flag (REQ-SM-001).
+    # A human-DJ cluster is a research lead / thread HYPOTHESIS, never aired raw and never a
+    # track source (REQ-SK-003/SM-005). KEXP is the first registered provider (back-compat).
+    kexp_thread_enabled: bool = field(default_factory=lambda: _env("BRAIN_KEXP_THREAD_ENABLED", "0") not in ("0", "false", "no"))
+    sr_thread_enabled: bool = field(default_factory=lambda: _env("BRAIN_SR_THREAD_ENABLED", "0") not in ("0", "false", "no"))
+    bbc_thread_enabled: bool = field(default_factory=lambda: _env("BRAIN_BBC_THREAD_ENABLED", "0") not in ("0", "false", "no"))
+    asot_thread_enabled: bool = field(default_factory=lambda: _env("BRAIN_ASOT_THREAD_ENABLED", "0") not in ("0", "false", "no"))
+    nts_thread_enabled: bool = field(default_factory=lambda: _env("BRAIN_NTS_THREAD_ENABLED", "0") not in ("0", "false", "no"))
+    # Shared per-source poll discipline (REQ-SM-005): explicit timeout + self-throttle. The
+    # polite rate is per-source; this is the default min interval the keyless APIs honour.
+    humandj_http_timeout_seconds: float = field(default_factory=lambda: float(_env("BRAIN_HUMANDJ_HTTP_TIMEOUT_SEC", "8.0")))
+    humandj_min_interval_seconds: float = field(default_factory=lambda: float(_env("BRAIN_HUMANDJ_MIN_INTERVAL_SEC", "1.0")))
+    # Cluster cap: how many back-to-back tracks form one human-DJ cluster (REQ-SK-001).
+    humandj_cluster_size: int = field(default_factory=lambda: int(_env("BRAIN_HUMANDJ_CLUSTER_SIZE", "4")))
+
     @property
     def attempts_path(self) -> str:
         return os.path.join(self.db_dir, "attempts.json")
