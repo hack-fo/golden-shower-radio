@@ -19,9 +19,11 @@
 # blocks the streaming thread / playout.
 #
 # TRANSITIONS (per-kind — songs finish before the host speaks):
-#   • music -> music : gentle, volume-aware smart crossfade (~3s fades, dB-aware) —
-#                      the smooth segue the user asked for ("at least fade out so it
-#                      doesn't cut off sharply"). Implemented with cross.smart.
+#   • music -> music : an UNCONDITIONAL gentle ~3s crossfade (fade-out the old tail +
+#                      fade-in the new head, overlapped) — the smooth segue the user
+#                      asked for ("at least fade out so it doesn't cut off sharply").
+#                      We do NOT use cross.smart: its dB heuristic could decide NOT to
+#                      fade and hard-cut. An always-on fade guarantees no sharp cut.
 #   • -> talk        : NO overlap. The outgoing song FINISHES, then the host talk clip
 #                      starts dry. The voice is never buried under a song's tail.
 #   • talk -> music  : clean, no overlap — the host's closing words are never cut by
@@ -65,8 +67,16 @@ def transition(old, new) =
     # the host's closing words are not cut off by an incoming track).
     sequence([old.source, new.source])
   else
-    # music -> music: the gentle, dB-aware smart crossfade (the smooth default segue).
-    cross.smart(fade_in=3.0, fade_out=3.0, old, new)
+    # music -> music: an UNCONDITIONAL gentle crossfade. We deliberately do NOT use
+    # cross.smart here: its dB analysis sometimes decides a crossfade is unwarranted
+    # and falls through to an abrupt switch (logs "No transition: using default"),
+    # which is exactly the sharp cut-off the user banned. Instead we ALWAYS fade the
+    # outgoing tail out and the incoming head in and overlap them — so a music->music
+    # segue can NEVER hard-cut; there is always at least a 3s gentle fade.
+    add(
+      normalize=false,
+      [fade.out(duration=3.0, old.source), fade.in(duration=3.0, new.source)]
+    )
   end
 end
 

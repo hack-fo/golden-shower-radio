@@ -50,10 +50,14 @@ ENGINE = "librosa"
 # modest cloud box — a 5-minute mono track at 22050 is ~6.6M float32 == ~26 MB.
 _ANALYSIS_SR = 22050
 
-# Conservative cue defaults (seconds) applied when no meaningful boundary is
-# detected or for a long-file fast path. cue_in defaults to track start (0.0);
-# cue_out defaults to this many seconds before the TRUE END (REQ-AT-002/006).
-_DEFAULT_CUE_OUT_LEAD = 8.0
+# Real-boundary floor (seconds). A cue_out is emitted ONLY when the detected
+# non-audible trailing tail (dead air or a fade-out below the silence floor) is at
+# least this long — i.e. there is a GENUINE boundary to stop at. Below this, the
+# track is treated as running clean to its natural end and NO cue_out is produced,
+# so the song plays IN FULL (the crossfade owns the overlap). This replaces the old
+# blanket ``true_end - 8.0`` default that trimmed every analyzed track ~8s early
+# (REQ-AT-002/006: trim only at real boundaries, never play-in-full tracks short).
+_REAL_BOUNDARY_MIN_SILENCE = 1.0
 # Silence floor for trailing-silence / cue detection (dB below peak). 40 dB is a
 # robust "audible content" threshold across genres; a long fade still trims.
 _SILENCE_TOP_DB = 40.0
@@ -163,10 +167,11 @@ def _analyze_impl(
     if duration is not None and duration > max_seconds:
         log.info("analysis.long_file path=%s duration=%.0f max=%.0f", path, duration, max_seconds)
         true_end = duration
-        cue_out = max(0.0, true_end - _DEFAULT_CUE_OUT_LEAD)
+        # No heavy decode happened, so no real boundary was detected. Do NOT trim —
+        # cue_out None lets the long file play to its natural end (no ~8s cut-short).
         return {
             "cue_in": 0.0,
-            "cue_out": cue_out,
+            "cue_out": None,
             "true_end": true_end,
             "trailing_silence": 0.0,
             "low_confidence_flags": ["long_file", "bpm", "musical_key"],
@@ -391,12 +396,17 @@ def _detect_cues(np, librosa, y, sr, duration: Optional[float]) -> tuple:
     """Cue-in / cue-out / true-end / trailing-silence — all vs the TRUE END.
 
     - true_end: offset of the last audible audio (REQ-AT-003). This is the anchor;
-      cue_out is computed against it, NOT against the file/header duration, so a
-      crossfade never fades into trailing silence.
+      when a cue_out is emitted it is placed AT true_end (never before it), so a
+      crossfade never fades into trailing silence and never trims live audio.
     - trailing_silence: file/decoded length minus true_end.
     - cue_in: first audible sample (skip dead intro air); defaults to 0.0.
-    - cue_out: a conservative lead before true_end (where a following track can
-      start mixing in); defaults to true_end - _DEFAULT_CUE_OUT_LEAD.
+    - cue_out: ONLY emitted when a REAL trailing boundary is detected — i.e. there
+      is genuine non-audible tail (dead air or a fade-out the analyzer found below
+      the silence floor) of at least ``_REAL_BOUNDARY_MIN_SILENCE`` seconds. In that
+      case cue_out == true_end so playout stops at the last audible audio. When the
+      track runs CLEAN to its natural end (no real boundary), cue_out is ``None`` so
+      the song plays IN FULL and the crossfade owns the overlap (FIX: the previous
+      blanket ``true_end - 8.0`` default trimmed EVERY analyzed track ~8s early).
     """
     total = duration if (duration is not None and duration > 0.0) else (len(y) / float(sr))
     try:
@@ -405,17 +415,23 @@ def _detect_cues(np, librosa, y, sr, duration: Optional[float]) -> tuple:
         intervals = None
 
     if intervals is None or len(intervals) == 0:
-        # No audible content detected (or split failed): conservative defaults.
+        # No audible content detected (or split failed): we have NO real boundary to
+        # trust, so do NOT trim — cue_out None lets the file play to its natural end.
         true_end = round(total, 3)
-        cue_out = round(max(0.0, true_end - _DEFAULT_CUE_OUT_LEAD), 3)
-        return 0.0, cue_out, true_end, 0.0
+        return 0.0, None, true_end, 0.0
 
     first_sample = int(intervals[0][0])
     last_sample = int(intervals[-1][1])
     cue_in = round(max(0.0, first_sample / float(sr)), 3)
     true_end = round(min(total, last_sample / float(sr)), 3)
     trailing_silence = round(max(0.0, total - true_end), 3)
-    cue_out = round(max(cue_in, true_end - _DEFAULT_CUE_OUT_LEAD), 3)
+
+    # A cue_out is produced ONLY when a real trailing boundary exists (meaningful
+    # non-audible tail). Below the floor the track ends cleanly → no trim (None).
+    if trailing_silence >= _REAL_BOUNDARY_MIN_SILENCE:
+        cue_out = round(max(cue_in, true_end), 3)
+    else:
+        cue_out = None
     return cue_in, cue_out, true_end, trailing_silence
 
 
