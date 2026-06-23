@@ -224,3 +224,6 @@ dist-ssr/
 *.env
 deploy/config/rendered/
 /bin/
+
+# project-status board cache (generated; do not commit)
+.moai/cache/

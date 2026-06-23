@@ -69,6 +69,17 @@
             "type": "command"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && bash scripts/docs-sync.sh >/dev/null 2>&1 || true",
+            "type": "command",
+            "async": true,
+            "timeout": 120,
+            "statusMessage": "Syncing docs to wiki"
+          }
+        ]
       }
     ],
     "SubagentStop": [
@@ -298,7 +309,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": ".moai/status_line.sh",
+    "command": "scripts/statusline.sh",
     "refreshInterval": 10
   },
   "outputStyle": "MoAI",
