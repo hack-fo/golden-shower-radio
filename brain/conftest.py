@@ -14,17 +14,13 @@ from __future__ import annotations
 
 # nodeid -> (owning SPEC, reason). nodeid is "<relpath-from-rootdir>::<testname>".
 KNOWN_STALE = {
-    "brain/test_enrich.py::test_propose_fills_empty_artist_on_high_confidence": (
-        "ENRICH-012",
-        "Asserts the PRE-safety-gate propose() behavior (fill artist from a bare "
-        "title-only MusicBrainz text match). A later ENRICH-012 change (commit "
-        "264d164, 'no-bare-title-guess safety gate') made propose() REFUSE to "
-        "guess artist/album/year from a title-only match that is neither "
-        "AcoustID-confirmed nor corroborated by the input artist/title. The "
-        "shipped refuse-to-guess behavior is intentional; this test was left "
-        "asserting the old behavior. Reconciling it is an ENRICH-012 task, not "
-        "part of the SPEC-RADIO-CORE-001 characterization slice.",
-    ),
+    # NOTE: the former ENRICH-012 entry
+    # (brain/test_enrich.py::test_propose_fills_empty_artist_on_high_confidence) was RECONCILED
+    # under its owning SPEC (ENRICH-012 solidification slice): the obsolete fill-from-bare-title
+    # assertion was replaced by characterization tests that assert the CURRENT refuse-to-guess
+    # safety gate (test_characterize_propose_refuses_artist_from_bare_title_text_match et al.).
+    # The shipped behavior was NOT changed; only the stale assertion was. The node is now
+    # collected and passes, so it is no longer deselected here.
     "brain/test_characterize_library.py::test_characterize_scan_picks_up_audio_and_skips_talk_dir": (
         "DATASTORE-022",
         "Asserts the LITERAL `library.json` file exists after a scan (line 98, "

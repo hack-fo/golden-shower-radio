@@ -389,6 +389,15 @@ def identify(path: str, artist: str, title: str, cfg: Any) -> Optional[Canonical
 # Proposal — the locked write policy (pure, NON-destructive)
 # --------------------------------------------------------------------------- #
 
+# @MX:ANCHOR: [AUTO] propose() is the locked ENRICH-012 write policy + refuse-to-guess safety gate.
+# @MX:REASON: FROZEN invariant per SPEC-RADIO-ENRICH-012 REQ-EI-003 — the spine of the engine. A
+#   bare-title text match (empty/garbled input artist, NOT AcoustID-confirmed, input title not
+#   carrying the canonical artist) is UNTRUSTWORTHY and MUST NOT fill artist/album/year. Only the
+#   three trustworthy disjuncts open the gate (AcoustID source, corroborating non-garbled input
+#   artist, or input title carrying the canonical artist). Changing this re-enables confidently-wrong
+#   mis-tagging of the whole catalog. Characterized in brain/test_enrich.py
+#   (test_characterize_propose_refuses_artist_from_bare_title_text_match et al.).
+# @MX:SPEC: SPEC-RADIO-ENRICH-012
 def propose(current: Dict[str, Any], canonical: Optional[Canonical], cfg: Any) -> Proposal:
     """Decide which core fields to change under the locked policy. Returns proposed changes
     WITHOUT touching anything. Pure + deterministic so it is unit-testable.

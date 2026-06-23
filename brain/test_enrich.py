@@ -482,6 +482,32 @@ def test_worker_enrich_one_marks_even_with_no_changes():
     assert lib.persisted[track.key]["enrich_version"] == E.ENRICH_SCHEMA_VERSION
 
 
+def test_characterize_worker_enrich_one_persists_library_fields_in_dry_run():
+    """FILE-vs-LIBRARY split (the documented contract): with enrich_write_files=False the AUDIO
+    FILE is never touched, but enrich_one STILL persists the corrected DISPLAY fields + the
+    enrich_version marker to the library via set_core_tags. A dry run corrects library.json but
+    not the bytes on disk. Here the canonical is an AcoustID match (trustworthy gate) un-folding
+    an empty artist; identify is stubbed so no network/file is touched."""
+    track = _Track("/music/dry.mp3", artist="", title="Diamond Day", enrich_version=0)
+    lib = _FakeLib([track])
+    worker = E.EnrichmentWorker(FakeCfg(write_files=False), lib, FakeState(),
+                                stop_event=_StopEvent())
+    canonical = E.Canonical(artist="Vashti Bunyan", title="Diamond Day",
+                            confidence=0.99, source=E.SRC_ACOUSTID)
+    orig = _patch_identify(None, canonical)
+    try:
+        changed = worker.enrich_one(track.key)
+    finally:
+        E.identify = orig  # type: ignore[assignment]
+    assert changed is True, "a display change was proposed (empty artist filled)"
+    assert track.key in lib.persisted
+    payload = lib.persisted[track.key]
+    assert payload.get("artist") == "Vashti Bunyan", "display field persisted even in dry run"
+    assert payload["enrich_version"] == E.ENRICH_SCHEMA_VERSION
+    # provenance is appended (not clobbered) onto the prior list.
+    assert payload.get("enrich_provenance"), "per-field provenance must be persisted"
+
+
 def test_worker_tick_backoff_when_downloads_in_flight():
     track = _Track("/music/d.mp3", artist="A", title="T", enrich_version=0)
     lib = _FakeLib([track])
@@ -515,13 +541,46 @@ class _StopEvent:
 # propose(): the locked policy (pure logic — keep/extend, no network)
 # --------------------------------------------------------------------------- #
 
-def test_propose_fills_empty_artist_on_high_confidence():
+def test_characterize_propose_refuses_artist_from_bare_title_text_match():
+    """SAFETY GATE (REQ-EI-003, the spine): a TEXT match against a BARE title — empty/garbled
+    input artist, NOT fingerprint-confirmed, and the input title does NOT carry the canonical
+    artist — is UNTRUSTWORTHY, so propose() refuses to guess artist/album/year from it. A
+    title-only MusicBrainz match routinely resolves a same-titled track by someone else, so the
+    track is left exactly as-is (AcoustID resolves it later once its print is in the DB).
+
+    This characterizes the CURRENT shipped behavior. It supersedes an earlier test that asserted
+    the PRE-gate fill-from-bare-title behavior (commit 264d164 added this gate); the old behavior
+    must NOT be restored — accurate-or-unchanged beats confidently-wrong.
+    """
     canonical = E.Canonical(artist="Linda Perhacs", title="Chimacum Rain",
                             confidence=0.9, source=E.SRC_MUSICBRAINZ_TEXT)
+    # Clean title, empty artist, text-match source -> none of the trustworthy disjuncts hold.
+    p = E.propose({"artist": "", "title": "Chimacum Rain"}, canonical, FakeCfg())
+    assert p.changes == {}, "bare-title text match must NOT fill artist (refuse-to-guess gate)"
+    assert p.has_changes() is False
+    assert p.provenance == []
+
+
+def test_characterize_propose_acts_on_bare_title_when_acoustid_confirmed():
+    """The same bare-title/empty-artist input becomes TRUSTWORTHY when the identification came
+    from an AcoustID FINGERPRINT (source == SRC_ACOUSTID): the fingerprint identifies by the
+    actual audio, so the gate opens and the empty artist is filled. This is the trustworthy
+    disjunct that distinguishes a fingerprint match from a bare text guess."""
+    canonical = E.Canonical(artist="Linda Perhacs", title="Chimacum Rain",
+                            confidence=0.9, source=E.SRC_ACOUSTID)
     p = E.propose({"artist": "", "title": "Chimacum Rain"}, canonical, FakeCfg())
     assert p.changes.get("artist") == "Linda Perhacs", p.changes
-    # title already matches -> not changed (idempotent).
+    # title already matches the canonical -> idempotent no-op.
     assert "title" not in p.changes
+
+
+def test_characterize_propose_acts_on_text_match_when_input_artist_corroborates():
+    """Second trustworthy disjunct: a NON-garbled input artist corroborates a text match even
+    without a fingerprint, so a text-match canonical may then FILL the empty title."""
+    canonical = E.Canonical(artist="Linda Perhacs", title="Chimacum Rain",
+                            confidence=0.9, source=E.SRC_MUSICBRAINZ_TEXT)
+    p = E.propose({"artist": "Linda Perhacs", "title": ""}, canonical, FakeCfg())
+    assert p.changes.get("title") == "Chimacum Rain", p.changes
 
 
 def test_propose_does_not_clobber_good_existing_value():
@@ -564,6 +623,46 @@ def test_propose_album_year_filled_when_empty():
                    "album": "", "year": None}, canonical, FakeCfg())
     assert p.changes.get("album") == "Parallelograms"
     assert p.changes.get("year") == 1970
+
+
+def test_characterize_propose_unfolds_artist_from_garbled_artist_field():
+    """Cross-field un-fold: the title got folded INTO the artist field
+    (artist="Linda Perhacs - Chimacum Rain"). is_garbled flags the separator AND the artist
+    carries the canonical title, so a high-confidence fingerprint match overwrites it. This is
+    a FIX (not a fill), so it needs the FULL threshold, not the relaxed fill bar."""
+    canonical = E.Canonical(artist="Linda Perhacs", title="Chimacum Rain",
+                            confidence=0.95, source=E.SRC_ACOUSTID)
+    p = E.propose({"artist": "Linda Perhacs - Chimacum Rain", "title": "Chimacum Rain"},
+                  canonical, FakeCfg(threshold=0.85))
+    assert p.changes.get("artist") == "Linda Perhacs", p.changes
+
+
+# --------------------------------------------------------------------------- #
+# identify_acoustid: AcoustID-key-absent graceful degradation (no network, no fpcalc)
+# --------------------------------------------------------------------------- #
+
+def test_characterize_identify_acoustid_no_key_returns_none_without_fpcalc():
+    """REQ-EG / graceful degradation: with NO AcoustID API key, identify_acoustid short-circuits
+    to None BEFORE ever invoking fpcalc (so a missing fpcalc binary is irrelevant on the no-key
+    path). The fingerprint arm is simply skipped and the pipeline falls back to text-match."""
+    cfg = FakeCfg(acoustid_key="")
+    assert E.identify_acoustid("/no/such/file.mp3", cfg) is None
+
+
+def test_characterize_identify_prefers_text_when_acoustid_key_absent():
+    """With no AcoustID key, identify() never calls the fingerprint arm; the result is whatever
+    text-match returns. We stub identify_text so no network is touched, and confirm identify()
+    surfaces it unchanged (the higher-confidence-of-available rule with only one candidate)."""
+    cfg = FakeCfg(acoustid_key="")
+    txt = E.Canonical(artist="Vashti Bunyan", title="Diamond Day",
+                      confidence=0.8, source=E.SRC_MUSICBRAINZ_TEXT)
+    orig = E.identify_text
+    E.identify_text = lambda artist, title, c: txt  # type: ignore[assignment]
+    try:
+        got = E.identify("/x.mp3", "Vashti Bunyan", "Diamond Day", cfg)
+    finally:
+        E.identify_text = orig  # type: ignore[assignment]
+    assert got is txt, "no-key path must surface the text-match result"
 
 
 # --------------------------------------------------------------------------- #

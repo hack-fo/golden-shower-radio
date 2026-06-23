@@ -13,6 +13,23 @@ issue_number: 12
 
 ## HISTORY
 
+- 2026-06-23 (v0.1.0a — DDD solidification slice): Characterized the SHIPPED Group EI engine and
+  reconciled the one stale test. IMPLEMENTATION STATUS at this slice: **Group EI (identification
+  pipeline + filename-corroboration + no-bare-title safety gate + locked write policy + mutagen
+  write-back + EnrichmentWorker backfill + on-download `enrich_one` hook) is fully BUILT and now
+  characterization-locked** in `brain/test_enrich.py` (the refuse-to-guess gate and its three
+  trustworthy disjuncts, AcoustID-key-absent graceful degradation, the file-vs-library dry-run
+  split). `set_core_tags` persistence + the core-tag freeze are characterized over BOTH the JSON and
+  SQLite (DATASTORE-022) backends in `brain/test_characterize_datastore.py`. **Group EX (Discogs
+  identity CROSS-CHECK `_discogs_corroborate`, AGREE/NEUTRAL/DISAGREE asymmetry) and Group EC
+  (canonical widening: `recording_mbid`/`release_group_mbid`/`barcode`/`catno` on Canonical+Track,
+  `_ENRICH_WRITABLE_FIELDS` extension) are NOT YET BUILT** — these are the "ADDS two new groups" of
+  the v0.1.0 draft and remain DEFERRED to a dedicated implementation slice. The stale
+  `test_propose_fills_empty_artist_on_high_confidence` (which asserted the PRE-gate
+  fill-from-bare-title behavior obsoleted by commit 264d164) was REPLACED — not restored — by
+  characterization tests asserting the current refuse-to-guess contract, and removed from
+  `brain/conftest.py` KNOWN_STALE (deselects 2 -> 1). `propose()` carries an `@MX:ANCHOR` marking
+  the FROZEN REQ-EI-003 gate.
 - 2026-06-23 (v0.1.0): Initial draft. FORMALIZES the existing code-only core-tag enrichment engine
   (`brain/enrich.py`) — the AcoustID-fingerprint → AcoustID-API → MusicBrainz identification pipeline,
   the filename-corroboration of a fingerprint match, the no-bare-title-guess safety gate, the locked
