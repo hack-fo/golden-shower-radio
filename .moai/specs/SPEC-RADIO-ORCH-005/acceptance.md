@@ -1,7 +1,7 @@
 ---
 id: SPEC-RADIO-ORCH-005
 artifact: acceptance
-version: 0.5.1
+version: 0.7.0
 status: draft
 created: 2026-06-22
 updated: 2026-06-23
@@ -10,9 +10,14 @@ author: charlie
 
 # SPEC-RADIO-ORCH-005 — Acceptance Criteria
 
-> HISTORY: 2026-06-23 (v0.5.1) — Audit convergence fixes; version bumped to match spec.md
-> (EARS label relabels + one citation correction in spec.md, all label-only). No acceptance
-> criterion changed; 1:1 REQ↔AC parity preserved.
+> HISTORY: 2026-06-23 (v0.7.0) — Read-only self-reflection-results sensor slice (Group RW). +1 AC
+> (AC-RW-008) for the new REQ-RW-008; AC-RW-002 + AC-RL-007 amended to mirror the spec sensor-set +
+> consume amendments; +1 Section B scenario (B-21). Version jumped 0.5.1 → 0.7.0 to match spec.md
+> (v0.6.0 added the Group RN feed-poller source layer; this v0.7.0 acceptance carries both the v0.6.0
+> source-layer ACs already present and the new v0.7.0 reflect-sensor AC). 1:1 REQ↔AC parity preserved:
+> 49 REQ + 8 NFR.
+> Earlier: 2026-06-23 (v0.5.1) — Audit convergence fixes (EARS label relabels + one citation
+> correction in spec.md, all label-only); no acceptance criterion changed.
 
 1:1 with spec.md (each REQ/NFR has exactly one acceptance entry). Section A is the
 concise per-requirement criterion; Section B gives detailed Given-When-Then scenarios for
@@ -70,7 +75,12 @@ cooldown). [HARD] A grep/inspection confirms NO new action kind, NO new Group, a
 parallel datastore is introduced — maintenance flows only through existing seams. The check
 CONSUMES the REQ-RW-006 unified cross-surface dedup/recency view to detect cross-surface /
 cross-persona convergence drift and HONORS any active REQ-RW-007 special-event exception
-(drift inside a declared themed window is sanctioned, not corrected). Anti-property:
+(drift inside a declared themed window is sanctioned, not corrected). The check ALSO CONSUMES the
+READ-ONLY self-reflection-results sensor slice (REQ-RW-008) — reflect-generated director tasks +
+stagnation/coverage-gap hypotheses are ADVISORY inputs the director weighs; they NEVER bind, any
+chosen maintenance still dispatches ONLY through the existing REQ-RA-001 action surface bounded by
+REQ-OD-006, and an absent/errored reflect sensor (incl. REFLECT-026 not yet present) degrades that
+input gracefully (REQ-RW-005), never the check. Anti-property:
 REQ-RL-007 must not grow into a multi-step look-ahead planner. (Detailed: B-15.)
 
 ### Group RW — World Model
@@ -83,11 +93,12 @@ refresh pass, not pieced from stale fragments).
 **AC-RW-002 (REQ-RW-002)** — The world model exposes all enumerated sensors: clock/daypart
 (Faroe TZ), now-playing+recent+queue-depth, library stats, acquisition+disk state,
 listener signals, listener-response memory (Group RI), topic-bank inventory (OPS-004 Group
-OX), news/event-feed state, schedule/show context, ledger+diary, playbook. VERIFY: the
-snapshot has a populated (or explicitly-unavailable) slot for each named sensor — including
-the topic-bank slice (read from OPS-004 Group OX, never recomputed) and the
-listener-response slice (read from Group RI, never recomputed); each value is sourced from
-its owning subsystem. (Detailed: B-2.)
+OX), self-reflection results (REQ-RW-008 / REFLECT-026), news/event-feed state, schedule/show
+context, ledger+diary, playbook. VERIFY: the snapshot has a populated (or explicitly-unavailable)
+slot for each named sensor — including the topic-bank slice (read from OPS-004 Group OX, never
+recomputed), the listener-response slice (read from Group RI, never recomputed), and the
+self-reflection-results slice (read from REFLECT-026's reflect output, never recomputed, ADVISORY
+only); each value is sourced from its owning subsystem. (Detailed: B-2.)
 
 **AC-RW-003 (REQ-RW-003)** — Program-director, show-prep, event-reaction, and run-mode
 decisions each receive the world model as situational context. VERIFY: each decision entry
@@ -141,6 +152,23 @@ apolitical rails verbatim (REQ-OF-004/NFR-O-7, PROGRAMMING-007 REQ-PV-010/PI-004
 adds permission only, never subtracts a rail; declarations are bounded + auditable by OPS-004
 REQ-OD-006 measured-change; a missing/unreadable declaration degrades to full distinctness
 enforced (REQ-RW-005). (Detailed: B-18.)
+
+**AC-RW-008 (REQ-RW-008) [HARD]** — The world model aggregates a READ-ONLY self-reflection-results
+sensor slice that consumes SPEC-RADIO-REFLECT-026's reflect output — reflect-generated director
+tasks + stagnation/coverage-gap hypotheses — as a VIEW over the existing OPS-004 REQ-OD-007 ledger
+(no new store), made available to the PD and to the REQ-RL-007 cross-store check as ADVISORY planning
+inputs. VERIFY: (read-only) the slice only READS REFLECT-026's output — ORCH-005 introduces no reflect
+run-mode, no task generation, and no hypothesis reasoning of its own (a grep confirms no new store, no
+new action kind, no new playout kind); (advisory-not-binding) a reflect-generated task is dispatched
+ONLY through the existing REQ-RA-001 action surface bounded by the OPS-004 REQ-OD-006 measured-change
+rails and NEVER binds/forces airplay (consistent with REQ-RI-004 / REQ-RL-007), and a stagnation/
+coverage-gap hypothesis INFORMS the REQ-RL-007 imbalance check without commanding it; (off-pull-path)
+the reflect-sensor read is an expensive sensor refreshed on the REQ-RW-004 throttled cadence and never
+appears on the `/api/next` path (shares evidence with B-1 / NFR-R-2); (graceful degradation) an
+unavailable/errored/absent reflect sensor — INCLUDING REFLECT-026 not yet being present (forward-ref)
+— marks the slice unavailable/stale and the tick/loop/stream continue unaffected (REQ-RW-005 /
+NFR-R-4), proving the consumer is forward-compatible and does not hard-depend on REFLECT-026.
+(Detailed: B-21.)
 
 ### Group RE — Event Detection & Reaction Policy
 
@@ -916,11 +944,55 @@ ANTI: no paid news/data API may be called; the poller must NOT introduce a new l
       conservatism, NOT a copyright/ToS gate (project PIVOT).
 ```
 
+### B-21 — Read-only self-reflection-results sensor: advisory, off-pull-path, graceful when REFLECT-026 absent (REQ-RW-008)
+
+```
+GIVEN the world model aggregates a READ-ONLY self-reflection-results sensor slice (REQ-RW-008)
+      that consumes SPEC-RADIO-REFLECT-026's reflect output — reflect-generated director tasks +
+      stagnation/coverage-gap hypotheses — as a VIEW over the existing OPS-004 REQ-OD-007 ledger
+      (REFLECT-026 owns the reflect run-mode + the hypotheses; ORCH-005 only READS them)
+
+SCENARIO 1 — a reflect task is consumed as ADVISORY and dispatched through the existing seam:
+WHEN a planning tick reads a reflect-generated task (e.g. "acquire more of genre X") from the slice
+THEN the director MAY act on it ONLY by dispatching through the EXISTING REQ-RA-001 action surface
+     (here an acquisition trigger), bounded by the OPS-004 REQ-OD-006 measured-change rails
+  AND the dispatch introduces NO new action kind, NO new store, and NO new playout kind
+     (a grep confirms reflect tasks flow only through existing seams)
+  AND the reflect task NEVER binds or forces airplay — it is a weak planning input the AI weighs,
+     consistent with the REQ-RI-004 anti-appeal and REQ-RL-007 imbalance disciplines.
+
+SCENARIO 2 — a hypothesis informs the cross-store check without commanding it:
+WHEN a stagnation/coverage-gap hypothesis (e.g. "rotation has stagnated") is present in the slice
+THEN it INFORMS the REQ-RL-007 cross-store imbalance check (shaping reasoning), it does NOT command
+  AND any correction the AI chooses still dispatches ONLY through the existing REQ-RA-001 action
+     surface bounded by REQ-OD-006, recorded to the ledger (REQ-RA-003).
+
+SCENARIO 3 — off the pull path:
+WHEN the reflect-sensor read refreshes
+THEN it refreshes as an EXPENSIVE sensor on the REQ-RW-004 throttled, self-scheduled cadence and
+     NEVER appears on the `/api/next` pull path (the reflect run-mode itself runs off the pull path,
+     REFLECT-026's concern); a concurrent pull is unaffected (shares evidence with B-1 / NFR-R-2).
+
+SCENARIO 4 — graceful degradation, including REFLECT-026 absent (forward-ref):
+GIVEN the reflect sensor is unavailable/errored — OR SPEC-RADIO-REFLECT-026 is not yet present
+WHEN the world model refreshes for the tick
+THEN the self-reflection-results slice is marked unavailable/stale
+  AND the tick completes without raising or aborting; reasoning that needed the slice is skipped;
+     all other sensors/reasoning proceed; the loop and the stream are unaffected (REQ-RW-005 /
+     NFR-R-4) — proving the consumer is forward-compatible and does NOT hard-depend on REFLECT-026.
+
+AND ACROSS ALL: the slice is a READ-ONLY VIEW over the existing ledger (no new store); ORCH-005 owns
+    only the consuming sensor; REFLECT-026 owns the reflect run-mode + hypotheses.
+ANTI: ORCH-005 must NOT build/fork the reflect run-mode or hypothesis reasoning; reflect output must
+      NEVER bind airplay, add a new action kind/store/playout kind, or appear on the pull path; an
+      absent REFLECT-026 must NOT crash the tick or stall the stream.
+```
+
 ---
 
 ## Section C — Definition of Done
 
-- All 48 REQ + 8 NFR have a passing acceptance criterion (Section A), with detailed
+- All 49 REQ + 8 NFR have a passing acceptance criterion (Section A), with detailed
   scenarios (Section B) green for the load-bearing requirements.
 - The director loop runs as the single brain-only orchestrator; the <1s pull is never
   blocked (B-1, B-9) and the stream never goes silent across all failure/reaction tests
@@ -991,6 +1063,15 @@ ANTI: no paid news/data API may be called; the poller must NOT introduce a new l
 - REQ-RL-007 cross-store maintenance CONSUMES the REQ-RW-006 unified view to detect cross-surface
   / cross-persona convergence drift and HONORS any active REQ-RW-007 special-event exception,
   dispatching correction only through the existing action surface bounded by REQ-OD-006.
+- The read-only self-reflection-results sensor slice (REQ-RW-008, B-21) aggregates SPEC-RADIO-
+  REFLECT-026's reflect output (reflect-generated director tasks + stagnation/coverage-gap
+  hypotheses) as a VIEW over the existing ledger (no new store); [HARD] it is read-only + ADVISORY
+  (reflect tasks dispatch only through the existing REQ-RA-001 action surface bounded by REQ-OD-006,
+  never binding airplay, adding no new action kind/store), is read off the pull path (REQ-RW-004 /
+  NFR-R-2), and degrades gracefully if the reflect sensor / REFLECT-026 is absent (REQ-RW-005 /
+  NFR-R-4) — a forward-compatible consumer, not a dangling dependency. REFLECT-026 owns the reflect
+  run-mode + the hypotheses; ORCH-005 owns only the consuming sensor. REQ-RL-007 cross-store
+  maintenance also consumes this slice as advisory input.
 - Quota discipline holds: frequent path LLM-free, occasional batched calls, cheap-path
   degradation under pressure (B-11, AC-NFR-R-1).
 - Observability surfaces loop/world-model/event/degradation/action state (AC-NFR-R-6).

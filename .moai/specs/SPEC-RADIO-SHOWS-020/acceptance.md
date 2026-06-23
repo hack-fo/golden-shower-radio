@@ -1,6 +1,6 @@
 ---
 id: SPEC-RADIO-SHOWS-020-acceptance
-version: 0.3.0
+version: 0.4.0
 status: draft
 created: 2026-06-23
 updated: 2026-06-23
@@ -17,11 +17,12 @@ distinctness-critical requirements. Section C is the Definition of Done and the 
 A passing implementation MUST satisfy every Section A entry and every Section B scenario. Where a
 criterion is marked [HARD] it is a must-pass gate (no compensation by other criteria).
 
-Group prefixes: LF (Last.fm Research Client) / SK (KEXP Human-DJ Thread Signal) / SG (Show / Program
-Model) / SX (Editorial Variation Engine) / SP (Per-Persona Distinctness) / SD (Scheduling / Direction) /
-SB (Show Wiring).
-29 AC + 8 AC-NFR = 37, matching spec.md 29 REQ + 8 NFR (v0.3.0: +AC-SK-001…004, and AC-SD-005 extended in
-place with the episode/part/arc additive rows; v0.2.0: +AC-LF-006, +AC-SG-005, +AC-SD-005, +AC-NFR-S-8).
+Group prefixes: LF (Last.fm Research Client) / SK (KEXP Human-DJ Thread Signal) / SM (Multi-Source Human-DJ
+Signal) / SG (Show / Program Model) / SX (Editorial Variation Engine) / SP (Per-Persona Distinctness) / SD
+(Scheduling / Direction) / SB (Show Wiring).
+34 AC + 8 AC-NFR = 42, matching spec.md 34 REQ + 8 NFR (v0.4.0: +AC-SM-001…005 + a new Section B scenario
+B12; v0.3.0: +AC-SK-001…004, and AC-SD-005 extended in place with the episode/part/arc additive rows;
+v0.2.0: +AC-LF-006, +AC-SG-005, +AC-SD-005, +AC-NFR-S-8).
 
 ---
 
@@ -109,6 +110,69 @@ place with the episode/part/arc additive rows; v0.2.0: +AC-LF-006, +AC-SG-005, +
   (the firewall WINS) — the single KEXP signal is refracted DIVERGENTLY across the roster, never a homogenizer;
   with the KEXP signal disabled or failing, REQ-SX-001 falls back to Last.fm + taste-only angles with no change
   in behaviour (asserted by the Section B KEXP-refraction scenario).
+
+### Group SM — Multi-Source Human-DJ Signal
+
+**AC-SM-001 (REQ-SM-001 — thin multi-source provider interface; generalizes brain/kexp.py):**
+- GIVEN the multi-source human-DJ signal layer, WHEN it is built, THEN it exposes a THIN PROVIDER INTERFACE
+  generalizing `brain/kexp.py` (Group SK) into a REGISTRY of providers; each provider's `poll()` returns
+  ordered clusters in the normalized shape (REQ-SM-003), returns EMPTY on ANY failure, and NEVER raises.
+- [HARD] Each provider is behind its OWN per-source OFF-by-default flag (`kexp_thread_enabled` [existing,
+  back-compatible — KEXP is the first registered provider] / `sr_thread_enabled` / `bbc_thread_enabled` /
+  `asot_thread_enabled` / `nts_thread_enabled`, all `false` default); a flag-off provider constructs nothing,
+  polls nothing, returns EMPTY; with ALL providers off/empty the engine falls back to Last.fm + taste-only
+  angles, the station completely unaffected (asserted: the consumer sees one uniform cluster stream regardless
+  of source; off/empty/error paths never reach the director/talk loops; the existing Group SK requirements
+  stay valid).
+
+**AC-SM-002 (REQ-SM-002 — the five sources, by access tier + sequence-availability):**
+- GIVEN the provider registry, WHEN sources are wired, THEN FIVE sources are enumerated by access tier +
+  sequence-availability, each behind its own flag: (A clean keyless APIs, per-track ordered fuel) KEXP
+  `/v2/plays` (`kexp.plays`) + Sveriges Radio `api.sr.se` `playlists/getplaylistbychannelid` (P3 `id=164`,
+  `song` array with `starttimeutc`, `sr.playlists`); (B keyless structured feed, per-track ordered) BBC Radio
+  1 + Radio 1 Dance `/programmes/{PID}/segments.json` (explicit order; skip empty tracklists; ignore key-gated
+  Nitro; `bbc.segments`) AND the live BBC DASH `.mpd` stream-fingerprint mode (`bbc.stream`); (C scrape,
+  strongest fuel) A State of Trance via cuenation `.cue` (ordered + transition timecodes, `asot.cue`) +
+  `astateoftrance.com` fallback + throttled 1001tracklists cross-check (never primary); (D show-level context
+  + low-confidence archive scrape) NTS `/api/v2/live` (context only, `nts.scrape`) + episode-page scrape.
+- [HARD] The BBC DASH stream-fingerprint mode parses in-band now-playing metadata IF present, ELSE runs fpcalc
+  rolling windows through the SPEC-RADIO-ENRICH-012 AcoustID->MusicBrainz identify pipeline (consumed by
+  reference, REQ-SM-005) — the heavier, bounded, off-by-default last-resort sub-path, not the default
+  (asserted: per-track-ordered sources A/B/cuenation are fuel; the NTS-live show-level signal is context only,
+  REQ-SM-004).
+
+**AC-SM-003 (REQ-SM-003 — normalized cluster shape across all providers; additive over the SK cluster):**
+- GIVEN any provider's `poll()`, WHEN it returns a cluster, THEN the cluster carries the NORMALIZED shape: the
+  existing Group SK cluster `{artists, titles, albums, airdate, host_name, program_name, provenance}` PLUS
+  additive `source` (`kexp|sr|bbc|asot|nts`) + locality tags (+ OPTIONAL cuenation cue-point/transition-
+  timecode metadata), with `provenance` (REQ-LF-004) carrying one of `kexp.plays` / `sr.playlists` /
+  `bbc.segments` / `bbc.stream` / `asot.cue` / `nts.scrape`.
+- [HARD] This is an ADDITIVE extension of the SK cluster — the existing SK cluster stays valid
+  (back-compatible: the KEXP provider emits `source=kexp`, `method=kexp.plays`) (asserted: one normalized
+  cluster shape across all providers; the SK shape is unchanged).
+
+**AC-SM-004 (REQ-SM-004 — per-track ordered = FUEL; show-level = CONTEXT only; per-cluster sequence-confidence):**
+- GIVEN clusters from the five sources, WHEN they are consumed, THEN PER-TRACK ORDERED sequences (KEXP / SR /
+  BBC segments + DASH stream-fingerprint / cuenation `.cue`) are craft FUEL (may seed a REQ-SX-001 angle or a
+  PROGRAMMING-007 REQ-PC-006 transition idea), while SHOW-LEVEL signals (NTS-live: show/host/genre/locality)
+  are CONTEXT/labeling ONLY.
+- [HARD] A show-level signal SHALL NEVER be treated as an ordered track sequence and SHALL NEVER inject a
+  PHANTOM TRANSITION; each cluster is tagged with `source` + a sequence-confidence (HIGH = cuenation
+  timecodes, MEDIUM = ordered playlist/segments, LOW = gappy archive scrape, NONE/context-only = NTS-live) so
+  the consumer (the Group SX angle reasoning REQ-SX-001 + the PROGRAMMING-007 REQ-PC-006 transition generator)
+  weights it accordingly (asserted by the Section B sequence-confidence scenario B12).
+
+**AC-SM-005 (REQ-SM-005 — every provider inherits the Group SK rails per-source, by reference):**
+- GIVEN any Group SM provider, WHEN it polls, THEN it inherits the Group SK rails PER-SOURCE by reference:
+  rate/timeout/isolation (REQ-LF-002; KEXP/SR ≤ 1 req/s jittered, scrape sources slower, ASOT/cuenation
+  weekly), cache (REQ-SK-002), and a bounded background job off the pull path (REQ-LF-005 / OPS-004
+  REQ-OH-006) — NEVER on `/api/next`, the director tick, or the talk loop.
+- [HARD] EMPTY-on-failure + OFF-by-default (REQ-SM-001); never aired raw with KNOWLEDGE-008 the sole
+  airable-fact seam and no source track into rotation (REQ-SK-003, REQ-LF-006, REQ-PR-009 UNAFFECTED); and
+  per-persona refraction — a cluster-seeded angle from ANY source passes the same taste (REQ-PL-004) / novelty
+  (REQ-SX-002) / anti-convergence (REQ-PR-004 + REQ-PR-009) gates and is DROPPED outside a persona's lane, one
+  signal refracted divergently, never a homogenizer (REQ-SK-004) (asserted: no source re-owns or weakens a
+  Group SK rail; the multi-source fan-out is jointly bounded, NFR-S-7).
 
 ### Group SG — Show / Program Model
 
@@ -300,9 +364,11 @@ not homogenize the roster: the ledger, novelty window, and taste grounding are p
 PROGRAMMING-007 REQ-PR-004 firewall applies unchanged; no angle is shared across personas, no uniform
 every-host show is imposed (ties REQ-SP-001/002/003).
 
-**AC-NFR-S-7 (NFR-S-7 — bounded/throttled processing):** The Last.fm research + show-planning jobs are
-bounded and throttled (OPS-004 REQ-OH-006 pattern, REQ-LF-005) so they do not jointly overload the box
-alongside playout, acquisition, analysis, and knowledge research.
+**AC-NFR-S-7 (NFR-S-7 — bounded/throttled processing):** The Last.fm research + show-planning jobs, AND every
+Group SM multi-source human-DJ provider poll (REQ-SM-005, each on its own per-source cadence — KEXP/SR ≤ 1
+req/s, scrape sources slower, ASOT/cuenation weekly), are bounded and throttled (OPS-004 REQ-OH-006 pattern,
+REQ-LF-005) so the provider fan-out does not jointly overload the box alongside playout, acquisition,
+analysis, and knowledge research.
 
 **AC-NFR-S-8 (NFR-S-8 — Last.fm ToS compliance):** [HARD] The research client/store complies with the
 Last.fm ToS verified in `research.md` §3: (a) caches responses per HTTP cache headers / a sane TTL (ToS
@@ -482,13 +548,49 @@ Verification: assert KEXP is OFF-by-default + keyless + cached + exception-isola
 rotation (REQ-PR-009 unaffected); a KEXP-seeded angle is gate-equal + dropped outside a lane (REQ-SK-004,
 addressing R-S-8/R-S-9).
 
+### B12 — Multi-source signal: per-track ordered = fuel, show-level = context-only, sequence-confidence weighted (REQ-SM-001/002/003/004/005) [HARD]
+
+```
+GIVEN the multi-source human-DJ layer with several providers enabled per source flag:
+  - asot_thread_enabled ON: A State of Trance via cuenation .cue (ordered A→B→C with transition TIMECODES)
+  - sr_thread_enabled ON: Sveriges Radio P3 (id=164) playlist (ordered song[] with starttimeutc)
+  - bbc_thread_enabled ON: BBC Radio 1 /programmes/{PID}/segments.json (explicit segment order)
+  - nts_thread_enabled ON: NTS /api/v2/live (show "X", host, genre, locality — NO ordered tracklist)
+WHEN each provider's poll() runs and the engine consumes the clusters
+THEN every provider returns clusters in ONE normalized shape
+  {artists, titles, albums, airdate, host_name, program_name, provenance} + source + locality (+ cuenation
+  cue timecodes), provenance method in {sr.playlists, bbc.segments, bbc.stream, asot.cue, nts.scrape, kexp.plays}
+  AND the cuenation cluster is tagged sequence-confidence HIGH (transition timecodes) — strongest craft FUEL
+  AND the SR + BBC clusters are tagged MEDIUM (ordered playlist/segments) — craft FUEL
+  AND the NTS-live signal is tagged CONTEXT-ONLY (none): it labels show/host/genre/locality but is NEVER
+      treated as an ordered sequence and NEVER injects a phantom transition (REQ-SM-004)
+  AND the consumer (Group SX angle reasoning REQ-SX-001 + PROGRAMMING-007 REQ-PC-006 transition generator)
+      weights each cluster by its sequence-confidence
+  AND every provider inherits the Group SK rails per-source: per-source rate/timeout/isolation + cache +
+      bounded background job off the /api/next + director + talk paths; EMPTY on any failure, never raises;
+      never aired raw (KNOWLEDGE-008 the sole fact seam); no source track enters rotation (REQ-PR-009
+      unaffected); a cluster-seeded angle is dropped outside a persona's lane — one signal refracted
+      divergently (REQ-SM-005, REQ-SK-003/004)
+  AND the BBC DASH stream-fingerprint sub-path is OFF-by-default within bbc; when used it parses in-band
+      metadata if present, else fpcalc rolling windows via the ENRICH-012 identify pipeline (bounded, heavier)
+GIVEN every source flag is OFF (default) or all providers error
+WHEN the engine plans a show
+THEN every provider returns EMPTY (constructs nothing / never raises) and Group SX falls back to
+  Last.fm + taste-only angles with the station completely unaffected
+```
+Verification: assert one normalized cluster shape across providers (REQ-SM-003); per-track-ordered sources
+are FUEL while NTS-live is CONTEXT-ONLY with no phantom transition (REQ-SM-004); each cluster carries a
+sequence-confidence the consumer weights by; every provider inherits the Group SK rails per-source by
+reference and is OFF-by-default + EMPTY-on-failure off the pull path (REQ-SM-001/002/005; addressing
+R-S-10/R-S-11).
+
 ---
 
 ## Section C — Definition of Done & Quality Gates
 
 A SHOWS-020 implementation is DONE when:
 
-1. [HARD] All 29 REQ + 8 NFR Section A entries pass, and all Section B scenarios pass.
+1. [HARD] All 34 REQ + 8 NFR Section A entries pass, and all Section B scenarios pass.
 2. [HARD] **Anti-repetition invariant holds (REQ-SX-002, NFR-S-2):** no slot's show repeats a recent kind
    of show for that persona within the configurable window; the per-persona recent-shows ledger + novelty
    check defeat show-sameness (B1); the reject loop is bounded + degrades gracefully (B2).
@@ -542,13 +644,26 @@ A SHOWS-020 implementation is DONE when:
     `series_arc_id` queue-entry fields are additive + inert (the per-session `Show` model + novelty check
     unchanged), reserving the seam the future SPEC-RADIO-LONGFORM-025 Group LB consumes; SHOWS-020 stays
     single-session and the queue is not forked.
+18. [HARD] **Multi-source human-DJ signal layer (REQ-SM-001/002/003/004/005, B12):** the Group SM thin
+    provider interface GENERALIZES `brain/kexp.py` into a registry of providers (`poll()` returns ordered
+    clusters in one normalized shape, EMPTY on any failure, never raises; each behind a per-source
+    OFF-by-default flag — `kexp_thread_enabled` [existing] / `sr_thread_enabled` / `bbc_thread_enabled` /
+    `asot_thread_enabled` / `nts_thread_enabled`); the FIVE sources are wired by access tier +
+    sequence-availability (KEXP, Sveriges Radio, BBC segments + DASH stream-fingerprint via ENRICH-012, A
+    State of Trance via cuenation, NTS); [HARD] per-track-ordered sources are craft FUEL while show-level
+    (NTS-live) signals are CONTEXT-ONLY and NEVER inject phantom transitions, every cluster tagged with a
+    sequence-confidence the consumer weights by (SM-004); every provider inherits the Group SK rails
+    per-source by reference (SM-005); the existing Group SK requirements stay valid (KEXP is the first
+    registered provider, back-compatible).
 
 Quality gates (TRUST 5, inherited): Tested (the anti-repetition B1, the reject-storm B2, the no-key/
 complementary B3, the bias-not-force B4, the grounded-content B5, the distinctness B6, the off-pull-path B9,
-and the KEXP-refraction B11 are the must-pass characterization tests); Readable; Unified; Secured (key-gated +
-exception-isolated Last.fm research + keyless exception-isolated KEXP poll; no secret in code; the unchanged
-grounding gate keeps spoken facts honest); Trackable (the show record + status lifecycle + the recent-shows
-ledger + per-item research provenance — including `method=kexp.plays` — give an auditable show/variation trail).
+the KEXP-refraction B11, and the multi-source sequence-confidence B12 are the must-pass characterization
+tests); Readable; Unified; Secured (key-gated + exception-isolated Last.fm research + keyless
+exception-isolated KEXP + multi-source provider polls; no secret in code; the unchanged grounding gate keeps
+spoken facts honest); Trackable (the show record + status lifecycle + the recent-shows ledger + per-item
+research provenance — including `method=kexp.plays` / `sr.playlists` / `bbc.segments` / `bbc.stream` /
+`asot.cue` / `nts.scrape` — give an auditable show/variation trail).
 
-Parity check: 29 AC (Section A) + 8 AC-NFR = 37 acceptance entries, matching spec.md 29 REQ + 8 NFR;
+Parity check: 34 AC (Section A) + 8 AC-NFR = 42 acceptance entries, matching spec.md 34 REQ + 8 NFR;
 1:1 REQ↔AC preserved.

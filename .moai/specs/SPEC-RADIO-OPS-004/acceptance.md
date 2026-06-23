@@ -1,7 +1,7 @@
 ---
 id: SPEC-RADIO-OPS-004
 artifact: acceptance
-version: 0.10.0
+version: 0.11.0
 status: draft
 created: 2026-06-22
 updated: 2026-06-23
@@ -38,6 +38,18 @@ author: charlie
 > Both forward-reference SPEC-RADIO-LONGFORM-025 (does not exist yet) — it supplies the episode +
 > duration claim; ORCH-005 owns WHEN; OPS-004 owns the override mechanics + registry seam +
 > time-budgeting only. 99 REQ + 12 NFR = 111, 1:1 REQ↔AC preserved.
+>
+> HISTORY — 2026-06-23 (v0.11.0): Frontmatter version bumped to match spec.md's v0.11.0
+> self-reflection seam registration (no AC added/removed; 1:1 REQ↔AC preserved). The v0.11.0
+> spec.md pass was purely additive registration of the forthcoming SPEC-RADIO-REFLECT-026 seam
+> (+0 REQ, +0 NFR) — its three seam points fall on already-synced AC bodies: AC-OA-013 (the
+> `reflect` run-mode value joins the TUNABLE editorial run-mode enumeration), AC-OD-007 (the
+> hypothesis-lifecycle event-type NAMES join the append-only ledger vocabulary), AC-OD-006 (a
+> hypothesis PROMOTION is an identity-affecting change bounded by the same measured-change
+> budget), AC-OD-009 (the reflect job's write surface is DATA-only — hypotheses table + REQ-OD-007
+> ledger, never code/config), and AC-NFR-O-6 (the reflect/hypothesis events extend the
+> observability event-family list). Stamp-only sync to honor the v0.9.3 frontmatter-version-match
+> discipline. 99 REQ + 12 NFR = 111, 1:1 REQ↔AC preserved.
 
 1:1 REQ ↔ AC mapping: every requirement and NFR in spec.md has exactly one acceptance
 entry here (Section A). Detailed Given-When-Then scenarios for the load-bearing
@@ -219,10 +231,15 @@ no monetization/appeal-optimization; one shared loudness constant.
 
 **AC-OA-013 (REQ-OA-013).**
 - Each director planning cycle selects a run mode from the editorial brief (e.g.
-  maintenance / responsive / continuity / special / quiet); the mode is logged.
+  maintenance / responsive / continuity / special / quiet / reflect); the mode is logged.
 - The mode set is TUNABLE and the per-loop mode choice is AI-authored; no fixed
   per-loop behavior is hardcoded (verified: different cycles can pick different modes,
   including a "quiet" mode that deliberately runs music with minimal talk).
+- The enumeration carries a `reflect` value REGISTERED from SPEC-RADIO-REFLECT-026
+  (forward-referenced — does not exist yet; OPS-004 registers only the value, REFLECT-026
+  owns the reflect-pass semantics + the hypotheses table). Verified: until the REFLECT-026
+  seam is coded the `reflect` value is an unselected enumeration member — the director never
+  picks it and the other run modes are unaffected (graceful degradation).
 
 **AC-OA-014 (REQ-OA-014).**
 - The AI picks a transition/mixing style by show/daypart context and emits transition
@@ -466,11 +483,22 @@ no monetization/appeal-optimization; one shared loudness constant.
   (recorded), never silently churned.
 - No human approval is required (human is out of loop); the rails are self-imposed
   stability, verified by forcing many proposed changes and observing throttling.
+- A reflect-pass hypothesis PROMOTION to acted-on/graduated status (REQ-OA-013 reflect
+  mode, SPEC-RADIO-REFLECT-026 forward-ref) is an identity-affecting change bounded by
+  this SAME budget — same rate-limiter/cooldown/canary/contradiction-detection. Verified:
+  forming/observing hypotheses is uncapped, but applying (graduating) one is throttled
+  exactly like other identity-affecting changes; there is no separate or faster lane.
 
 **AC-OD-007 (REQ-OD-007).**
 - [HARD] Playbook memory is an append-only event ledger with event types incl.
   listener_message, decision, listener_reaction, diary_entry, active_threads; each event
   carries an idempotent ID.
+- The documented vocabulary also registers the reflect/hypothesis-lifecycle event types
+  hypothesis_created, hypothesis_observed, hypothesis_graduated, hypothesis_superseded,
+  hypothesis_obsoleted, hypothesis_discarded, and reflection_summary (REQ-OA-013 reflect
+  mode). Verified: each is a valid append-only, idempotent-ID'd event on THIS existing
+  ledger — OPS-004 adds NO new store; the hypothesis-lifecycle semantics and the hypotheses
+  table are owned by SPEC-RADIO-REFLECT-026 (forward-ref), OPS-004 registers only the names.
 - Replaying/retrying an event with the same ID does not create a duplicate (verified by
   re-appending the same event ID); history is never overwritten — corrections are new
   events.
@@ -495,6 +523,12 @@ no monetization/appeal-optimization; one shared loudness constant.
 - It complements REQ-OD-006: OD-006 bounds how FAST editorial data changes; OD-009 bounds
   WHAT may be written to (data only, never code/config). The HUMAN developer's tool/code
   changes are out of scope (out-of-loop by design).
+- [HARD] The reflect run-mode (REQ-OA-013, SPEC-RADIO-REFLECT-026 forward-ref) is inside this
+  rail: its write surface is structurally limited to the hypotheses table (REFLECT-026's DATA
+  store) and the REQ-OD-007 ledger (hypothesis_* / reflection_summary events) — DATA-only.
+  Verified: the reflect pass writes no source code, `radio.liq` / Liquidsoap config, or
+  container/deployment config (an attempted code/config write by the reflect path is
+  rejected/absent), carrying the same FROZEN-zone discipline as every self-expansion path.
 
 **AC-OD-010 (REQ-OD-010) [HARD].**
 - [HARD] The measured-change budget is partitioned into ordered tiers: Tier 1 (rarest) =
@@ -952,7 +986,9 @@ topic_skipped, Group OX), segment-type registry events (segment_type_created / _
 _rewritten / _retired / _aired, Group OY) and per-segment production stages
 (research/write/fact-check/assemble/schedule, REQ-OY-005), persona/show lifecycle
 transitions (persona_retiring / persona_retired / persona_launched / show_discontinued /
-show_relaunched, incl. rejected transitions, REQ-OB-010..014) and schedule-grid CRUD edits
+show_relaunched, incl. rejected transitions, REQ-OB-010..014), reflect/hypothesis-lifecycle
+events (hypothesis_created / _observed / _graduated / _superseded / _obsoleted / _discarded /
+reflection_summary, REQ-OA-013 reflect mode / REQ-OD-007 vocabulary) and schedule-grid CRUD edits
 (REQ-OA-015), library housekeeping/eviction, and fallbacks, surfaced via the CORE-001
 health/status surface.
 

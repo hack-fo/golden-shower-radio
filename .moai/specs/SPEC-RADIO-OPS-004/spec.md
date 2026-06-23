@@ -1,6 +1,6 @@
 ---
 id: SPEC-RADIO-OPS-004
-version: 0.10.0
+version: 0.11.0
 status: draft
 created: 2026-06-22
 updated: 2026-06-23
@@ -391,6 +391,32 @@ issue_number: null
   conception-driven type is authored and no long-form block is scheduled — the regular slot-based
   programming is unaffected. No new datastore, no new playout kind, no Liquidsoap change, brain-only.
   Net: +2 REQ (OA-016, OY-008), +0 NFR. Total: 99 REQ + 12 NFR = 111, 1:1 REQ↔AC preserved.
+- 2026-06-23 (v0.11.0): SELF-REFLECTION SEAM REGISTRATION — purely additive registration of the
+  forthcoming self-reflection layer (SPEC-RADIO-REFLECT-026, forward-referenced — DOES NOT EXIST
+  YET, a code-seam; referenced by id, never restated/forked/weakened), which OWNS the reflect
+  run-mode SEMANTICS and the editorial-hypotheses table. OPS-004 re-owns NOTHING of that layer; it
+  only REGISTERS three seam points into its own surfaces. (1) REQ-OA-013: register a `reflect`
+  value into the TUNABLE editorial run-mode enumeration (run a self-reflection pass: review recent
+  programming/outcomes and update editorial hypotheses). Until REFLECT-026 is coded the value is an
+  unselected enumeration member — never picked, other modes unaffected (graceful degradation,
+  mirroring OA-016/LONGFORM-025). (2) REQ-OD-007: register the hypothesis-lifecycle event-type
+  NAMES into the documented append-only ledger vocabulary — `hypothesis_created`,
+  `hypothesis_observed`, `hypothesis_graduated`, `hypothesis_superseded`, `hypothesis_obsoleted`,
+  `hypothesis_discarded`, `reflection_summary` — each append-only + idempotent like every ledger
+  event, all on the EXISTING REQ-OD-007 ledger (NO new store; the hypotheses TABLE is REFLECT-026's,
+  +0 tables added by OPS-004). (3a) REQ-OD-006: note that hypothesis PROMOTIONS to acted-on/graduated
+  status are identity-affecting changes bounded by the SAME measured-change budget (rate-limiter,
+  cooldown, canary, contradiction detection) — forming/observing hypotheses is uncapped learning,
+  but APPLYING one draws from the budget like any identity-affecting change (no separate/faster lane).
+  (3b) REQ-OD-009: note that the reflect job's write surface is STRUCTURALLY LIMITED to the
+  hypotheses table + the REQ-OD-007 ledger — DATA-ONLY, never code/config — carrying the same
+  FROZEN-zone discipline as every editorial self-expansion path. Also extended NFR-O-6's observability
+  event-family list to include the reflect/hypothesis events for log completeness. All four FROZEN
+  invariants are REINFORCED not weakened (DATA-only rail, measured-change bounds, append-only/idempotent
+  ledger, TUNABLE run-mode set); the anti-convergence firewall (PROGRAMMING-007 PR-004/PR-009), frozen
+  persona anchors (PI), and the KNOWLEDGE-008 REQ-KS-006 airable-fact consensus seam are untouched. No
+  new datastore, no new playout kind, no Liquidsoap change, brain-only. Net: +0 REQ, +0 NFR (registration
+  + clarifying clauses only). Total: 99 REQ + 12 NFR = 111, 1:1 REQ↔AC preserved.
 
 ---
 
@@ -1077,12 +1103,25 @@ audio-feature extraction. [HARD] per the rich-library-metadata directive.
 When the director loop runs a planning cycle, the system shall let the AI select a RUN
 MODE for that cycle from an editorial brief — e.g. maintenance (top up buffers / keep
 rotation healthy), responsive (act on listener feedback / fresh signals), continuity
-(advance running threads / themes), special (run a planned special show/segment), or
-quiet (deliberately let music run, minimal talk) — so the station behaves with
-deliberate editorial intent rather than "always generate." The mode set is TUNABLE and
-the mode choice each loop is the AI's call; no fixed per-loop behavior is mandated.
-(Validated against the writ-fm reference, which picks a run mode per loop from an
-editorial brief.)
+(advance running threads / themes), special (run a planned special show/segment),
+quiet (deliberately let music run, minimal talk), or `reflect` (run a self-reflection
+pass: review recent programming/outcomes and update the station's editorial
+hypotheses) — so the station behaves with deliberate editorial intent rather than
+"always generate." The mode set is TUNABLE and the mode choice each loop is the AI's
+call; no fixed per-loop behavior is mandated. (Validated against the writ-fm reference,
+which picks a run mode per loop from an editorial brief.)
+
+[Ownership of `reflect`] OPS-004 only REGISTERS the `reflect` value into this TUNABLE
+run-mode enumeration. The reflect run-mode's JOB SEMANTICS — what a reflection pass
+reads, how it forms/observes/promotes editorial hypotheses, and the hypotheses table it
+maintains — are OWNED by **SPEC-RADIO-REFLECT-026** (forward-referenced — DOES NOT EXIST
+YET, a code-seam; referenced by id, never restated/forked/weakened here), exactly as
+REQ-OA-016 references LONGFORM-025. Until the REFLECT-026 seam is coded, the `reflect`
+value is simply an unselected member of the enumeration: the director never picks it and
+the other run modes are unaffected (graceful degradation). REFLECT-026's reflect pass,
+when present, emits the hypothesis/reflection events registered into the REQ-OD-007
+ledger vocabulary, applies hypothesis promotions under the REQ-OD-006 measured-change
+budget, and writes only to DATA per REQ-OD-009.
 
 **Acceptance criteria:** see acceptance.md AC-OA-013.
 
@@ -1534,6 +1573,16 @@ This requirement bounds the velocity of REQ-OD-003's refinement and REQ-OA/OB
 evolution; it does not cap how much the AI may LEARN, only how fast it CHANGES what
 it acts on.
 
+[Reflect/hypothesis promotions are NOT exempt] When the reflect run-mode (REQ-OA-013,
+owned by SPEC-RADIO-REFLECT-026 forward-ref) PROMOTES an editorial hypothesis to
+acted-on status — `hypothesis_graduated` (and any promotion that makes a hypothesis
+ACTIVE so the director acts on it, REQ-OD-007 vocabulary) — that promotion is an
+identity-affecting change and is bounded by THIS SAME measured-change budget: the same
+rate-limiter, cooldown, canary check, and contradiction detection. Reflection may FORM
+and OBSERVE hypotheses freely (that is learning, uncapped), but APPLYING one (graduating
+it into something the station acts on) draws from this budget like any other
+identity-affecting change — no separate or faster lane.
+
 **Acceptance criteria:** see acceptance.md AC-OD-006.
 
 ### REQ-OD-007 — Append-only event ledger with idempotent IDs (Ubiquitous) [HARD]
@@ -1544,6 +1593,19 @@ ledger — events such as `listener_message`, `decision`, `listener_reaction`,
 does not duplicate an event. The ledger is the durable, ordered record the playbook and
 director read back for continuity (it does not overwrite history; corrections are new
 events). (Validated against the writ-fm reference's append-only ledger design.)
+
+[Reflect/hypothesis event vocabulary] The documented ledger event-type vocabulary also
+REGISTERS the editorial-hypothesis lifecycle events the reflect run-mode (REQ-OA-013)
+emits: `hypothesis_created`, `hypothesis_observed`, `hypothesis_graduated`,
+`hypothesis_superseded`, `hypothesis_obsoleted`, `hypothesis_discarded`, and
+`reflection_summary`. Like every ledger event these are APPEND-ONLY and idempotent-ID'd
+(a re-emitted hypothesis transition does not duplicate), and they are events on THIS
+EXISTING REQ-OD-007 ledger — OPS-004 adds NO new store for them. OPS-004 only registers
+the event-type NAMES into this vocabulary; the hypothesis lifecycle SEMANTICS (the FSM
+behind created→observed→graduated/superseded/obsoleted/discarded) and the hypotheses
+table those events project are OWNED by **SPEC-RADIO-REFLECT-026** (forward-referenced —
+DOES NOT EXIST YET, a code-seam; referenced by id, never restated/forked/weakened here),
+exactly as Group OX/OY register their `topic_*` / `segment_type_*` event families.
 
 **Acceptance criteria:** see acceptance.md AC-OD-007.
 
@@ -1578,6 +1640,14 @@ the code or critical config. ORCH-005 REQ-RA-004 restates this as it applies to 
 orchestration action surface (referenced, not a fork). (Human-out-of-loop tooling/code
 changes by the HUMAN developer are out of scope — this rail constrains the AUTONOMOUS
 operator's normal-operation self-writes only.)
+
+[Reflect job is inside this rail] The reflect run-mode (REQ-OA-013, owned by
+SPEC-RADIO-REFLECT-026 forward-ref) is a self-expansion writer like the others: its write
+surface is STRUCTURALLY LIMITED to the hypotheses table (REFLECT-026's DATA store) and the
+REQ-OD-007 append-only ledger (the `hypothesis_*` / `reflection_summary` events) — DATA
+ONLY. [HARD] The reflect pass shall NEVER write source code, the Liquidsoap configuration,
+or container/deployment config; it carries the same FROZEN-zone discipline as every other
+editorial self-expansion path under this requirement.
 
 **Acceptance criteria:** see acceptance.md AC-OD-009.
 
@@ -2518,8 +2588,11 @@ topic_refreshed / topic_skipped, Group OX), segment-type registry events
 (segment_type_created / _extended / _rewritten / _retired / _aired, Group OY) and
 per-segment production stages (research/write/fact-check/assemble/schedule, REQ-OY-005),
 persona/show lifecycle transitions (persona_retiring / persona_retired / persona_launched /
-show_discontinued / show_relaunched, REQ-OB-010..014, incl. rejected transitions) and
-schedule-grid CRUD edits (REQ-OA-015), and fallbacks, sufficient to diagnose an incident
+show_discontinued / show_relaunched, REQ-OB-010..014, incl. rejected transitions),
+reflect/hypothesis-lifecycle events (hypothesis_created / _observed / _graduated /
+_superseded / _obsoleted / _discarded / reflection_summary, REQ-OA-013 reflect mode /
+REQ-OD-007 vocabulary, owned by SPEC-RADIO-REFLECT-026 forward-ref) and schedule-grid CRUD
+edits (REQ-OA-015), and fallbacks, sufficient to diagnose an incident
 after the fact, surfaced through the CORE-001 health/status surface. See acceptance.md
 AC-NFR-O-6.
 

@@ -1,6 +1,6 @@
 ---
 id: SPEC-RADIO-DATASTORE-022-acceptance
-version: 0.1.0
+version: 0.2.0
 status: draft
 created: 2026-06-23
 updated: 2026-06-23
@@ -61,10 +61,24 @@ Group prefixes: DE (Datastore Engine) / DP (File Partition) / DX (Cross-file Rea
 **AC-DP-001 (REQ-DP-001 — FOUR SQLite files per research.md §6):**
 - GIVEN the brain's local data, WHEN it is laid out on disk, THEN it occupies FOUR SQLite files:
   `knowledge.db` (untouched), `brain.db` (tracks + attempts + watch_manifest), `state.db`
-  (now_playing + recent_ring + downloads), `events.db` (play_events + likes + shows, future).
+  (now_playing + recent_ring + downloads), `events.db` (play_events + likes + shows + `hypotheses`).
 - [HARD] The single mega-file and the six-file one-per-store extreme are both REJECTED (asserted: the
   table→file mapping matches research.md §6 — no single file holds all stores, and `attempts` +
   `watch_manifest` co-reside with `tracks` in `brain.db` rather than each getting its own file).
+- [HARD] The `hypotheses` table (the self-learning hypothesis ledger, OWNED by SPEC-RADIO-REFLECT-026)
+  is mapped into `events.db` and introduces NO new file (the four-file partition is FROZEN): it lives
+  in `events.db` alongside `play_events` / `likes` / `shows`, under the same WAL `journal_mode`
+  (REQ-DE-003) + one-shared-connection-under-RLock (REQ-DE-002) + idempotent natural-`id` conventions
+  (asserted: `hypotheses` resides in `events.db`, not a fifth file; its `id` is an idempotent primary
+  key so a re-asserted hypothesis upserts rather than duplicates; its columns include `id`, `domain` ∈
+  {curation, mixing, host, genre, show-concept, scheduling, acquisition}, `statement`, `status` ∈
+  {hypothesis, active, graduated, superseded, obsolete, discarded}, `confidence`, `observation_count`,
+  `uncertainty`, `conclusion` (NULL until confident), `supersedes`, `superseded_by` (self-FK to
+  `hypotheses.id`), `is_anti_pattern`, `discarded_reason`, `created_at`, `updated_at`).
+- [HARD] The hypothesis EVIDENCE TRAIL is NOT a new table: each evidence/observation point is an
+  ordinary append-only `events.db` ledger event linked by a `hypothesis_id` reference (asserted: the
+  substrate gains exactly ONE table — `hypotheses` — and ZERO new files; `knowledge.db` is untouched;
+  the `hypotheses` table's lifecycle semantics are owned by REFLECT-026, DATASTORE-022 only maps it).
 
 **AC-DP-002 (REQ-DP-002 — `knowledge.db` left exactly as-is):**
 - GIVEN the KNOWLEDGE-008 store, WHEN the refactor lands, THEN `knowledge.db`, its schema, and
@@ -344,7 +358,8 @@ A DATASTORE-022 implementation is DONE when:
    MBMIRROR-017; no ORM dependency is added.
 3. [HARD] **Four files per research.md §6 (REQ-DP-001):** `knowledge.db` (untouched) + `brain.db`
    (tracks + attempts + watch_manifest) + `state.db` (now_playing + recent_ring + downloads) +
-   `events.db` (play_events + likes + shows, future); mega-file and six-file extremes rejected.
+   `events.db` (play_events + likes + shows, future + `hypotheses` (REFLECT-026-owned, mapped here));
+   mega-file and six-file extremes rejected.
 4. [HARD] **`knowledge.db` untouched (REQ-DP-002):** no change to its schema / `KnowledgeStore`.
 5. [HARD] **The one atomic grab-write stays in `brain.db` (REQ-DP-003, B1):** tracks + attempts in a
    single-file transaction, atomic under WAL.

@@ -1,6 +1,6 @@
 ---
 id: SPEC-RADIO-DATASTORE-022
-version: 0.1.0
+version: 0.2.0
 status: draft
 created: 2026-06-23
 updated: 2026-06-23
@@ -13,6 +13,18 @@ issue_number: null
 
 ## HISTORY
 
+- 2026-06-23 (v0.2.0): Added the single `hypotheses` table to the `events.db` table→file mapping
+  (Group DP / REQ-DP-001, the Glossary "the four files" row, and the §16 future-SPEC roadmap),
+  following the same append-heavy WAL + idempotent-ID conventions as the existing
+  `play_events` / `likes` / `shows` tables. NO new SQLite file is introduced — the four-file
+  partition is FROZEN — and `knowledge.db` stays untouched; the table lives in `events.db` (the
+  append-heavy analytics partition), and its evidence trail is ordinary append-only ledger EVENTS
+  linked by `hypothesis_id`, NOT new tables. The `hypotheses` table itself is OWNED by the new
+  SPEC-RADIO-REFLECT-026 (the brain's self-learning / hypothesis-ledger SPEC); DATASTORE-022 only
+  MAPS it to its file (the persistence-substrate concern) and does not own its lifecycle semantics.
+  Net change: +1 table, +0 files; REQ/NFR totals unchanged (still 18 REQ + 6 NFR = 24, 1:1 REQ↔AC),
+  because mapping an owned-elsewhere table to an existing file is a Group DP detail bounded by the
+  existing REQ-DP-001, not a new requirement.
 - 2026-06-23 (v0.1.0): Initial draft, occupying the new global-incrementing DATASTORE-022 id.
   The twelfth-numbered authored SPEC in the golden-shower-radio RADIO series (CORE-001, VOICE-002,
   CALLIN-003, OPS-004, ORCH-005, ANALYSIS-006, PROGRAMMING-007, KNOWLEDGE-008, TAGSTREAM-009,
@@ -88,7 +100,9 @@ SPEC settles — one unified SQLite file vs several, and how partitioned — is 
 1. **`knowledge.db`** — PRECIOUS editorial knowledge; KEEP EXACTLY AS-IS (KNOWLEDGE-008 owns it).
 2. **`brain.db`** — core operational: `tracks` (library) + `attempts` + `watch_manifest`.
 3. **`state.db`** — HIGH-churn ephemeral: `now_playing` + `recent_ring` (+ live downloads).
-4. **`events.db`** — append-heavy analytics: `play_events` + `likes` + `shows` (future STATS-013).
+4. **`events.db`** — append-heavy analytics: `play_events` + `likes` + `shows` (future STATS-013) +
+   `hypotheses` (the self-learning hypothesis ledger; the TABLE is OWNED by SPEC-RADIO-REFLECT-026,
+   DATASTORE-022 only maps it to this append-heavy file).
 
 The mega-file (one `brain.db` for everything) is REJECTED (research.md §4.2): it maximizes
 corruption blast radius (one fault loses the air path + analytics + state together), maximizes write
@@ -129,7 +143,10 @@ MUST NOT add a new service, a new datastore engine, an ORM, or a SQL server.
 OWNS:
 - The SQLite-FILE SET + table→file mapping (Group DP): `brain.db` (tracks + attempts +
   watch_manifest), `state.db` (now_playing + recent_ring + downloads), `events.db` (play_events +
-  likes + shows, future), and the decision to keep `knowledge.db` untouched.
+  likes + shows + `hypotheses`, future/append-heavy), and the decision to keep `knowledge.db`
+  untouched. NOTE: DATASTORE-022 OWNS the table→file MAPPING (which file a table lives in, under
+  which WAL + idempotent-ID conventions), NOT the LIFECYCLE SEMANTICS of tables owned by other
+  SPECs (`play_events`/`likes`/`shows` are STATS-013/LIKE-015's; `hypotheses` is REFLECT-026's).
 - The CONNECTION / TRANSACTION / PRAGMA model (Group DE): one `sqlite3` connection per file
   (`check_same_thread=False`) guarded by an `RLock`, `journal_mode=WAL`, `synchronous=NORMAL`,
   `busy_timeout`, and the single-serialized-writer / concurrent-reader discipline — mirroring
@@ -160,6 +177,16 @@ REFERENCES (consumes / preserves; does not re-own):
   play_events/likes/shows are the BENEFICIARIES of this substrate (the `events.db` file + the durable
   `state.db` ring are provisioned for them), but their FEATURE logic is OUT OF SCOPE here
   (Section 4.2). This SPEC provisions the substrate; it does not implement those features.
+- **SPEC-RADIO-REFLECT-026 (the OWNER of the `hypotheses` table + its lifecycle)** — REFLECT-026 is
+  the brain's self-learning / hypothesis-ledger SPEC; it OWNS the `hypotheses` table's schema
+  meaning, its `status` lifecycle (hypothesis → active → graduated → superseded → obsolete →
+  discarded), its confidence/observation_count/uncertainty accumulation, its `supersedes` /
+  `superseded_by` self-FK chain, its anti-pattern flagging, and its `hypothesis_id`-linked evidence
+  trail. DATASTORE-022 REFERENCES it only to MAP the `hypotheses` table into the append-heavy
+  `events.db` partition (the persistence-substrate concern) and to record that the evidence trail is
+  ordinary append-only ledger EVENTS keyed by `hypothesis_id`, NOT new tables. DATASTORE-022 MUST
+  NOT re-specify, fork, or weaken REFLECT-026's hypothesis-lifecycle semantics; it only persists the
+  table behind the same WAL + idempotent-ID conventions as the other `events.db` tables.
 
 ### 1.5 Fixed engineering rails (the only hard constraints)
 
@@ -242,7 +269,7 @@ events-as-immutable-evidence decisions. A write-back is OWED after implementatio
 |------|-----------|
 | **Store** | A persisted collection of brain records (the library tracks, the acquisition attempts, the watch manifest, the station state, the analytics events). Today a JSON flat file (except KNOWLEDGE-008); after this SPEC, a SQLite table in one of the four files. |
 | **Flat-file rewrite** | The current persistence: `json.dump(<entire collection>)` to a `.tmp` file then `os.replace` (`Library._save_locked`, `AttemptsIndex._save_locked`, the watch `_save_manifest`). Every write rewrites the WHOLE file (O(n)). Replaced by per-row SQLite writes (REQ-DR-001). |
-| **The four files** | `knowledge.db` (KNOWLEDGE-008, untouched), `brain.db` (tracks + attempts + watch_manifest), `state.db` (now_playing + recent_ring + downloads), `events.db` (play_events + likes + shows, future STATS-013). The partition decided in research.md §6 (REQ-DP-001). |
+| **The four files** | `knowledge.db` (KNOWLEDGE-008, untouched), `brain.db` (tracks + attempts + watch_manifest), `state.db` (now_playing + recent_ring + downloads), `events.db` (play_events + likes + shows + `hypotheses` — append-heavy analytics + the self-learning hypothesis ledger; `hypotheses` is owned by SPEC-RADIO-REFLECT-026, mapped here). The partition decided in research.md §6 (REQ-DP-001). |
 | **WAL (Write-Ahead Logging)** | SQLite `journal_mode=WAL`: many concurrent readers + exactly ONE writer per database FILE; readers don't block the writer and vice versa. The `-wal` and `-shm` index files are per-database-file (research.md §2.1). |
 | **Single-writer-per-file** | The SQLite concurrency fact: WAL serializes all writers to ONE file behind one write lock. Splitting into multiple files is the ONLY way to get >1 concurrent writer; this is the load-bearing reason for the partition (research.md §2.1, REQ-DP-001, REQ-DR-002). |
 | **Connection model** | One `sqlite3.connect(path, check_same_thread=False)` per file, guarded by a `threading.RLock`, used by one thread at a time (the supported pattern). The brain is multi-threaded (director + HTTP server + acquisition + analysis/enrich workers), so every store is a shared-conn-under-lock (research.md §1, REQ-DE-002). |
@@ -266,7 +293,8 @@ events-as-immutable-evidence decisions. A write-back is OWED after implementatio
   busy_timeout); the single-serialized-writer / concurrent-reader discipline mirroring KNOWLEDGE-008.
 - **Group DP — File Partition.** The four-file set + the table→file mapping per research.md §6:
   `brain.db` (tracks + attempts + watch_manifest), `state.db` (now_playing + recent_ring +
-  downloads), `events.db` (play_events + likes + shows, future); `knowledge.db` untouched; the
+  downloads), `events.db` (play_events + likes + shows + `hypotheses`, append-heavy; `hypotheses`
+  owned by SPEC-RADIO-REFLECT-026, mapped here); `knowledge.db` untouched; the
   one-atomic-grab-write-stays-in-`brain.db` placement; the rejected alternatives recorded.
 - **Group DX — Cross-file Reads (ATTACH).** The read-only ATTACH JOIN pattern for cross-store
   analytics (events × tracks, knowledge × tracks); the explicit cross-file-write non-atomicity caveat
@@ -396,7 +424,8 @@ layer that NFR-D-4 (additive, no new heavy dependency) forbids. That local data 
 
 ## 7. Requirement Group DP — File Partition
 
-Priority: High.
+Priority: High (REQ-DP-001/002/003 are [HARD] structural invariants); REQ-DP-004 is Medium
+(path-plumbing, no [HARD] title marker — see the Traceability Index).
 
 ### REQ-DP-001 — FOUR SQLite files, partitioned per research.md §6 (Ubiquitous) [HARD]
 
@@ -406,11 +435,35 @@ The system SHALL partition local SQLite data into FOUR files exactly as decided 
 `brain.db` — core operational: the `tracks` (library), `attempts`, and `watch_manifest` tables; (3)
 `state.db` — HIGH-churn ephemeral: `now_playing`, `recent_ring`, and the live-download list; (4)
 `events.db` — append-heavy analytics: `play_events`, `likes`, `shows` (provisioned for future
-STATS-013). [HARD] The single mega-file (`one brain.db for everything`) is REJECTED (research.md
+STATS-013), and `hypotheses` (the self-learning hypothesis ledger, owned by SPEC-RADIO-REFLECT-026).
+[HARD] The single mega-file (`one brain.db for everything`) is REJECTED (research.md
 §4.2: maximal corruption blast radius + maximal write contention + coupled WAL-growth/backup), and
 the six-file one-per-store extreme is REJECTED (research.md §4.3: over-partitions low-value,
 co-written, contention-free stores). That local data is the four files with this table→file mapping
 is the rail; the exact table DDL is implementation detail bounded by Group DC behavior preservation.
+
+[HARD] **The `hypotheses` table is mapped into `events.db` and introduces NO new file.** The
+four-file partition is FROZEN; adding the brain's self-learning hypothesis ledger does NOT create a
+fifth SQLite file. The `hypotheses` table lives in `events.db` (the append-heavy analytics partition)
+alongside `play_events` / `likes` / `shows`, under the SAME conventions: WAL `journal_mode`
+(REQ-DE-003), the one-shared-connection-under-an-RLock model (REQ-DE-002), and an idempotent natural
+ID (a stable `id` text/UUID primary key) so a re-import or a re-asserted hypothesis upserts rather
+than duplicates (mirroring REQ-DM-002's idempotency posture). The table carries at minimum the
+columns: `id` (idempotent primary key), `domain` (one of `curation` | `mixing` | `host` | `genre` |
+`show-concept` | `scheduling` | `acquisition`), `statement`, `status` (one of `hypothesis` |
+`active` | `graduated` | `superseded` | `obsolete` | `discarded`), `confidence`, `observation_count`,
+`uncertainty`, `conclusion` (NULL until confident), `supersedes`, `superseded_by` (a self-FK back to
+`hypotheses.id` for the supersession chain), `is_anti_pattern`, `discarded_reason`, `created_at`, and
+`updated_at`. [HARD] The `hypotheses` TABLE — its schema meaning, its `status` lifecycle, its
+confidence/observation/uncertainty accumulation, its supersession-chain and anti-pattern semantics —
+is OWNED by SPEC-RADIO-REFLECT-026; DATASTORE-022 only MAPS it to `events.db` (the persistence-
+substrate concern) and DOES NOT own or alter its lifecycle. [HARD] The hypothesis EVIDENCE TRAIL is
+NOT a new table: each observation/evidence point is an ordinary append-only ledger EVENT (an
+`events.db` row in the existing append-heavy event stream) linked by a `hypothesis_id` foreign
+reference, so the substrate gains exactly ONE table (`hypotheses`) and ZERO new files. `knowledge.db`
+remains untouched (REQ-DP-002). That the `hypotheses` table is mapped into `events.db` under the
+append-heavy WAL + idempotent-ID conventions, owned by REFLECT-026, with its evidence as ledger
+events and no new file, is the rail.
 
 **Acceptance criteria:** see acceptance.md AC-DP-001.
 
@@ -739,6 +792,11 @@ outcome is recorded). See acceptance.md AC-NFR-D-6.
   recommendations; consumes the `events.db` file + the cross-file ATTACH read this SPEC provisions.
 - **WEBUI-018 durable last-played ring** — the listener-page redesign that reads the now-durable
   `state.db` ring this SPEC provisions.
+- **SPEC-RADIO-REFLECT-026 self-learning hypothesis ledger** — the brain's hypothesis lifecycle
+  (hypothesis → active → graduated → superseded → obsolete → discarded), confidence/observation
+  accumulation, supersession chains, and anti-pattern flagging; OWNS the `hypotheses` table whose
+  mapping into the append-heavy `events.db` partition (with its evidence as `hypothesis_id`-linked
+  ledger events, no new file) this SPEC provisions.
 - **A periodic VACUUM / checkpoint / retention job** — once `events.db` grows, a bounded maintenance
   pass (off the air path) may be warranted; a future enhancement bounded by NFR-D-1.
 - **Removing the stale JSON backups** — once the SQLite migration is proven in production, an

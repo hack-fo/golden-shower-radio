@@ -1,6 +1,6 @@
 ---
 id: SPEC-RADIO-KNOWLEDGE-008
-version: 0.3.0
+version: 0.3.2
 status: draft
 created: 2026-06-22
 updated: 2026-06-23
@@ -110,6 +110,21 @@ issue_number: null
   a first-class outcome). Net: +10 REQ (KS-007/008/009, KF-005, KR-006/007/008/009, KG-006, KI-006) + 1
   NFR (NFR-K-8). Total: 35 REQ + 8 NFR = 43; 1:1 REQ<->AC preserved (group counts KS=9, KF=5, KR=9,
   KG=6, KI=6).
+- 2026-06-23 (v0.3.2): BOUNDARY NOTE ONLY — no schema change, no new airable-fact path, no new
+  REQ/NFR, no count change (35 REQ + 8 NFR = 43, group counts unchanged). Documented the
+  one-directional boundary with the new SPEC-RADIO-REFLECT-026 (the station's internal
+  beliefs/hypotheses layer; forward-ref, authored in the same wave). REFLECT-026 REUSES the
+  KNOWLEDGE-008 fact-discipline PATTERN (provenance + as-of dating + confidence-grading +
+  hedging + never-confidently-wrong) for its OWN internal hypotheses store, but those hypotheses
+  are NEVER promoted into the KNOWLEDGE-008 AIRABLE-FACT contract: REQ-KS-006 (multi-source
+  consensus across the verified / reliability-ranked source set) remains the SOLE seam by which a
+  claim becomes airable-as-certain, and a REFLECT-026 internal belief — however high its internal
+  confidence — does not by that confidence become an airable editorial fact. The boundary is
+  clean and one-directional (KNOWLEDGE-008 facts MAY ground REFLECT-026 reasoning; REFLECT-026
+  hypotheses MAY NOT enter the grounding feed as facts). Recorded as a prose REFERENCES /
+  Exclusions boundary; REFLECT-026 is referenced by id (it OWNS its internal-belief store;
+  KNOWLEDGE-008 MUST NOT restate or fork it, and REFLECT-026 MUST NOT restate, fork, or weaken
+  REQ-KS-006).
 
 ---
 
@@ -290,6 +305,21 @@ REFERENCES (consumes / extends / feeds; does not restate):
   PER-RELEASE-CREDIT cross-check (reconciling Discogs credits against the MusicBrainz mirror at
   release granularity) is DEFERRED to MBMIRROR-017 and referenced by number; KNOWLEDGE-008 does not
   fork the mirror or re-own its cross-check.
+- **REFLECT-026 (the station's internal beliefs / hypotheses layer)** — REFLECT-026 REUSES the
+  KNOWLEDGE-008 fact-discipline PATTERN (provenance + as-of dating + confidence-grading + hedging +
+  never-confidently-wrong, the discipline established by REQ-KS-003/006/008 and the freshness +
+  consensus gates) to manage its OWN internal beliefs/hypotheses about the station and its world.
+  [HARD, one-directional boundary] This is a PATTERN reuse, NOT a fact-path extension: a REFLECT-026
+  internal hypothesis — no matter how high its internal confidence — is NEVER promoted into the
+  KNOWLEDGE-008 airable-fact contract. REQ-KS-006 (multi-source consensus across the verified /
+  reliability-ranked source set, REQ-KS-009) remains the SOLE seam by which a claim becomes
+  airable-as-certain, and the grounding feed (Group KI) serves ONLY KNOWLEDGE-008's dated, sourced,
+  consensus-gated editorial facts — never a REFLECT-026 belief restyled as a fact. The flow is
+  one-way: KNOWLEDGE-008's facts MAY GROUND REFLECT-026's reasoning, but REFLECT-026's hypotheses
+  MAY NOT enter the grounding feed as airable facts. REFLECT-026 OWNS its internal-belief store;
+  KNOWLEDGE-008 does not restate or fork it, and REFLECT-026 does not restate, fork, or weaken
+  REQ-KS-006 / the airable-fact seam. (No schema change here; the seam is unchanged and remains
+  the sole airable-fact contract.)
 - **OPS-004 REQ-OD-007 / OD-008 + PROGRAMMING-007 REQ-PL-003** — the append-only ledger +
   diary + acquisition diary memory substrate. The research jobs coordinate with that
   substrate for continuity/audit; KNOWLEDGE-008 does not fork the ledger.
@@ -1144,6 +1174,14 @@ release-scoped grounding accessor exists over the same gated engine is the rail.
 - **The PER-RELEASE-CREDIT cross-check against the MusicBrainz mirror** — DEFERRED to MBMIRROR-017;
   KNOWLEDGE-008 populates Discogs structured credits onto the graph (REQ-KR-008/KG-006) but does not
   reconcile them release-by-release against the mirror, and does not fork the mirror or its clients.
+- **A path that promotes REFLECT-026 internal beliefs/hypotheses into the airable-fact contract** —
+  explicitly NOT built. REFLECT-026 (the station's internal beliefs/hypotheses layer) REUSES the
+  KNOWLEDGE-008 fact-discipline PATTERN for its OWN store, but a REFLECT-026 hypothesis — however
+  internally confident — is NEVER admitted to the grounding feed (Group KI) as an airable editorial
+  fact. REQ-KS-006 multi-source consensus stays the SOLE airable-fact seam; the boundary is
+  one-directional (KNOWLEDGE-008 facts may ground REFLECT-026 reasoning, REFLECT-026 hypotheses may
+  not become airable facts). REFLECT-026 owns its internal-belief store; this SPEC neither forks it
+  nor opens a second airable-fact path for it.
 - **The curation / taste POLICY** (which related track to pick, the persona taste charter,
   the anti-convergence firewall) — owned by OPS-004 / PROGRAMMING-007; KNOWLEDGE-008 supplies
   the grounded related-music + transition queries.

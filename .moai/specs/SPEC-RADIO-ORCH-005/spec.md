@@ -1,6 +1,6 @@
 ---
 id: SPEC-RADIO-ORCH-005
-version: 0.6.0
+version: 0.7.0
 status: draft
 created: 2026-06-22
 updated: 2026-06-23
@@ -13,6 +13,40 @@ issue_number: null
 
 ## HISTORY
 
+- 2026-06-23 (v0.7.0): READ-ONLY SELF-REFLECTION-RESULTS SENSOR SLICE added to the world model
+  (Group RW). The new SPEC-RADIO-REFLECT-026 (a FORWARD-REFERENCE — it does not yet exist; ORCH-005
+  does NOT build it) OWNS a periodic REFLECT RUN-MODE that runs off the sub-second pull path under
+  the existing no-tick-crash isolation rail (NFR-R-4 / Section 1.5) and emits two kinds of output:
+  reflect-generated DIRECTOR TASKS (concrete suggested actions) and stagnation / coverage-gap
+  HYPOTHESES (diagnostic observations). This amendment adds ONLY the read-only sensor slice that
+  CONSUMES that output — it does NOT own, fork, or re-specify the reflect run-mode, the task
+  generation, or the hypothesis reasoning (all REFLECT-026's). ONE new requirement (RW grows 7→8):
+  REQ-RW-008 [HARD] (Ubiquitous) — the world model aggregates a READ-ONLY self-reflection-results
+  sensor slice (reflect tasks + stagnation/coverage-gap hypotheses), consumed from REFLECT-026's
+  output as a VIEW over the EXISTING OPS-004 REQ-OD-007 ledger substrate (NO new store). [HARD] The
+  reflect output is ADVISORY, never binding: a reflect-generated task is a planning INPUT the
+  director may dispatch ONLY through the EXISTING REQ-RA-001 action surface, bounded by the OPS-004
+  REQ-OD-006 measured-change rails — it adds NO new action kind, NO new store, and NEVER binds or
+  forces airplay (mirrors the REQ-RI-004 anti-appeal and the REQ-RL-007 "imbalance CHECK + bounded
+  DISPATCH, not a planner" disciplines); a hypothesis informs reasoning (it feeds the REQ-RL-007
+  cross-store imbalance check), it does not command. [HARD] The reflect-sensor read is OFF the pull
+  path (an expensive-sensor read on the REQ-RW-004 throttled cadence, NFR-R-2) and is ISOLATED under
+  the no-tick-crash rail: an unavailable / errored / absent reflect sensor (including the case where
+  REFLECT-026 is not yet present) marks that slice unavailable/stale and the tick/loop/stream
+  continue unaffected (inherits REQ-RW-005 / NFR-R-4 — graceful degradation by construction). Two
+  one-line AMENDMENTS to existing requirements (no new REQ): REQ-RW-002's enumerated sensor SET
+  gains the self-reflection-results slice (consumed from REFLECT-026, never recomputed — like the
+  v0.3.0 topic-bank + listener-response slices); and REQ-RL-007's cross-store maintenance CONSUMES
+  the reflect sensor on the planning tick (reflect tasks/hypotheses join the imbalance signals it
+  already reads, dispatched only through the existing action surface, bounded by REQ-OD-006). Net:
+  +1 REQ (RW-008), +0 NFR; RW grows 7→8. Total: 49 REQ + 8 NFR = 57 (was 48 + 8 = 56); 1:1 REQ↔AC
+  preserved (+1 Section A entry AC-RW-008, the AC-RW-002 + AC-RL-007 amendments mirror the spec
+  amendments, +1 Section B scenario B-21 covering read-only / advisory-not-binding / off-pull-path /
+  graceful-degradation-when-REFLECT-026-absent). Boundary discipline unchanged: the slice is a
+  read-only VIEW over the existing ledger; REFLECT-026 owns the run-mode + the hypotheses; ORCH-005
+  references it by id and does NOT fork the ledger store, re-own the reflect run-mode, add a new
+  datastore / playout kind / Liquidsoap change, or let reflect output bind airplay — brain-only, the
+  same VIEW-over-one-ledger discipline. +1 risk (R-R-17).
 - 2026-06-23 (v0.6.0): SOURCE/FEED amendment to Group RN — added the FREE-ONLY NEWS-FEED
   POLLER / SOURCE LAYER that Group RN had been missing (RN-001..006 owned the ledger memory,
   dedup, news-cycle, and recap; nothing yet owned actually FETCHING the items the ledger
@@ -287,6 +321,15 @@ OWNS:
   EXCEPTION (REQ-RW-007) that sanctions cross-host shared themes for a themed night and
   auto-reverts. The dedup ENFORCEMENT lint is OWNED by PROGRAMMING-007 (REQ-PV-010 extended,
   PG-005-modeled); ORCH-005 SUPPLIES the recently-by-other signal, it does not re-own the lint.
+  Within Group RW it also owns the READ-ONLY SELF-REFLECTION-RESULTS SENSOR SLICE (REQ-RW-008) —
+  the world-model slice that CONSUMES the output of SPEC-RADIO-REFLECT-026's reflect run-mode
+  (reflect-generated director tasks + stagnation/coverage-gap hypotheses) as a VIEW over the
+  existing OPS-004 REQ-OD-007 ledger (no new store). [HARD] The slice is read-only and ADVISORY:
+  REFLECT-026 OWNS producing the reflect run-mode + the hypotheses; ORCH-005 only READS them, the
+  director may dispatch a reflect task ONLY through the existing REQ-RA-001 action surface bounded
+  by REQ-OD-006, and reflect output NEVER binds airplay. An absent/errored reflect sensor (including
+  REFLECT-026 not yet being present) degrades the slice gracefully (REQ-RW-005 / NFR-R-4), never the
+  loop or the stream.
 - EVENT DETECTION + the graduated, apolitical, rate-limited REACTION POLICY: significance
   tiers, reaction tiers, mood adjustment, cooldowns, best-effort (Group RE). It drives
   OPS-004's existing news production + breaking-news-interrupt seam; it does NOT re-own
@@ -417,6 +460,16 @@ REFERENCES (consumes / drives; does not restate):
   era + cue points). The world model READS the queryable catalog's feature dimensions as
   the now-playing / library-stats sensor; ANALYSIS-006 owns producing them. ORCH-005
   consumes, never computes analysis.
+- **SPEC-RADIO-REFLECT-026 (forward-reference — not yet authored, not built here)** — the
+  periodic REFLECT RUN-MODE that runs off the sub-second pull path under the no-tick-crash
+  isolation rail and emits reflect-generated DIRECTOR TASKS + stagnation/coverage-gap
+  HYPOTHESES. The world model READS that output as the read-only self-reflection-results
+  sensor slice (REQ-RW-008); the planning tick consumes the tasks/hypotheses as ADVISORY
+  inputs, dispatched only through the existing REQ-RA-001 action surface bounded by REQ-OD-006.
+  REFLECT-026 OWNS the reflect run-mode, the task generation, and the hypothesis reasoning;
+  ORCH-005 OWNS only the read-only consuming sensor slice and references REFLECT-026 by id —
+  it does NOT fork, re-own, or re-specify the run-mode, and it degrades gracefully if REFLECT-026
+  is not present (REQ-RW-005 / NFR-R-4).
 - **CORE-001** — pull-based playout (`/api/next`, `Picker.pick()` → `NextItem`),
   continuous-operation failover (Group C), the scheduler/shows, the self-served website,
   config/secrets/health surface. ORCH-005 sits ABOVE playout and never re-engineers it.
@@ -519,6 +572,13 @@ Consumed ANALYSIS-006 concepts:
 - **SPEC-RADIO-SOCIAL** (autonomous Instagram + messaging) will feed social DMs/comments
   into CORE-001's listener-signals contract, which the world model already reads as a
   sensor; the social subsystem itself is out of scope here.
+- **SPEC-RADIO-REFLECT-026** (self-reflection run-mode — forward-reference, not yet authored)
+  will own a periodic reflect run-mode that emits reflect-generated director tasks +
+  stagnation/coverage-gap hypotheses (off the pull path, under the no-tick-crash rail).
+  ORCH-005 v0.7.0 adds ONLY the read-only sensor slice (REQ-RW-008) that consumes that output
+  as a VIEW over the existing ledger; REFLECT-026 owns the run-mode + hypotheses. ORCH-005
+  references it by id and degrades gracefully if REFLECT-026 is absent — the consuming sensor
+  is forward-compatible and does not hard-depend on REFLECT-026 existing. Not built here.
 
 ---
 
@@ -568,6 +628,10 @@ Consumed ANALYSIS-006 concepts:
 | **Shared-awareness thread slice** | The cross-persona-readable VIEW of running threads/themes over the OPS-004 REQ-OD-007 `active_threads` event type + the REQ-OD-008 diary — the substrate a cross-persona reference reads (and writes ONE `topic_referenced`/decision event back to). Sibling to the news ledger (RN) and listener-interaction memory (RI); same VIEW-over-one-ledger discipline, no new store. |
 | **Special-event exception** | A director-DECLARED, TIME-BOXED override (REQ-RW-007) for a themed night (Christmas / NYE / anniversary) that SANCTIONS cross-host SHARED themes the dedup normally forbids. It names the shared theme identity (REQ-OX-001 key) + the personas in scope, is recorded to the ledger, AUTO-REVERTS at window end (inherits OPS-004 REQ-OB-005 override-and-restore), relaxes ONLY the cross-host (recently-by-other) THEME distinctness for the declared theme, and NEVER relaxes recently-by-self, track/segment/news dedup (unless separately declared), or any grounding/quality/safety/apolitical rail. Bounded by OPS-004 REQ-OD-006 measured-change. Calendar/director-declared — distinct from the news significance-tier trigger (REQ-RE-002). |
 | **Persona/show lifecycle action** | The action-surface entry (REQ-RA-005, action (i) of REQ-RA-001) by which the operator retires/launches a persona or discontinues/relaunches a show. It DISPATCHES into OPS-004 Group OB's lifecycle FSM (REQ-OB-010..014) through the existing seam (REQ-RA-002), records to the ledger (REQ-RA-003), and is bounded by the OPS-004 rarity tier (REQ-OD-010) + the [HARD] always-staffed atomic invariant (REQ-OB-014). News anchor exempt by construction (PROGRAMMING-007 REQ-PI-005). ORCH-005 dispatches; OPS-004 owns the FSM. |
+| **Reflect run-mode** | The periodic SELF-REFLECTION run-mode owned by SPEC-RADIO-REFLECT-026 (a forward-reference — not yet authored, NOT built here) that runs OFF the sub-second pull path under the no-tick-crash isolation rail (NFR-R-4) and emits reflect-generated director tasks + stagnation/coverage-gap hypotheses. ORCH-005 does NOT own it; it only READS its output via the REQ-RW-008 sensor slice. |
+| **Self-reflection-results sensor slice** | The READ-ONLY world-model slice (REQ-RW-008) that consumes REFLECT-026's reflect output — reflect-generated director tasks + stagnation/coverage-gap hypotheses — as a VIEW over the existing OPS-004 REQ-OD-007 ledger (no new store). Sibling to the topic-bank + listener-response slices. [HARD] read-only and ADVISORY: it never binds airplay; the director may dispatch a reflect task only through the existing REQ-RA-001 action surface bounded by REQ-OD-006. Consumed, never recomputed; degrades gracefully if absent (REQ-RW-005). |
+| **Reflect-generated director task** | A concrete suggested action emitted by REFLECT-026's reflect run-mode (e.g. "acquire more of genre X", "rest over-aired topic Y", "bias toward more talk"). ORCH-005 reads it as an ADVISORY planning INPUT (REQ-RW-008); the director MAY dispatch it ONLY through the existing REQ-RA-001 action surface, bounded by the OPS-004 REQ-OD-006 measured-change rails — it adds NO new action kind and NO new store, and NEVER binds airplay. |
+| **Stagnation / coverage-gap hypothesis** | A diagnostic OBSERVATION emitted by REFLECT-026's reflect run-mode (e.g. "rotation has stagnated", "a genre/daypart is under-covered"). ORCH-005 reads it as an ADVISORY planning INPUT (REQ-RW-008) that INFORMS the REQ-RL-007 cross-store imbalance check — it informs reasoning, it does not command; correction still dispatches only through the existing action surface bounded by REQ-OD-006. |
 
 ---
 
@@ -594,7 +658,14 @@ Consumed ANALYSIS-006 concepts:
   own-voice cross-persona break; fresh => unconstrained), with graceful degradation — and the
   director-DECLARED, time-boxed SPECIAL-EVENT EXCEPTION (REQ-RW-007) that sanctions cross-host
   shared themes for a themed night and auto-reverts. The dedup ENFORCEMENT lint is owned by
-  PROGRAMMING-007 (REQ-PV-010 extended); ORCH-005 supplies the recently-by-other signal.
+  PROGRAMMING-007 (REQ-PV-010 extended); ORCH-005 supplies the recently-by-other signal. Plus the
+  READ-ONLY SELF-REFLECTION-RESULTS SENSOR SLICE (REQ-RW-008) — the world-model slice that consumes
+  SPEC-RADIO-REFLECT-026's reflect output (reflect-generated director tasks + stagnation/coverage-gap
+  hypotheses) as a VIEW over the existing ledger (no new store); [HARD] read-only + ADVISORY (never
+  binds airplay; reflect tasks dispatch only through the existing REQ-RA-001 action surface bounded
+  by REQ-OD-006), off the pull path, and gracefully degrading if the reflect sensor / REFLECT-026 is
+  absent (REQ-RW-005 / NFR-R-4). REFLECT-026 owns the reflect run-mode + hypotheses; ORCH-005 owns
+  only the consuming sensor.
 - **Group RE — Event Detection & Reaction Policy (Q2).** The event sensor (trusted-feed
   scan, Faroese-first, fetched/grounded); significance classification (routine/notable/
   major-breaking); the graduated, bounded reaction policy (fold / elevate / interrupt +
@@ -801,7 +872,13 @@ drift (e.g. two personas' overlap nearing the PROGRAMMING-007 REQ-PR-004 cap, a
 generator-category over-aired vs. its rotation, repetition creep across surfaces) and shall
 HONOR any active REQ-RW-007 special-event exception (drift inside a declared themed window is
 sanctioned, not corrected) — dispatching correction only through the existing action surface,
-bounded by REQ-OD-006, adding no new store or action kind.
+bounded by REQ-OD-006, adding no new store or action kind. The check shall ALSO CONSUME the
+READ-ONLY self-reflection-results sensor slice (REQ-RW-008): reflect-generated director tasks +
+stagnation/coverage-gap hypotheses are ADVISORY planning INPUTS the director WEIGHS alongside the
+imbalance signals — they NEVER bind, and any maintenance the AI chooses in response is still
+dispatched ONLY through the existing REQ-RA-001 action surface, bounded by REQ-OD-006, adding no
+new store or action kind; an absent/errored reflect sensor (including REFLECT-026 not yet present)
+degrades that input gracefully (REQ-RW-005), never the check, the loop, or the stream.
 
 **Acceptance criteria:** see acceptance.md AC-RL-007.
 
@@ -843,6 +920,11 @@ owning subsystem (never recomputed here):
 - **Topic-bank inventory** — topic-bank theme distribution, freshness/recency, and rotation
   state drawn from OPS-004 Group OX (REQ-OX-001/005). ORCH owns this thin sensor add; OPS
   owns the store; consumed, never recomputed. (Feeds cross-store maintenance, REQ-RL-007.)
+- **Self-reflection results** — the reflect-generated director tasks + stagnation/coverage-gap
+  hypotheses drawn from SPEC-RADIO-REFLECT-026's reflect run-mode (REQ-RW-008), as READ-ONLY,
+  ADVISORY planning context only (NEVER a binding command on airplay); consumed from the
+  REFLECT-026 output view, never recomputed; absent/errored degrades the slice gracefully
+  (REQ-RW-005). (Feeds cross-store maintenance, REQ-RL-007.)
 - **News / event feed state** — the current event picture from the event sensor (Group RE).
 - **Schedule / show context** — the active/upcoming shows, segments, and special windows
   (CORE-001 scheduler + OPS-004 Groups OA/OB).
@@ -965,6 +1047,36 @@ trigger is calendar / director-declared (rides the REQ-RW-002 season/holiday + s
 sensors) — distinct from the news significance-tier trigger (REQ-RE-002).
 
 **Acceptance criteria:** see acceptance.md AC-RW-007.
+
+### REQ-RW-008 — Read-only self-reflection-results sensor slice, advisory and never binding (Ubiquitous) [HARD]
+
+The world model shall aggregate a READ-ONLY SELF-REFLECTION-RESULTS sensor slice that consumes the
+output of SPEC-RADIO-REFLECT-026's reflect run-mode — (a) reflect-generated DIRECTOR TASKS (concrete
+suggested actions) and (b) stagnation / coverage-gap HYPOTHESES (diagnostic observations) — and
+makes them available to the program director and the cross-store maintenance check (REQ-RL-007) as
+situational planning INPUTS. [HARD] The slice is READ-ONLY: SPEC-RADIO-REFLECT-026 OWNS the reflect
+run-mode, the task generation, and the hypothesis reasoning; ORCH-005 only READS that output, as a
+VIEW over the EXISTING OPS-004 REQ-OD-007 ledger substrate (a sibling to the topic-bank and
+listener-response slices) — it computes nothing new and FORKS NO STORE. [HARD] The reflect output is
+ADVISORY and NEVER BINDING: a reflect-generated task is a planning input the director MAY act on
+ONLY by dispatching it through the EXISTING REQ-RA-001 action surface, bounded by the OPS-004
+REQ-OD-006 measured-change rails — it adds NO new action kind, NO new store, and shall NEVER bind or
+force airplay (the same not-a-jukebox / weak-input discipline ORCH-005 already applies to listener
+signals via REQ-RI-004 and to imbalance signals via REQ-RL-007); a stagnation/coverage-gap
+hypothesis INFORMS the REQ-RL-007 cross-store imbalance check (it shapes reasoning), it does not
+command — any correction still dispatches only through the existing action surface bounded by
+REQ-OD-006. [HARD] The reflect run-mode runs OFF the sub-second `/api/next` pull path (REFLECT-026's
+concern), and the reflect-sensor READ is an EXPENSIVE sensor refreshed on the REQ-RW-004 throttled,
+self-scheduled cadence — never on the pull path (NFR-R-2). [HARD] The read is ISOLATED under the
+no-tick-crash rail (NFR-R-4, Section 1.5): an unavailable, errored, stale, or absent reflect sensor —
+INCLUDING the case where SPEC-RADIO-REFLECT-026 is not yet present (forward-reference) — shall mark
+that slice unavailable/stale and the tick, the loop, and the stream shall continue unaffected
+(inherits REQ-RW-005 graceful degradation; the consuming sensor is forward-compatible and does NOT
+hard-depend on REFLECT-026 existing). That the slice is read-only, advisory-not-binding, off the pull
+path, and degrades gracefully are the FIXED rails; HOW the director WEIGHS the reflect tasks/hypotheses
+is its creative call.
+
+**Acceptance criteria:** see acceptance.md AC-RW-008.
 
 ---
 
@@ -1565,6 +1677,13 @@ rail, without re-architecture.
   bounded DISPATCH on a single planning tick, NOT a multi-step look-ahead programmer (that
   remains a future enhancement, Section 15); a new Group RS or a parallel maintenance
   datastore is explicitly NOT built.
+- **The REFLECT RUN-MODE itself + the reflect TASK GENERATION + the stagnation/coverage-gap
+  HYPOTHESIS reasoning** — owned by SPEC-RADIO-REFLECT-026 (a forward-reference, not yet
+  authored). REQ-RW-008 adds ONLY the READ-ONLY sensor slice that CONSUMES that output as a VIEW
+  over the existing ledger; ORCH-005 does NOT build, fork, or re-specify the reflect run-mode, and
+  reflect output is ADVISORY — it dispatches only through the existing REQ-RA-001 action surface
+  bounded by REQ-OD-006, adds NO new action kind or store, and NEVER binds airplay. A new datastore
+  for reflect results is explicitly NOT built (it is a VIEW over the OPS-004 REQ-OD-007 ledger).
 - **A full listener-analytics product** — REQ-RI-002's outcome is the AI's self-declared
   judgement; no measured analytics signal or dependency is introduced (SPEC-RADIO-ANALYTICS).
 - **The operator action surface editing source code or critical runtime config** —
@@ -1789,6 +1908,22 @@ AC-NFR-R-8.
   `story_id` collapse (REQ-RN-009) are exercised so the three default `gnews-search` entries +
   the RSS entries do not produce duplicate ledger items for one event. Amendment; confirm with
   the user.
+- **R-R-17 — Read-only reflect sensor: advisory-not-binding + forward-ref dependency on REFLECT-026
+  (Low/Medium, amendment; [HARD]).** REQ-RW-008 adds a read-only world-model slice that consumes
+  SPEC-RADIO-REFLECT-026's reflect output (director tasks + stagnation/coverage-gap hypotheses).
+  Two standing risks. (a) BINDING DRIFT: a durable, queryable reflect-results memory could drift
+  toward a binding planner that forces airplay. Mitigated by [HARD] rails — the slice is ADVISORY
+  only, reflect tasks dispatch ONLY through the existing REQ-RA-001 action surface bounded by the
+  OPS-004 REQ-OD-006 measured-change rails, they add NO new action kind / store, and they NEVER bind
+  airplay (the same weak-input discipline as REQ-RI-004 / REQ-RL-007). (b) FORWARD-REF DANGLE:
+  REFLECT-026 does not yet exist; the consuming sensor must not hard-depend on it. Mitigated by
+  graceful degradation — an absent/errored reflect sensor marks the slice unavailable/stale and the
+  tick/loop/stream continue (REQ-RW-005 / NFR-R-4), so ORCH-005 ships a forward-compatible consumer,
+  not a dangling dependency. The reflect run-mode runs off the pull path (REFLECT-026's concern) and
+  the sensor read is an expensive, throttled, off-pull-path refresh (REQ-RW-004 / NFR-R-2). Build
+  concern: confirm the REQ-RW-008 read path is isolated so a reflect-sensor error never crashes the
+  tick, and that REFLECT-026's reflect output is persisted as a VIEW over the existing ledger (no new
+  store). Amendment; confirm with the user.
 
 ---
 
@@ -1802,6 +1937,11 @@ AC-NFR-R-8.
 - **A richer deliberative planner** (multi-step look-ahead programming, e.g. planning a
   whole evening's arc) — ORCH-005's planning tick is single-cycle; a longer-horizon planner
   is a future enhancement that would consume the same world model.
+- **SPEC-RADIO-REFLECT-026** — the self-reflection run-mode that emits reflect-generated director
+  tasks + stagnation/coverage-gap hypotheses (off the pull path, under the no-tick-crash rail).
+  ORCH-005 v0.7.0 owns ONLY the read-only sensor slice (REQ-RW-008) that consumes its output as a
+  VIEW over the existing ledger; REFLECT-026 owns the run-mode + the hypotheses. The consuming
+  sensor degrades gracefully if REFLECT-026 is absent.
 - **SPEC-RADIO-ANALYTICS** — full listener analytics behind CORE-001's listener-signals
   seam; a richer listener-signal sensor for the world model.
 - **SPEC-RADIO-FINANCE** — finance / monetization (not now; zero commercial motive).
@@ -1830,6 +1970,7 @@ Section B).
 | REQ-RW-005 | World Model | High | Unwanted | AC-RW-005 |
 | REQ-RW-006 | World Model | High | Ubiquitous | AC-RW-006 |
 | REQ-RW-007 | World Model | High | Event | AC-RW-007 |
+| REQ-RW-008 | World Model | High | Ubiquitous | AC-RW-008 |
 | REQ-RE-001 | Event Detection & Reaction | High | Event/Self-scheduled | AC-RE-001 |
 | REQ-RE-002 | Event Detection & Reaction | High | Event | AC-RE-002 |
 | REQ-RE-003 | Event Detection & Reaction | High | Event | AC-RE-003 |

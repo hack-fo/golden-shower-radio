@@ -1,6 +1,6 @@
 ---
 id: SPEC-RADIO-PROGRAMMING-007
-version: 0.8.0
+version: 0.9.0
 status: draft
 created: 2026-06-22
 updated: 2026-06-23
@@ -393,6 +393,60 @@ issue_number: null
   pre-render-to-one-file never-stops posture REQ-PT-007 / NFR-P-5). SPEC-RADIO-LONGFORM-025 is REFERENCED
   by number (Group LB conceives the instances) and NOT re-owned here. Total: 78 REQ + 10 NFR = 88,
   1:1 REQ↔AC preserved.
+- 2026-06-23 (v0.9.0): PER-PERSONA DJ-CRAFT LEARNING extension -- a NEW sibling Requirement Group CL
+  (namespace CL), the SEQUENCING/SET-DESIGN analogue of the Group PL taste loop. Where Group PL learns
+  per-persona TRACK-LEVEL taste (what to play/acquire), Group CL learns per-persona DJ CRAFT (HOW to
+  SEQUENCE and THREAD a set -- adjacency, sequencing-move, set-arc, genre-bridge, energy-flow) from two
+  inputs: the multi-source HUMAN-DJ sequence clusters surfaced by the sibling SPEC-RADIO-SHOWS-020 Group
+  SK (the keyless KEXP human-DJ thread signal today, extensible to other public human-DJ session feeds),
+  and the station's OWN aired play_events sequences (STATS-013 airtime ledger / DATASTORE-022 events.db).
+  THE LOAD-BEARING DISTINCTION: a learned craft heuristic learns CRAFT/taste, NOT facts -- it NEVER
+  becomes an airable fact (KNOWLEDGE-008 REQ-KS-006 consensus stays the SOLE airable-fact seam), and the
+  human-DJ observation is PURELY research input (no source sequence is ever air-played; inherits
+  SHOWS-020 REQ-SK-003; KEXP/source track ids never enter rotation, REQ-PR-009 unaffected). THE
+  ANTI-CONVERGENCE GUARANTEE IS STRUCTURAL: every observation is REFRACTED THROUGH each persona's FROZEN
+  ANCHOR + charter + profile as the LENS (REQ-CL-003), so the 5+2 personas observing the SAME human-DJ
+  clusters DIVERGE BY CONSTRUCTION -- the same "one shared signal refracted divergently, never a
+  homogenizer" tenet SHOWS-020 REQ-SK-004 states for KEXP angles, carried to craft. The six-stage loop is
+  observe -> extract -> distill -> apply -> measure -> bounded-update. Net +7 REQ + 3 NFR: (1) REQ-CL-001
+  per-persona SEQUENCING JOURNAL (an events.db record of recent-show track sequences + transition type +
+  craft-outcome, scoped by `persona_id`, a sibling to the REQ-PL-003 acquisition diary); (2) REQ-CL-002
+  HUMAN-DJ SEQUENCE OBSERVATION (consumes the SHOWS-020 Group SK human-DJ clusters + own play_events
+  sequences and DECOMPOSES them into TYPED craft-pattern candidates -- adjacency / sequencing-move /
+  set-arc / genre-bridge / energy-flow -- structured AT OBSERVATION TIME citing exact ANALYSIS-006
+  REQ-AD-003 feature fields, never free-form retrospective narration, the documented hallucination
+  failure mode; weights per-track-sequence sources as craft fuel, show-level signals as context only);
+  (3) REQ-CL-003 SEQUENCING-HEURISTIC EXTRACTION (the LLM runs the observation THROUGH the persona
+  anchor+charter+profile as the lens, emitting per-persona CRAFT-LEARN entries with provenance +
+  confidence tier; per-persona-scoped, never global); (4) REQ-CL-004 per-persona THEME-AFFINITY (which
+  REQ-PC-006 theme TYPES each persona gravitates to; re-weights the theme generator per-persona, never
+  globally); (5) REQ-CL-005 GENRE-FIT LEARNING (which genre combinations/bridges read in-lane for this
+  persona; surfaces emerging secondary strengths; feeds the REQ-PL-004 taste-profile edges + acquisition
+  priorities; never rewrites a Group PI anchor); (6) REQ-CL-006 CRAFT-LEARNING MEASURED EVOLUTION [HARD,
+  CONSERVATIVE] -- bound to OPS-004 REQ-OD-006: a pattern must reach RULE tier (5x sightings, confidence
+  >=0.80) before any persisted-profile change; max 3 evolutions/week + 24h cooldown; a canary re-scores a
+  proposed heuristic against the last 10 sets with auto-rollback on regression; the Frozen-Guard anchor
+  check (REQ-PI-003) + the distinctness canary (REQ-PI-004) run on every proposal; and a DON'T-NARROW
+  guard rejects any heuristic that reduces a persona's exploration spread; (7) REQ-CL-007 SHOW-DESIGN
+  INTENT in acquisition -- extends the REQ-PL-008 grab-reason with "acquired for theme T / to realize
+  learned thread X", and the grab reason stays an UNVERIFIED director claim, never aired-as-fact. Plus
+  NFR-P-11 (craft-learning never blocks playout/acquisition -- a bounded background job, OPS-004
+  REQ-OH-006-throttled, graceful when sources are off); NFR-P-12 (craft-learning is MEASURED +
+  ANTI-CONVERGENCE-guarded -- no runaway, never optimizes engagement, the FROZEN anchors hold, and
+  pairwise persona separability never drops below the firewall cap REQ-PR-004); NFR-P-13 (human-DJ
+  observation is PURELY research input -- no source sequence is ever air-played, inherits REQ-SK-003;
+  craft rules are persona-generated, never source-copied; a learned craft heuristic NEVER becomes an
+  airable fact, KNOWLEDGE-008 sole fact seam). All ADDITIVE; the FROZEN invariants are inherited
+  unchanged (the anti-convergence firewall REQ-PR-004 / REQ-PR-009, the per-persona anchor freeze
+  REQ-PI-001/002, the grounding / fact-contract REQ-PG-001/002, the sole-airable-fact-seam KNOWLEDGE-008
+  REQ-KS-006). REFERENCES, never re-owns: SHOWS-020 Group SK (REQ-SK-001..004), STATS-013 play_events +
+  DATASTORE-022 events.db, ANALYSIS-006 REQ-AD-003, OPS-004 REQ-OD-006 / REQ-OD-007/008 / REQ-OH-006,
+  and PROGRAMMING REQ-PC-006 / REQ-PL-004/008 / REQ-PI-003/004 / REQ-PR-004. Also added: a CROSS-REFERENCE
+  NOTE (no new REQ, no fork) that the observation->heuristic->rule->graduated tier ladder + supersession +
+  anti-pattern pattern is REUSED by the future SPEC-RADIO-REFLECT-026 Group RV, and the REQ-PL-008
+  grab-reason-is-an-unverified-claim rule is GENERALIZED by REFLECT-026 Group RH into a station-wide
+  hypothesis discipline; the Group PI persona FROZEN ANCHORS remain OWNED here -- reflection MAY AUDIT
+  anchor drift but MUST NOT write anchors. Total: 85 REQ + 13 NFR = 98, 1:1 REQ↔AC preserved.
 
 ---
 
@@ -834,7 +888,27 @@ Consumed KNOWLEDGE-008 concepts (added v0.3.0, by concept — sibling SPEC):
   (REQ-PG-002) and the adversarial self-check (REQ-PG-005 Tier-2) enforce that every spoken
   factual claim traces to a context fact with a source.
 
-### Downstream / sibling SPECs (forward references, not built here)
+Consumed SHOWS-020 concepts (added v0.9.0 for Group CL, by number -- sibling SPEC):
+- **Group SK -- the HUMAN-DJ THREAD SIGNAL** (REQ-SK-001..004 -- the keyless, OFF-by-default
+  `brain/kexp.py` that assembles short back-to-back human-DJ track CLUSTERS from one show/host
+  session and hands each to the LLM as a THREAD HYPOTHESIS). Group CL's human-DJ sequence
+  observation (REQ-CL-002) CONSUMES these clusters as the multi-source CRAFT FUEL it decomposes
+  into typed craft-pattern candidates. SHOWS-020 owns the source clients + the cluster assembly;
+  PROGRAMMING owns the per-persona craft EXTRACTION over them.
+- **REQ-SK-003 (research-lead-never-aired-raw / KNOWLEDGE-008 sole airable-fact seam) +
+  REQ-SK-004 (one shared signal refracted divergently, never a homogenizer)**. Group CL INHERITS
+  both by number: no human-DJ source SEQUENCE is ever air-played (NFR-P-13), source track ids
+  never enter rotation (REQ-PR-009 unaffected), and the SAME clusters refracted through each
+  persona's frozen anchor DIVERGE by construction (REQ-CL-003). PROGRAMMING does not re-own the
+  signal; it extends its use from a single-angle hint to a per-persona craft observation.
+
+Consumed STATS-013 / DATASTORE-022 concepts (added v0.9.0 for Group CL, by concept):
+- **The `play_events` AIRTIME LEDGER (STATS-013) persisted in the `events.db` partition
+  (DATASTORE-022)**. Group CL's sequencing journal (REQ-CL-001) is a per-persona VIEW/sibling
+  written into `events.db`; the own-aired sequence input to REQ-CL-002 READS the play_events
+  airtime record. STATS-013 owns the airtime ledger; DATASTORE-022 owns the `events.db`
+  partition + the no-cross-file-atomic-write rail; Group CL adds a per-persona craft record over
+  that substrate and does NOT add a new store (NFR-P-6 / NFR-P-11).
 
 - **SPEC-RADIO-ORCH-005** (director loop / world-model / event reaction, authored in
   parallel) drives WHEN a persona presents, WHEN a show runs, and WHEN the director
@@ -856,6 +930,25 @@ Consumed KNOWLEDGE-008 concepts (added v0.3.0, by concept — sibling SPEC):
   that EVERY long-form instance must satisfy. LONGFORM-025 conceives WHAT/WHEN a long-form episode
   is; PROGRAMMING owns HOW it is voiced, grounded, and gated. Neither redefines the other;
   PROGRAMMING references Group LB by number and does NOT re-own the conception/sourcing logic.
+- **SPEC-RADIO-REFLECT-026** (station-wide reflection / self-hypothesis discipline, forward
+  reference added v0.9.0 -- not yet authored) GENERALIZES two patterns this SPEC already owns,
+  by REFERENCE only (no new REQ here, no fork):
+  - **The learning tier ladder.** The observation -> heuristic -> rule -> graduated tier ladder,
+    plus supersession and anti-pattern handling -- the pattern the Group CL craft loop (REQ-CL-006)
+    and the Group PL/PV taste + continual-improvement loops already use (lifted from the
+    design-constitution learnings pipeline) -- is REUSED station-wide by REFLECT-026 Group RV.
+    PROGRAMMING owns the per-persona craft/taste application of the ladder; REFLECT-026 owns the
+    station-wide reflection layer. Neither redefines the other.
+  - **Hypothesis discipline.** The REQ-PL-008 rule that a director's grab reason (and, via
+    REQ-CL-007, its show-design intent) is an UNVERIFIED CLAIM never aired-as-fact is GENERALIZED
+    by REFLECT-026 Group RH into a station-wide hypothesis discipline (every self-generated
+    rationale is a hypothesis, never a fact, until it traces to the KNOWLEDGE-008 REQ-KS-006
+    consensus seam). PROGRAMMING owns the acquisition-side instance; REFLECT-026 owns the
+    station-wide generalization.
+  - **Anchors stay owned here.** The Group PI per-persona FROZEN ANCHORS remain OWNED by this SPEC;
+    REFLECT-026 reflection MAY AUDIT anchor drift (the cross-episode audit REQ-PI-006 is the kind
+    of check it composes with) but MUST NOT WRITE anchors -- anchors are human-only / out-of-band
+    (REQ-PI-002/003). Reflection observes and proposes; only a human edits an anchor.
 
 ---
 
@@ -915,7 +1008,7 @@ Consumed KNOWLEDGE-008 concepts (added v0.3.0, by concept — sibling SPEC):
 | **Verbal-tic bank** | (v0.4.0) A persona's 3-5 SIGNATURE warmth-transition habits (e.g. "Funny thing is", "What gets me"), unique to that persona and DISJOINT from every other persona's bank (no shared cross-persona filler set). Stored on the voice card, used SPARINGLY (≤1 per break, never the same tic two breaks running), and a top anti-convergence lever (REQ-PV-006/009/010, anti-convergence REQ-PR-004). |
 | **Filler-as-crutch** | (v0.4.0) The banned failure mode of over-using a warmth-transition — exceeding the frequency cap (≤1 per break) or repeating the same tic two breaks running. Caught by the Tier-1 distinctness/crutch lint (REQ-PV-006/010). |
 | **Continual-improvement loop** | (v0.4.0) A BOUNDED, MEASURED self-refinement of the station's PROMPTS / RULES / per-persona VOICE CARDS / craft playbook in the OPS-004 store (observation→heuristic→rule→graduated), driven by the per-break quality-gate signal and the cross-session ledger/diary. It is iterative refinement, NOT model fine-tuning (no training path). Bounded by the OPS-004 measured-self-change rails (rate limit + canary + contradiction detection, REQ-OD-006); never self-imitates (REQ-OC-006); never optimizes appeal; never evolves the FROZEN invariant set (REQ-PV-011, NFR-P-9). |
-| **FROZEN invariant set** | (v0.4.0; extended v0.5.0) The rules the continual-improvement loop may NEVER evolve away: never-ship-a-FAIL (REQ-PG-005), grounding / fact-contract (REQ-PG-001/002 + KNOWLEDGE-008), anti-convergence firewall (REQ-PR-004), banned-phrase firewall (REQ-PC-004/REQ-PV-006), fictional-persona ethics + disclaimers (REQ-PT-005/006), no-self-imitation (REQ-OC-006), the host caps (REQ-PR-002), and (added v0.5.0) the per-persona ANCHOR BLOCK (REQ-PI-001/002). The EVOLVABLE counterpart is voice-card tic banks (within distinctness rails), energy-band phrasings, register colour (incl. bluntness/humour/self-disclosure tone), profanity/humour/self-disclosure card fields (within disjointness rails), surface tastes, tunable word/length targets, the say-category rotation set, and daypart preset wording (REQ-PV-011, REQ-PI-001). |
+| **FROZEN invariant set** | (v0.4.0; extended v0.5.0, v0.9.0) The rules the continual-improvement loop may NEVER evolve away: never-ship-a-FAIL (REQ-PG-005), grounding / fact-contract (REQ-PG-001/002 + KNOWLEDGE-008), anti-convergence firewall (REQ-PR-004), banned-phrase firewall (REQ-PC-004/REQ-PV-006), fictional-persona ethics + disclaimers (REQ-PT-005/006), no-self-imitation (REQ-OC-006), the host caps (REQ-PR-002), the per-persona ANCHOR BLOCK (REQ-PI-001/002), and (added v0.9.0) the craft-learning honesty rails (a learned craft heuristic NEVER becomes an airable fact, no human-DJ source sequence is ever air-played, REQ-CL-003 / NFR-P-13). The EVOLVABLE counterpart is voice-card tic banks (within distinctness rails), energy-band phrasings, register colour (incl. bluntness/humour/self-disclosure tone), profanity/humour/self-disclosure card fields (within disjointness rails), surface tastes, tunable word/length targets, the say-category rotation set, daypart preset wording, and (added v0.9.0) the per-persona craft profile -- theme-affinity weights, in-lane genre-fit edges, and sequencing heuristics -- which evolve ONLY within the conservative measured craft loop (RULE-tier-gated + canary + DON'T-NARROW guard, REQ-CL-006), never touching an anchor (REQ-PV-011, REQ-PI-001, REQ-CL-006). |
 | **Blunt-praise license** | (v0.5.0) The deterministic positive complement to the slop firewall: a praise/reaction line PASSES only if it is BOTH (a) FIRST-PERSON/OWNED (a real host reaction — "I", "that", "this one" — not a disembodied verdict) AND (b) SPECIFIC (points at one concrete locatable thing — an audible element, a grounded fact, or a true persona self-reaction). It FAILS if it uses borrowed critic/PR vocabulary floating free of any locatable thing. "This fucking rules — wait for the drum fill at 90 seconds" PASSES; "a captivating sonic journey" FAILS. Heat/bluntness/profanity are licensed in DELIVERY, never as a fact. Enforced by a Tier-1 lint check (REQ-PV-012/016). |
 | **profanity_tier** | (v0.5.0) A per-persona voice-card field {none|mild|salty} (mild ≈ damn/bloody/crap/hell; salty ≈ includes shit/fuck as genuine emphasis, Ofcom severity model). The card tier is a CEILING the DAYPART gradient only lowers (morning none → midday mild ceiling → afternoon/evening card tier → overnight freest). Per-persona so personas DIVERGE; no quota; never aimed at a person; slur-banned at Tier-1. Profanity is delivery colour on an owned+specific reaction, never on an ungrounded fact or a banned cliché (REQ-PV-013). |
 | **humour_mode** | (v0.5.0) A per-persona voice-card field {dry|warm|deadpan|none}. Humour is DELIVERY — timing, understatement, a dry aside about the AUDIBLE track or the live moment — never a joke-of-the-day quota and never an invented anecdote-as-fact (preserves REQ-PG-002). Forced/jokey enthusiasm stays banned (REQ-PV-006). Disjoint enough across personas to distinguish (REQ-PV-013). |
@@ -1023,6 +1116,33 @@ Consumed KNOWLEDGE-008 concepts (added v0.3.0, by concept — sibling SPEC):
   re-owns — the design-system FROZEN/EVOLVABLE split + safety layers, OPS-004 OD-006 / OG /
   REQ-OF-004, ORCH-005 RN, the anti-convergence firewall (REQ-PR-004), and the quality gate
   (REQ-PG-005).
+- **Group CL — Per-Persona DJ-Craft Learning** (added v0.9.0). The SEQUENCING/SET-DESIGN analogue
+  of the Group PL taste loop: where PL learns per-persona TRACK-LEVEL taste, CL learns per-persona
+  DJ CRAFT (HOW to sequence and thread a set). A per-persona SEQUENCING JOURNAL (an `events.db`
+  record of recent-show track sequences + transition type + craft-outcome, scoped by `persona_id`,
+  a sibling to the REQ-PL-003 acquisition diary, REQ-CL-001); a HUMAN-DJ SEQUENCE OBSERVATION that
+  consumes the SHOWS-020 Group SK human-DJ clusters + the station's own aired `play_events`
+  sequences and DECOMPOSES them into TYPED craft-pattern candidates (adjacency / sequencing-move /
+  set-arc / genre-bridge / energy-flow), structured at observation time citing exact ANALYSIS-006
+  feature fields, weighting per-track-sequence sources as craft fuel and show-level signals as
+  context only (REQ-CL-002); a SEQUENCING-HEURISTIC EXTRACTION that runs the observation THROUGH
+  each persona's FROZEN ANCHOR + charter + profile as the lens, emitting per-persona CRAFT-LEARN
+  entries with provenance + confidence tier, per-persona-scoped never global (REQ-CL-003); a
+  per-persona THEME-AFFINITY that re-weights which REQ-PC-006 theme TYPES a persona gravitates to,
+  per-persona never globally (REQ-CL-004); a GENRE-FIT learning that surfaces which genre
+  combinations/bridges read in-lane for a persona + emerging secondary strengths, feeding the
+  REQ-PL-004 taste-profile edges + acquisition priorities, never rewriting a Group PI anchor
+  (REQ-CL-005); a CONSERVATIVE MEASURED EVOLUTION bound to OPS-004 REQ-OD-006 (RULE-tier-gated,
+  rate-limited, canary-re-scored with auto-rollback, Frozen-Guard + distinctness-canary checked,
+  and a DON'T-NARROW guard, REQ-CL-006); and a SHOW-DESIGN INTENT extension of the REQ-PL-008
+  grab-reason ("acquired for theme T / to realize learned thread X", still an unverified claim
+  never aired-as-fact, REQ-CL-007). The six-stage loop is observe -> extract -> distill -> apply ->
+  measure -> bounded-update; it learns CRAFT/taste NOT facts, the human-DJ observation is PURELY
+  research input (no source sequence ever air-played, inherits REQ-SK-003), and a learned craft
+  heuristic NEVER becomes an airable fact (KNOWLEDGE-008 REQ-KS-006 sole fact seam). REFERENCES —
+  never re-owns — SHOWS-020 Group SK, STATS-013 `play_events` / DATASTORE-022 `events.db`,
+  ANALYSIS-006 REQ-AD-003, OPS-004 REQ-OD-006 / OD-007/008 / OH-006, and PROGRAMMING
+  PC-006 / PL-004/008 / PI-003/004 / PR-004.
 - Plus **NFRs** (Section 11) and **Risks** (Section 12).
 
 ### 4.2 Out of scope (explicitly deferred / owned elsewhere)
@@ -2705,6 +2825,162 @@ records it (REQ-OD-007/008, referenced not re-owned).
 
 ---
 
+## 9e. Requirement Group CL — Per-Persona DJ-Craft Learning
+
+> Added v0.9.0. Group CL is the SEQUENCING / SET-DESIGN analogue of the Group PL taste loop: where
+> Group PL learns per-persona TRACK-LEVEL taste (what to play / acquire), Group CL learns per-persona
+> DJ CRAFT (HOW to sequence and thread a set). It runs a six-stage loop -- **observe -> extract ->
+> distill -> apply -> measure -> bounded-update** -- over two inputs (the multi-source human-DJ
+> sequence clusters surfaced by SPEC-RADIO-SHOWS-020 Group SK + the station's own aired `play_events`
+> sequences) and emits PER-PERSONA craft learnings. Three rails are inviolable and inherited, not
+> re-owned: (1) it learns **CRAFT / taste, NOT facts** -- a learned craft heuristic NEVER becomes an
+> airable fact (KNOWLEDGE-008 REQ-KS-006 consensus is the SOLE airable-fact seam); (2) the human-DJ
+> observation is **PURELY research input** -- no source sequence is ever air-played (inherits SHOWS-020
+> REQ-SK-003), source track ids never enter rotation (REQ-PR-009 unaffected); (3) every observation is
+> **REFRACTED THROUGH each persona's FROZEN ANCHOR** + charter + profile as the lens (REQ-CL-003), so
+> the 5+2 personas observing the SAME clusters DIVERGE BY CONSTRUCTION (the "one shared signal refracted
+> divergently, never a homogenizer" tenet of SHOWS-020 REQ-SK-004, carried to craft). Group CL adds NO
+> new store: the journal is a per-persona VIEW over the OPS-004 ledger/diary substrate (REQ-OD-007/008)
+> persisted in the DATASTORE-022 `events.db` partition.
+
+### REQ-CL-001 -- Per-persona sequencing journal: recent-show sequences + transition type + craft-outcome (Event-driven) [HARD]
+
+When a show airs (a recent-show track sequence completes), the system shall write a per-persona
+SEQUENCING JOURNAL entry capturing, for that persona's session, the ordered TRACK SEQUENCE actually
+aired, the TRANSITION TYPE between adjacent tracks (e.g. harmonic blend / energy lift / hard cut /
+genre-bridge, derived from the ANALYSIS-006 transition metadata REQ-AT-001/002/005 + features
+REQ-AD-003), and the observed CRAFT-OUTCOME signal for the sequence (the REQ-PL-005 taste signals at
+sequence granularity -- play-through vs early-skip/replace across the run, recency). [HARD] The journal
+is SCOPED BY `persona_id` (one journal stream per persona, no global single craft model -- the same
+per-persona discipline the REQ-PL-004 taste profile enforces), is a SIBLING to the REQ-PL-003
+acquisition diary, and is a curation-specific VIEW written into the OPS-004 ledger/diary substrate
+(REQ-OD-007/008) persisted in the DATASTORE-022 `events.db` partition -- it does NOT add a new store.
+The journal READS the STATS-013 `play_events` airtime record for the own-aired sequence; STATS-013 owns
+the airtime ledger, DATASTORE-022 owns the partition, Group CL owns the per-persona craft record over
+them. The journal CONTENT is the AI's; that a per-persona per-session sequencing record is written is
+the fixed rail.
+
+**Acceptance criteria:** see acceptance.md AC-CL-001.
+
+### REQ-CL-002 -- Human-DJ sequence observation: decompose into typed craft-pattern candidates (Event-driven) [HARD]
+
+When human-DJ sequence material is available -- the multi-source human-DJ CLUSTERS surfaced by the
+sibling SPEC-RADIO-SHOWS-020 Group SK (the keyless KEXP human-DJ thread signal REQ-SK-001..002 today,
+extensible to other public human-DJ session feeds) AND the station's OWN aired `play_events` sequences
+(REQ-CL-001 journal / STATS-013) -- the system shall DECOMPOSE the observed sequences into TYPED
+CRAFT-PATTERN CANDIDATES drawn from a fixed taxonomy: **adjacency** (which track pairs sit well
+back-to-back), **sequencing-move** (a named transition tactic, e.g. lift / cool-down / palette-shift),
+**set-arc** (the energy/mood shape across a run), **genre-bridge** (how two genres are joined), and
+**energy-flow** (the tempo/energy trajectory). [HARD] Each candidate is STRUCTURED AT OBSERVATION TIME
+and CITES the exact ANALYSIS-006 REQ-AD-003 feature fields it is derived from (bpm / energy / camelot /
+genre / sub_genre / danceability / era), NOT a free-form retrospective narration of "why this worked"
+(retrospective confabulation is the documented hallucination failure mode, the same one REQ-PL-008 bars
+for grab reasons). The observation WEIGHTS per-track-SEQUENCE sources as primary CRAFT FUEL (the
+ordered adjacency is the signal) and show-level signals (a host name, a program theme) as CONTEXT ONLY,
+never as a craft pattern on their own. [HARD] No human-DJ source SEQUENCE is air-played and no source
+track id enters rotation (inherits SHOWS-020 REQ-SK-003; REQ-PR-009 unaffected) -- the clusters are
+research input that seeds candidate craft patterns, never a playlist to copy (NFR-P-13). The candidate
+taxonomy is fixed; the candidates themselves are the AI's.
+
+**Acceptance criteria:** see acceptance.md AC-CL-002.
+
+### REQ-CL-003 -- Sequencing-heuristic extraction through the persona anchor lens (Event-driven) [HARD]
+
+When the typed craft-pattern candidates (REQ-CL-002) are distilled into learnings, the system shall run
+the extraction THROUGH each persona's FROZEN ANCHOR + taste charter + evolving taste profile AS THE
+LENS -- the candidate is interpreted, accepted, reshaped, or rejected according to WHO the persona is
+(the REQ-PI-001 anchor block, the REQ-PR-006 charter, the REQ-PL-004 profile) -- and emit per-persona
+CRAFT-LEARN entries, each carrying PROVENANCE (which observation/source it came from) and a CONFIDENCE
+TIER (the observation -> heuristic -> rule -> graduated ladder, REQ-CL-006). [HARD] The extraction is
+PER-PERSONA-SCOPED, NEVER GLOBAL: the SAME human-DJ cluster handed to five personas yields up to five
+DIFFERENT craft-learn entries (or none), because each persona's anchor refracts it differently -- this
+is the STRUCTURAL anti-convergence guarantee (the "one shared signal refracted divergently, never a
+homogenizer" tenet, SHOWS-020 REQ-SK-004; firewall REQ-PR-004 / REQ-PR-009). [HARD] The extraction
+READS the anchor as a lens and NEVER WRITES it (anchors are human-only / out-of-band, REQ-PI-002/003);
+a craft-learn entry that would require changing an anchor is rejected at intake by the Frozen Guard
+(REQ-PI-003, enforced in REQ-CL-006). The entry CONTENT is the AI's; that extraction is anchor-lensed +
+per-persona + anchor-read-only is the fixed rail.
+
+**Acceptance criteria:** see acceptance.md AC-CL-003.
+
+### REQ-CL-004 -- Per-persona theme-affinity: re-weight the theme generator, never globally (State-driven) [HARD]
+
+While the station runs, the system shall maintain a per-persona THEME-AFFINITY learned from the craft
+journal + the craft-learn entries -- which REQ-PC-006 theme TYPES (the rotating theme-generator
+categories) each persona gravitates to and executes well -- and RE-WEIGHT that persona's theme
+generator accordingly. [HARD] The re-weight is PER-PERSONA, NEVER GLOBAL: it biases which themes a given
+persona reaches for, and it MUST NOT collapse the cross-persona theme spread (the anti-convergence
+firewall REQ-PR-004 still holds -- two personas drifting toward the SAME theme territory is a
+distinctness-canary FAIL, REQ-PI-004 / REQ-CL-006). The affinity is a soft BIAS on theme selection,
+never a hard lock, and it never overrides the REQ-PC-006 rotation or the REQ-PC-007
+never-the-same-category-twice rule. The affinity WEIGHTS are tunable, learned within the measured loop
+(REQ-CL-006); that the theme generator is re-weighted PER-PERSONA and never globally is the fixed rail.
+
+**Acceptance criteria:** see acceptance.md AC-CL-004.
+
+### REQ-CL-005 -- Genre-fit learning: in-lane bridges + emerging secondary strengths, feeding taste edges (State-driven) [HARD]
+
+While refining a persona's craft, the system shall learn that persona's GENRE-FIT -- which genre
+combinations and genre-BRIDGES read as IN-LANE for this persona (a bridge the persona can credibly make
+on air, grounded in the ANALYSIS-006 feature edges + the KNOWLEDGE-008 similar-artist graph
+REQ-KG-001/003) -- and surface EMERGING SECONDARY STRENGTHS (an adjacent territory the persona is
+repeatedly executing well). [HARD] Genre-fit learnings FEED the REQ-PL-004 taste-profile edges + the
+acquisition priorities (a confirmed in-lane bridge raises the priority of acquiring tracks that realize
+it, via REQ-CL-007 / REQ-PL-008); they NEVER REWRITE a Group PI anchor (anchors are frozen,
+REQ-PI-002/003) and never erode the anti-convergence firewall (an emerging secondary strength that would
+collide with another persona's PRIMARY territory is rejected by the distinctness canary, REQ-PI-004 /
+REQ-CL-006). Genre-fit is taste/craft, NOT fact -- an in-lane bridge is a curatorial judgment, never an
+airable claim about the music (NFR-P-13). The genre-fit edges are learned within the measured loop
+(REQ-CL-006); that they feed taste edges + acquisition priorities and never rewrite an anchor is the
+fixed rail.
+
+**Acceptance criteria:** see acceptance.md AC-CL-005.
+
+### REQ-CL-006 -- Conservative measured craft-learning evolution (State-driven) [HARD]
+
+While evolving any persisted per-persona craft profile (the theme-affinity REQ-CL-004, the genre-fit
+edges REQ-CL-005, or a sequencing heuristic REQ-CL-003), the system shall apply a CONSERVATIVE,
+measured, anti-convergence-guarded evolution bound to the OPS-004 measured-self-change framework
+(REQ-OD-006). [HARD] A craft pattern must reach **RULE TIER** -- at least **5 independent sightings**
+with confidence **>= 0.80** -- before ANY persisted-profile change is applied; below RULE tier it stays
+an observation/heuristic that may colour suggestions but never edits the profile. [HARD] The applied
+change rate is capped at **max 3 evolutions per week** with a **24-hour cooldown** between applied
+changes (no thrashing). [HARD] Before a proposed heuristic is applied, a **CANARY re-scores it against
+the last 10 sets** for that persona and **auto-rolls-back on regression** (a measurable craft/separability
+drop reverts the change and logs it). [HARD] Every proposal passes the per-persona **Frozen-Guard anchor
+check** (REQ-PI-003 -- a proposal that targets an anchor is blocked at intake before canary, logged) and
+the **distinctness canary** (REQ-PI-004 -- a proposal that drifts this persona toward another persona's
+primary territory or collides a shared field is rejected). [HARD] A **DON'T-NARROW guard** rejects any
+heuristic that would REDUCE a persona's exploration spread (craft learning must not converge a persona
+onto a narrow groove -- a heuristic whose net effect is a measurable drop in the persona's
+genre/energy/era spread fails, so the loop never over-fits a persona into a rut). The human is OUT of
+the run loop (the rails are the AI's self-imposed stability, not a human gate); the loop bounds how FAST
+craft changes, not how much the AI may LEARN, and it is NEVER engagement/appeal optimization (anti-
+pandering, inherited OPS-004 REQ-OF-004 / NFR-O-7). The rate/cooldown/tier/window values are tunable
+config; the RULE-tier gate, the rate-limit + cooldown, the canary + rollback, the Frozen-Guard +
+distinctness checks, and the DON'T-NARROW guard are the fixed rails.
+
+**Acceptance criteria:** see acceptance.md AC-CL-006.
+
+### REQ-CL-007 -- Show-design intent in acquisition: extend the grab reason, still an unverified claim (Event-driven) [HARD]
+
+When the director proposes an acquisition driven by a learned craft thread (REQ-CL-004/005), the system
+shall EXTEND the REQ-PL-008 grab-reason with the SHOW-DESIGN INTENT behind the grab -- "acquired for
+theme T" or "to realize learned thread X" -- captured as STRUCTURED at-grab-time output alongside the
+existing `{artist, title, reason}`, citing the learned theme-affinity / genre-fit edge it serves. [HARD]
+The show-design intent is part of the SAME grab reason and inherits its status UNCHANGED: it is an
+UNVERIFIED DIRECTOR CLAIM, NEVER airable-as-fact -- it shall NOT enter the closed-world fact contract
+(REQ-PG-001) as a fact, and a host shall NOT state it as a certainty on air (grounding REQ-PG-002,
+consensus KNOWLEDGE-008 REQ-KS-006). It is valuable for the diary/audit-trail (REQ-PL-003/010) and as a
+craft/taste signal (REQ-CL-001 journal); it never becomes an editorial fact about the music. This is the
+ACQUISITION-SIDE instance of the hypothesis discipline the future SPEC-RADIO-REFLECT-026 Group RH
+generalizes station-wide. The intent CONTENT is the AI's; the structured-at-grab-time form and the
+unverified-claim / never-aired-as-fact status are the fixed rails.
+
+**Acceptance criteria:** see acceptance.md AC-CL-007.
+
+---
+
 ## 10. Exclusions (What NOT to Build)
 
 [HARD] This SPEC explicitly excludes the following:
@@ -2868,6 +3144,38 @@ records it (REQ-OD-007/008, referenced not re-owned).
   cross-episode frozen-anchor audit (REQ-PI-006) reverts + logs any anchor drift episode-to-episode;
   the anchor stays human-only / out-of-band (REQ-PI-002/003). Only the evolvable layer changes between
   episodes.
+- **(Group CL, added v0.9.0) A new craft store** — the sequencing journal (REQ-CL-001) is a
+  per-persona VIEW over the OPS-004 ledger/diary substrate (REQ-OD-007/008) persisted in the
+  DATASTORE-022 `events.db` partition and READS the STATS-013 `play_events` airtime ledger; no new
+  store, no fork of the playout/acquisition pipeline (NFR-P-6 / NFR-P-11).
+- **(Group CL, added v0.9.0) Air-playing a human-DJ source sequence, or letting source track ids
+  enter rotation** — the SHOWS-020 Group SK human-DJ clusters are PURELY research input; no source
+  sequence is ever air-played and no source track id enters rotation (inherits REQ-SK-003; REQ-PR-009
+  unaffected). KEXP/source picks are never a playlist to copy (NFR-P-13).
+- **(Group CL, added v0.9.0) A learned craft heuristic becoming an airable fact** — craft learnings
+  are taste/craft judgments, never editorial facts about the music; a craft heuristic NEVER enters the
+  fact contract (REQ-PG-001) and a host never states one as a certainty (grounding REQ-PG-002,
+  KNOWLEDGE-008 REQ-KS-006 sole airable-fact seam) (NFR-P-13).
+- **(Group CL, added v0.9.0) A GLOBAL craft model, or any loop writing a persona's anchor** — craft
+  extraction is PER-PERSONA-scoped and anchor-LENSED (REQ-CL-003), never a single global craft model;
+  it READS each anchor as a lens and NEVER writes it (anchors are human-only / out-of-band,
+  REQ-PI-002/003; Frozen-Guard blocks anchor-targeting proposals at intake, REQ-PI-003 / REQ-CL-006).
+- **(Group CL, added v0.9.0) Free-form retrospective craft narration** — craft-pattern candidates are
+  STRUCTURED at observation time citing exact ANALYSIS-006 feature fields (REQ-CL-002); after-the-fact
+  "why this sequence worked" narration (the hallucination/confabulation failure mode, the same one
+  REQ-PL-008 bars) is excluded.
+- **(Group CL, added v0.9.0) Engagement/appeal optimization of craft, or narrowing a persona** — the
+  measured loop (REQ-CL-006) is anti-pandering (never optimizes plays/skips/feedback, inherited
+  REQ-OF-004 / NFR-O-7) and the DON'T-NARROW guard rejects any heuristic that reduces a persona's
+  exploration spread; craft learning never over-fits a persona into a rut or collapses cross-persona
+  distinctness (REQ-PR-004 / REQ-PI-004).
+- **(Group CL, added v0.9.0) Re-owning the human-DJ source clients, the play_events ledger, the
+  feature model, the theme generator, or the grab-reason field** — REQ-CL-001..007 own the per-persona
+  craft EXTRACTION + journal + re-weight POLICIES; SHOWS-020 Group SK owns the human-DJ source clients +
+  cluster assembly, STATS-013 owns the `play_events` ledger, DATASTORE-022 owns the `events.db`
+  partition, ANALYSIS-006 owns the features (REQ-AD-003), PROGRAMMING REQ-PC-006 owns the theme
+  generator (CL re-weights it), and ANALYSIS-006 REQ-AD-006 owns the `grab_reason` field (REQ-CL-007
+  populates the show-design intent into it via REQ-PL-008).
 
 ### NFR-P-1 — Roster plurality is measurable, not cosmetic (Ubiquitous) — Priority High
 The roster's distinctness shall be MEASURABLE: any two personas' taste charters
@@ -2979,6 +3287,48 @@ silence (inherits NFR-P-5 continuous operation). The per-break two-tier gate (RE
 still runs on every segment; this NFR adds the episode-scale guarantees ON TOP of it. Generated episode
 scripts + their gate verdicts are logged so a long-form integrity violation is detectable after the fact
 (inherits NFR-P-4 / OPS-004 NFR-O-7). See acceptance.md AC-NFR-P-10.
+
+### NFR-P-11 -- Craft-learning never blocks playout or acquisition (Ubiquitous) -- Priority High
+The Group CL DJ-craft learning shall run as a BOUNDED BACKGROUND JOB that NEVER blocks the playout pull
+path or the acquisition gate: the sequencing journal write (REQ-CL-001), the human-DJ observation +
+decomposition (REQ-CL-002), the extraction/distillation (REQ-CL-003/004/005), and the measured evolution
+(REQ-CL-006) all run off the sub-1s playout pull path (the same off-path discipline NFR-P-7 holds for the
+taste loop), throttled by the OPS-004 acquisition/background throttle (REQ-OH-006), and they ADD NO new
+store (the journal is a VIEW over the OPS-004 ledger/diary in the DATASTORE-022 `events.db` partition,
+NFR-P-6). When the human-DJ sources are OFF or unavailable (SHOWS-020 Group SK is OFF-by-default and
+keyless-but-degradable, REQ-SK-001), craft learning degrades GRACEFULLY to the own-aired `play_events`
+sequences alone and never stalls; a craft-learning failure is isolated and never silences the stream or
+blocks a grab (inherits NFR-P-5 continuous operation). See acceptance.md AC-NFR-P-11.
+
+### NFR-P-12 -- Craft-learning is measured + anti-convergence-guarded (Ubiquitous) -- Priority High
+The Group CL craft loop shall be MEASURABLY safe on three axes. (a) NO RUNAWAY: every persisted-profile
+change passes the REQ-CL-006 conservative gate -- RULE tier (>=5 sightings, conf >=0.80), max 3
+evolutions/week + 24h cooldown, a canary re-score against the last 10 sets with auto-rollback on
+regression -- bounded by the OPS-004 measured-self-change framework (REQ-OD-006), so craft never
+over-tunes. (b) NEVER OPTIMIZES ENGAGEMENT: no craft path uses an appeal/engagement/popularity metric as
+a target (anti-pandering, inherited REQ-OF-004 / NFR-O-7); craft refines genuine curatorial judgment, not
+reach. (c) FROZEN ANCHORS HOLD + SEPARABILITY NEVER DROPS: every proposal passes the per-persona Frozen
+Guard (REQ-PI-003 -- an anchor-targeting proposal is blocked at intake, logged) and the distinctness
+canary (REQ-PI-004), and a test asserts that after craft learning the PAIRWISE PERSONA SEPARABILITY (the
+candidate-pool overlap over the ANALYSIS-006 dimensions) NEVER drops below the anti-convergence firewall
+cap (REQ-PR-004 / NFR-P-1) -- shared craft fuel refracted through frozen anchors keeps the 5+2 roster
+distinct, and the DON'T-NARROW guard keeps each persona's own exploration spread from collapsing. See
+acceptance.md AC-NFR-P-12.
+
+### NFR-P-13 -- Human-DJ observation is purely research input; craft is never an airable fact (Ubiquitous) -- Priority High
+The Group CL human-DJ observation shall be PURELY a research input and craft shall NEVER become an
+airable fact, on three guarantees. (a) NO SOURCE SEQUENCE IS EVER AIR-PLAYED: the SHOWS-020 Group SK
+human-DJ clusters seed candidate craft patterns only -- no source SEQUENCE is air-played and no source
+track id enters rotation (inherits REQ-SK-003; REQ-PR-009 unaffected); the station plays only its OWN
+catalog. (b) CRAFT RULES ARE PERSONA-GENERATED, NEVER SOURCE-COPIED: a craft heuristic is the persona's
+own anchor-lensed judgment (REQ-CL-003), never a verbatim copy of a human DJ's set or a homogenizing
+global rule (the one-shared-signal-refracted-divergently tenet, SHOWS-020 REQ-SK-004). (c) A LEARNED
+CRAFT HEURISTIC NEVER BECOMES AN AIRABLE FACT: a craft/genre-fit/theme-affinity learning (and the
+REQ-CL-007 show-design intent) is a taste/craft judgment that NEVER enters the closed-world fact contract
+(REQ-PG-001) and is NEVER stated as a certainty on air (grounding REQ-PG-002); KNOWLEDGE-008 REQ-KS-006
+multi-source consensus remains the SOLE airable-fact seam. Craft-learn entries + their provenance/tier
+are logged so a violation (a source sequence aired, a craft heuristic stated as fact) is detectable after
+the fact. See acceptance.md AC-NFR-P-13.
 
 ---
 
@@ -3280,6 +3630,13 @@ Section B).
 | REQ-PI-004 | Persona Identity (Anchors) | High | State | AC-PI-004 |
 | REQ-PI-005 | Persona Identity (Anchors) | High | Ubiquitous | AC-PI-005 |
 | REQ-PI-006 | Persona Identity (Anchors) | High | State | AC-PI-006 |
+| REQ-CL-001 | Per-Persona DJ-Craft Learning | High | Event | AC-CL-001 |
+| REQ-CL-002 | Per-Persona DJ-Craft Learning | High | Event | AC-CL-002 |
+| REQ-CL-003 | Per-Persona DJ-Craft Learning | High | Event | AC-CL-003 |
+| REQ-CL-004 | Per-Persona DJ-Craft Learning | High | State | AC-CL-004 |
+| REQ-CL-005 | Per-Persona DJ-Craft Learning | High | State | AC-CL-005 |
+| REQ-CL-006 | Per-Persona DJ-Craft Learning | High | State | AC-CL-006 |
+| REQ-CL-007 | Per-Persona DJ-Craft Learning | High | Event | AC-CL-007 |
 | NFR-P-1 | Non-Functional | High | Ubiquitous | AC-NFR-P-1 |
 | NFR-P-2 | Non-Functional | High | Ubiquitous | AC-NFR-P-2 |
 | NFR-P-3 | Non-Functional | High | Ubiquitous | AC-NFR-P-3 |
@@ -3290,10 +3647,13 @@ Section B).
 | NFR-P-8 | Non-Functional | High | Ubiquitous | AC-NFR-P-8 |
 | NFR-P-9 | Non-Functional | High | Ubiquitous | AC-NFR-P-9 |
 | NFR-P-10 | Non-Functional | High | Ubiquitous | AC-NFR-P-10 |
+| NFR-P-11 | Non-Functional | High | Ubiquitous | AC-NFR-P-11 |
+| NFR-P-12 | Non-Functional | High | Ubiquitous | AC-NFR-P-12 |
+| NFR-P-13 | Non-Functional | High | Ubiquitous | AC-NFR-P-13 |
 
 ---
 
-Version: 0.8.0
+Version: 0.9.0
 Status: draft
 Last Updated: 2026-06-23
-Total: 78 REQ + 10 NFR = 88, 1:1 REQ↔AC.
+Total: 85 REQ + 13 NFR = 98, 1:1 REQ↔AC.
