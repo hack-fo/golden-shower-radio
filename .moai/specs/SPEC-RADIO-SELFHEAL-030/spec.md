@@ -6,7 +6,7 @@ created: 2026-06-23
 updated: 2026-06-23
 author: charlie
 priority: High
-issue_number: null
+issue_number: 31
 ---
 
 # SPEC-RADIO-SELFHEAL-030 — Autonomous Self-Healing Control Plane (Deterministic-First, LLM-Fallback Reasoning)
