@@ -6,7 +6,7 @@ created: 2026-06-23
 updated: 2026-06-23
 author: charlie
 priority: Low
-issue_number: null
+issue_number: 24
 ---
 
 # SPEC-RADIO-FILENAME-024 — Filename ⇄ id3 Consistency: Detect-and-Flag (default) + Optional Gated Rename

@@ -6,7 +6,7 @@ created: 2026-06-23
 updated: 2026-06-23
 author: charlie
 priority: Medium
-issue_number: null
+issue_number: 19
 ---
 
 # SPEC-RADIO-ACQQUEUE-019 — slskd Low-Queue Source Preference for Music Acquisition

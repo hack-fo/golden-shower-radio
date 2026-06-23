@@ -6,7 +6,7 @@ created: 2026-06-23
 updated: 2026-06-23
 author: charlie
 priority: Medium
-issue_number: null
+issue_number: 23
 ---
 
 # SPEC-RADIO-LOOKUPLOG-023 — Identification-Lookup Ledger (External Lookup Audit Trail + Query-Dedup Cache)

@@ -6,7 +6,7 @@ created: 2026-06-22
 updated: 2026-06-23
 author: charlie
 priority: High
-issue_number: null
+issue_number: 6
 ---
 
 # SPEC-RADIO-ANALYSIS-006 — Track Intelligence (Audio-Analysis Substrate)

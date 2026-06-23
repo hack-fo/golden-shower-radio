@@ -6,7 +6,7 @@ created: 2026-06-23
 updated: 2026-06-23
 author: charlie
 priority: Medium
-issue_number: null
+issue_number: 15
 ---
 
 # SPEC-RADIO-LIKE-015 — Listener Like (Heart) + Implicit Drop-off Negative Signal

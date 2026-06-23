@@ -6,7 +6,7 @@ created: 2026-06-22
 updated: 2026-06-23
 author: charlie
 priority: High
-issue_number: null
+issue_number: 2
 ---
 
 # SPEC-RADIO-VOICE-002 — On-Air Host Speech (TTS Voice Layer)

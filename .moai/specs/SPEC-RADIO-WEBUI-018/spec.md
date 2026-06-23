@@ -6,7 +6,7 @@ created: 2026-06-23
 updated: 2026-06-23
 author: charlie
 priority: Medium
-issue_number: null
+issue_number: 18
 ---
 
 # SPEC-RADIO-WEBUI-018 — 2026 Website Redesign + Durable Last-Played Ring

@@ -6,7 +6,7 @@ created: 2026-06-22
 updated: 2026-06-23
 author: charlie
 priority: High
-issue_number: null
+issue_number: 1
 ---
 
 # SPEC-RADIO-CORE-001 — Autonomous AI Radio Station (v1 Core Engine)

@@ -6,7 +6,7 @@ created: 2026-06-23
 updated: 2026-06-23
 author: charlie
 priority: Medium
-issue_number: null
+issue_number: 11
 ---
 
 # SPEC-RADIO-REQUEST-011 — Listener Song Requests + Acquisition Growth Surface

@@ -6,7 +6,7 @@ created: 2026-06-22
 updated: 2026-06-23
 author: charlie
 priority: High
-issue_number: null
+issue_number: 3
 ---
 
 # SPEC-RADIO-CALLIN-003 — Live Listener Interaction (Phone Call-In, On-Air Conduct, Moderation/Dump, Social Feeds, Interaction Windows)

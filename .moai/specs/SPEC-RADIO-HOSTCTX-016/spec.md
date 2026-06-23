@@ -6,7 +6,7 @@ created: 2026-06-23
 updated: 2026-06-23
 author: charlie
 priority: Medium
-issue_number: null
+issue_number: 16
 ---
 
 # SPEC-RADIO-HOSTCTX-016 — Richer Host Talk: Year, Album & Grounded Curiosa

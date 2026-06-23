@@ -6,7 +6,7 @@ created: 2026-06-23
 updated: 2026-06-23
 author: charlie
 priority: High
-issue_number: null
+issue_number: 17
 ---
 
 # SPEC-RADIO-MBMIRROR-017 — MusicBrainz Metadata Access (Public API + Persistent Local Cache; Self-Hosted Mirror as Optional Future Upgrade) + Discogs/Last.fm Cross-Check

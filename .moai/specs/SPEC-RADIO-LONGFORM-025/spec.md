@@ -6,7 +6,7 @@ created: 2026-06-23
 updated: 2026-06-23
 author: charlie
 priority: Medium
-issue_number: null
+issue_number: 25
 ---
 
 # SPEC-RADIO-LONGFORM-025 — Autonomous Long-Form In-Depth Music-Documentary Episode Engine

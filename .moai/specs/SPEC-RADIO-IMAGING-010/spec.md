@@ -6,7 +6,7 @@ created: 2026-06-22
 updated: 2026-06-23
 author: charlie
 priority: High
-issue_number: null
+issue_number: 10
 ---
 
 # SPEC-RADIO-IMAGING-010 — Station/Show Imaging Production (Local-Primary Autonomous Generation, Autonomous Post-Production, Hosted Breaks)

@@ -6,7 +6,7 @@ created: 2026-06-22
 updated: 2026-06-23
 author: charlie
 priority: High
-issue_number: null
+issue_number: 5
 ---
 
 # SPEC-RADIO-ORCH-005 — Orchestration & Awareness (the station's nervous system)

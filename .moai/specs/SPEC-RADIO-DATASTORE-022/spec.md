@@ -6,7 +6,7 @@ created: 2026-06-23
 updated: 2026-06-23
 author: charlie
 priority: High
-issue_number: null
+issue_number: 22
 ---
 
 # SPEC-RADIO-DATASTORE-022 — Brain Data-Layer Consolidation: JSON Flat-Files → Partitioned SQLite (WAL)

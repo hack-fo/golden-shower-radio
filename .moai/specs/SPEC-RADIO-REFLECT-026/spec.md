@@ -6,7 +6,7 @@ created: 2026-06-23
 updated: 2026-06-23
 author: charlie
 priority: Medium
-issue_number: null
+issue_number: 26
 ---
 
 # SPEC-RADIO-REFLECT-026 — Station Self-Model: Hypothesis Memory, Knowledge Evolution & Periodic Self-Reflection
