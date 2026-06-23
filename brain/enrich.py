@@ -863,7 +863,36 @@ class EnrichmentWorker:
         # CAA/embed failure here NEVER fails the enrichment or stalls the worker; it degrades
         # to "no art" and stamps the independent art skip-marker so the backfill moves on.
         self._embed_art(key)
+        # TAGSTREAM-009 Group TW (REQ-TW-008): AFTER identification + the core-tag write + the
+        # cover embed, write the ANALYSIS-006 audio FEATURES (bpm/key/camelot/energy) into the
+        # file as standard feature tags. Rides this same enrich_one pass (backfill + on-download),
+        # never re-runs identification or the art fetch, never stands up a second worker. Fully
+        # exception-isolated (NFR-T-3): a tag-write failure NEVER fails the enrichment or stalls
+        # the worker; it degrades to "no feature tags" and stamps the independent skip-marker.
+        self._write_feature_tags(key)
         return bool(changes)
+
+    def _write_feature_tags(self, key: str) -> None:
+        """TAGSTREAM-009: write the audio-feature tags for ``key``, then stamp tagstream_version.
+
+        Re-snapshots the track (set_core_tags above may have just stamped its fields), runs the
+        feature-tag step when due (skip-marker / force-refresh, REQ-TW-006), and persists the
+        INDEPENDENT ``tagstream_version`` marker so the backfill does not re-tag it. Best-effort
+        + fully isolated: never raises, never blocks the pull (NFR-T-1/3).
+        """
+        try:
+            from . import tagstream  # noqa: PLC0415 - lazy: the feature-tag layer is additive
+            track = self._get_track_copy(key)
+            if track is None or not tagstream.should_run_for(track, self.cfg):
+                return
+            tagstream.write_feature_tags_for_track(track, self.cfg)
+            # Stamp the marker whether tags were written OR the write was a confirmed no-op (no
+            # features yet / gate off), so the backfill skips this track next pass (unless
+            # force-refresh). Independent of enrich_version / art_version.
+            self.library.set_core_tags(
+                key, {"tagstream_version": tagstream.TAGSTREAM_SCHEMA_VERSION})
+        except Exception as exc:  # noqa: BLE001 - the feature-tag step is best-effort + isolated
+            log_event(log, "enrich.tagstream_error", key=key, error=str(exc))
 
     def _embed_art(self, key: str) -> None:
         """ALBUMART-021: fetch + embed the front cover for ``key``, then stamp art_version.

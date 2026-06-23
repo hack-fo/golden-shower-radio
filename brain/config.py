@@ -216,6 +216,18 @@ class Config:
     # preserve-everything-else discipline; it overrides ONLY the skip, never the safety.
     albumart_force_refresh: bool = field(default_factory=lambda: _env("BRAIN_ALBUMART_FORCE_REFRESH", "0") not in ("0", "false", "no"))
 
+    # --- TAGSTREAM-009 Group TW: write ANALYSIS-006 audio FEATURES as file TAGS ---
+    # Whether the feature-tag write step (TBPM/TKEY/TXXX:EnergyLevel/TXXX:CAMELOT for mp3;
+    # BPM/INITIALKEY/ENERGYLEVEL/CAMELOT for flac) runs at the end of enrich_one. The ACTUAL
+    # file mutation still obeys the SHARED ``enrich_write_files`` gate — this toggle only
+    # controls whether the step runs at all (REQ-TW-003/004). The KEY/CAMELOT are additionally
+    # gated by ``analysis_key_conf_threshold`` (REQ-TW-005, reused — no new threshold).
+    tagstream_enabled: bool = field(default_factory=lambda: _env("BRAIN_TAGSTREAM_ENABLED", "1") not in ("0", "false", "no"))
+    # FORCE-REFRESH toggle (REQ-TW-006). When True, OVERRIDES the idempotent skip-marker so a
+    # track is re-tagged even when its ``tagstream_version`` is already current. Still obeys
+    # the write-files gate + the preserve-everything-else discipline.
+    tagstream_force_refresh: bool = field(default_factory=lambda: _env("BRAIN_TAGSTREAM_FORCE_REFRESH", "0") not in ("0", "false", "no"))
+
     # --- ANALYSIS-006: library watch / auto-ingest (REQ-AP-007) ---
     watch_enabled: bool = field(default_factory=lambda: _env("BRAIN_WATCH_ENABLED", "1") not in ("0", "false", "no"))
     # Interval (seconds) for the periodic METADATA-ONLY (os.scandir+stat) scan that

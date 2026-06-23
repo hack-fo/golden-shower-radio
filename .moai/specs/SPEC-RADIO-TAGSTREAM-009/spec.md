@@ -58,6 +58,37 @@ issue_number: 9
   REQ-OA-011's shared-client behavior. Net: 0 REQ/NFR change — counts stay 20 REQ + 7 NFR = 27,
   1:1 REQ↔AC preserved.
 
+- 2026-06-23 (DDD implementation slice, additive — 0 REQ/NFR change): Built the two genuine
+  Group-TW + REQ-TX-003 gaps the predecessor chain left open, reusing (not forking) the
+  ENRICH-012 / ALBUMART-021 seam. Implemented: (a) `brain/tagstream.py` — the storage-agnostic
+  feature read + feature→tag value mapping (REQ-TW-001/002) + the RAW-mutagen idempotent ID3
+  (`TBPM`/`TKEY`/`TXXX:EnergyLevel`/`TXXX:CAMELOT`, ID3v2.3) and FLAC
+  (`BPM`/`INITIALKEY`/`ENERGYLEVEL`/`CAMELOT`) writers (REQ-TW-003/004) + the key-confidence
+  gate that drops key AND Camelot below `analysis_key_conf_threshold` (REQ-TW-005, threshold
+  reused — no new knob) + per-file exception isolation + the `tagstream_version` idempotent
+  skip-marker + `should_run_for` (REQ-TW-006); hooked into `EnrichmentWorker.enrich_one` AFTER
+  the ENRICH core-tag write + the ALBUMART cover embed, on the same backfill/on-download pass
+  (REQ-TW-007/008), mutating ONLY the feature frames (every other frame, incl. the ENRICH core
+  tags + the APIC/Picture cover, preserved byte-intact), gated by the SHARED `enrich_write_files`
+  gate, never blocking the pull (NFR-T-1/3). (b) REQ-TX-003 now-playing enrichment — a new
+  read-only `Library.track_for_path` + `server._enrich_now_playing` that ADDITIVELY merges
+  bpm/musical_key/camelot/energy + a `has_cover` hint into the `/api/nowplaying` + `/status`
+  now_playing & recent objects by resolving the on-air `path` (already carried by
+  `set_on_air`/`now_playing`), with graceful degradation (talk clip / unanalyzed / unresolved
+  path / lookup error → existing artist/title only); `recent[]` entries gained an additive
+  `path` field so history rows can be enriched too. [HARD] The Liquidsoap airing payload,
+  `_annotate_uri` pull contract, ICY StreamTitle, and `%mp3(320)` mount are UNCHANGED; the
+  frozen art-free-website decision is respected (no web artwork — `has_cover` is a boolean hint,
+  not an image). Config: `tagstream_enabled` (default on) + `tagstream_force_refresh`. Tests:
+  `brain/test_tagstream.py` (+27), full `pytest brain/ -q` green (306 passed, 1 deselected, 0
+  skips). DEFERRED (still planned, not built): Group TA release-level MBID capture in
+  `metadata.py` (ALBUMART-021 already does release-GROUP MBID + CAA embed; the
+  `metadata.py` `_extract_year` release-MBID widening + the TheAudioDB `searchalbum.php` /
+  fanart.tv artist-image / `>200KB` reject ceiling remain TA-owned follow-ups); the website
+  render of the new fields (REQ-TX-001/002 — JSON now carries them, the HTML/JS render is a
+  separate website slice); the enriched ICY StreamTitle suffix (REQ-TX-004, secondary); the
+  Ogg-FLAC spike (REQ-TX-006, optional). NONE require reversing the art-free-website decision.
+
 ---
 
 ## 1. Overview & Background

@@ -163,6 +163,14 @@ class Track:
     # cleanly via the tolerant loaders.
     art_version: int = 0
 
+    # -- TAGSTREAM-009 Group TW: the feature-tag skip-marker (REQ-TW-006) ---------
+    # INDEPENDENT of enrich_version / art_version so the feature-tag backfill is resumable on
+    # its own WITHOUT forcing a re-identification or a re-art-fetch. 0 = the feature-tag step
+    # has never run for this track; once it runs it is stamped to TAGSTREAM_SCHEMA_VERSION so
+    # a re-run skips it unless force-refresh. Default 0 keeps an old library.json/sqlite row
+    # loading cleanly via the tolerant loaders.
+    tagstream_version: int = 0
+
 
 # Identity / dedup fields that set_analysis MUST NEVER overwrite (M5 allowlist
 # hard-exclusions). A metadata provider returning a field literally named "key"
@@ -195,7 +203,10 @@ _ENRICH_WRITABLE_FIELDS = frozenset(
      "recording_mbid", "release_group_mbid", "barcode", "catno",
      # ALBUMART-021 Group AW (REQ-AW-002): the independent art skip-marker, persisted via the
      # same allowlist accessor so it can never touch the frozen identity / play-history fields.
-     "art_version"}
+     "art_version",
+     # TAGSTREAM-009 Group TW (REQ-TW-006): the independent feature-tag skip-marker, persisted
+     # via the same allowlist accessor — never touches the frozen identity / play-history fields.
+     "tagstream_version"}
 )
 
 
@@ -495,6 +506,22 @@ class Library:
     def count(self) -> int:
         with self._lock:
             return len(self._tracks)
+
+    def track_for_path(self, path: str) -> Optional[Track]:
+        """Return the Track whose ``path`` matches ``path`` (locked, read-only), or None.
+
+        TAGSTREAM-009 REQ-TX-003: the by-path lookup the now-playing enrichment uses to resolve
+        the ON-AIR track (set_on_air already carries ``path``) to its analyzed feature record,
+        WITHOUT widening the Liquidsoap airing payload. A miss (talk clip / unanalyzed /
+        unresolved path) returns None so the caller degrades to the existing artist/title only.
+        """
+        if not path:
+            return None
+        with self._lock:
+            for t in self._tracks.values():
+                if t.path == path:
+                    return t
+        return None
 
     def has_key(self, key: str) -> bool:
         with self._lock:

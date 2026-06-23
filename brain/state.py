@@ -95,6 +95,10 @@ class StationState:
                         "title": cur.get("title", ""),
                         "kind": cur.get("kind", "music"),
                         "played_at": cur.get("started_at", time.time()),
+                        # TAGSTREAM-009 REQ-TX-003: carry the path so the recent[] history can be
+                        # by-path enriched with features in the now-playing JSON (additive field;
+                        # absent => the enrichment simply degrades to artist/title for that row).
+                        "path": cur.get("path", ""),
                     }
                 )
             self._now_playing = {

@@ -125,6 +125,62 @@ def _analysis_extra(track: Optional[Track]) -> Optional[dict]:
     }
 
 
+def _feature_fields(track: Optional[Track]) -> dict:
+    """TAGSTREAM-009 REQ-TX-003: the listener-facing feature fields for an ANALYZED track.
+
+    Returns the bpm / musical_key / camelot / energy (+ a has_cover hint) for the now-playing
+    panel — DISTINCT from ``_analysis_extra`` (the Liquidsoap crossfade math). Returns {} for a
+    talk clip (no Track), an unanalyzed track, or an unresolved path, so the caller adds nothing
+    and the now-playing object keeps its existing artist/title-only shape (graceful degradation).
+    Only PRESENT, meaningful values are emitted — a missing feature is omitted, never a 0/"".
+    """
+    if track is None or getattr(track, "schema_version", 0) <= 0:
+        return {}
+    out: dict = {}
+    bpm = getattr(track, "bpm", 0.0) or 0.0
+    if bpm:
+        out["bpm"] = round(float(bpm), 1)
+    musical_key = (getattr(track, "musical_key", "") or "").strip()
+    if musical_key:
+        out["musical_key"] = musical_key
+    camelot = (getattr(track, "camelot", "") or "").strip()
+    if camelot:
+        out["camelot"] = camelot
+    energy = getattr(track, "energy", 0.0) or 0.0
+    if energy:
+        out["energy"] = round(float(energy), 3)
+    out["has_cover"] = bool(getattr(track, "art_version", 0) or 0)
+    return out
+
+
+def _enrich_now_playing(obj: Optional[dict], library: Library) -> Optional[dict]:
+    """ADDITIVELY enrich a now-playing/recent object with the on-air track's features (REQ-TX-003).
+
+    Resolves the object's ``path`` (carried by set_on_air / now_playing) to the analyzed Track
+    via the by-path lookup and merges in bpm/musical_key/camelot/energy + has_cover. [HARD]
+    Additive only: the existing artist/title/album/path/kind keys are NEVER removed or renamed;
+    feature keys are only ADDED when the track resolves AND is analyzed. None / a missing path /
+    an unresolved or unanalyzed track yields the object UNCHANGED — never a crash, never a stale
+    enrichment. This wiring lives entirely in the brain; the Liquidsoap airing payload is
+    UNCHANGED (the audio path / _annotate_uri pull contract are untouched).
+    """
+    if not obj:
+        return obj
+    path = obj.get("path") or ""
+    if not path:
+        return obj
+    try:
+        track = library.track_for_path(path)
+    except Exception:  # noqa: BLE001 - a lookup error must never break the now-playing surface
+        return obj
+    feats = _feature_fields(track)
+    if not feats:
+        return obj
+    enriched = dict(obj)
+    enriched.update(feats)
+    return enriched
+
+
 @dataclass
 class NextItem:
     """What /api/next will serve. ``kind`` is "music" or "talk" (phase 2a)."""
@@ -380,8 +436,8 @@ class _Handler(BaseHTTPRequestHandler):
             {
                 "station": self.state.station_name,
                 "brain_mode": "phase2a-music+talk" if self.cfg.talk_enabled else "phase1-music",
-                "now_playing": self.state.now_playing(),
-                "recent": self.state.recent(),
+                "now_playing": _enrich_now_playing(self.state.now_playing(), self.library),
+                "recent": [_enrich_now_playing(r, self.library) for r in self.state.recent()],
                 "library": self.library.count(),
                 "downloading": self.state.downloading(),
                 "talk": {
@@ -410,8 +466,8 @@ class _Handler(BaseHTTPRequestHandler):
     def _handle_nowplaying(self) -> None:
         self._json(
             {
-                "now_playing": self.state.now_playing(),
-                "recent": self.state.recent(),
+                "now_playing": _enrich_now_playing(self.state.now_playing(), self.library),
+                "recent": [_enrich_now_playing(r, self.library) for r in self.state.recent()],
                 "library": self.library.count(),
                 "downloading": self.state.downloading(),
             }
