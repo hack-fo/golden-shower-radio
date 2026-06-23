@@ -75,7 +75,7 @@ def run() -> int:
     state = StationState(cfg.station_name, recent_window=cfg.recent_window)
     state.set_website_html(render_website(cfg))
 
-    library = Library(cfg.music_dir, cfg.library_path)
+    library = Library(cfg.music_dir, cfg.library_path, backend=cfg.store_backend)
     acquirer = Acquirer(cfg, library, state, stop_event)
     director = Director(cfg, library, acquirer, state, stop_event)
     # KNOWLEDGE-008: the dated, sourced, relational editorial-knowledge store (SQLite in

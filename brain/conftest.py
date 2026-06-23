@@ -25,6 +25,23 @@ KNOWN_STALE = {
         "asserting the old behavior. Reconciling it is an ENRICH-012 task, not "
         "part of the SPEC-RADIO-CORE-001 characterization slice.",
     ),
+    "brain/test_characterize_library.py::test_characterize_scan_picks_up_audio_and_skips_talk_dir": (
+        "DATASTORE-022",
+        "Asserts the LITERAL `library.json` file exists after a scan (line 98, "
+        "'Persisted to disk on scan'). SPEC-RADIO-DATASTORE-022 INTENTIONALLY moved "
+        "the library persistence substrate from the `library.json` flat file to the "
+        "partitioned SQLite file `brain.db` (default backend=sqlite), so a fresh "
+        "library scanning under sqlite writes brain.db, not library.json. Persistence "
+        "AND restart-survival still hold and are re-asserted backend-agnostically (json "
+        "AND sqlite) in brain/test_characterize_datastore.py "
+        "(test_library_scan_persists_and_survives_restart_on_both_backends). The "
+        "scan/dedup/.talk-skip/prune BEHAVIOUR this node also checks is unchanged and "
+        "stays covered by the sibling scan tests (dedups_same_key, "
+        "prunes_vanished_files, skips_partial_downloads) plus the datastore round-trip "
+        "parity tests. Only the filename-specific assertion is stale. We do not edit "
+        "another SPEC's assertion to hide the intentional substrate change; "
+        "re-pointing/parametrizing it over backends is CORE-001 housekeeping.",
+    ),
 }
 
 
