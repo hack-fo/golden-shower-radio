@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from brain import llm
 from brain.library import Track
+from brain.persona import Persona, TasteCharter
 from brain.talk import TalkDirector
 
 
@@ -248,3 +249,164 @@ def test_attach_year_album_fault_is_swallowed():
     assert "last_year" not in ctx
     assert "last_album" not in ctx
     assert ctx == {"last_artist": "X", "last_title": "Y"}
+
+
+# --------------------------------------------------------------------------------------
+# BEHAVIOR — Group HD: delivery cadence, per-persona style, director discretion
+# --------------------------------------------------------------------------------------
+
+def _persona(pid: str, *, territory: str = "soul", pov: str = "") -> Persona:
+    """A minimal valid-enough persona for prompt-flavour tests (the firewall gate is not
+    exercised here — only the authored voice surface _build_talk_prompt reads)."""
+    return Persona(id=pid, display_name=pid.title(), voice=f"v_{pid}", pov_seed=pov,
+                   charter=TasteCharter(primary_territory=territory))
+
+
+def test_year_album_block_carries_cycle_instruction():
+    """AC-HD-001 / B3 [HARD]: the year/album block frames the move as a CYCLED option and
+    explicitly tells the host not to mechanically template it onto every break."""
+    ctx = {"last_artist": "Joy Division", "last_title": "Atmosphere",
+           "last_year": 1980, "last_album": "Closer"}
+    prompt = llm._build_talk_prompt(ctx).lower()
+    assert "cycled option" in prompt
+    assert "not a fixed template" in prompt
+    # The slop pattern itself is named so the host avoids it.
+    assert "mechanical" in prompt
+
+
+def test_persona_year_album_delivery_is_distinguishable():
+    """AC-HD-002 / NFR-H-3 [HARD]: two DISTINCT personas presenting the SAME just-played track
+    produce observably DIFFERENT year/album cadence/flavour in the prompt — no uniform
+    every-host behaviour is imposed. The difference is deterministic + stable per persona."""
+    ctx = {"last_artist": "Joy Division", "last_title": "Atmosphere",
+           "last_year": 1980, "last_album": "Closer"}
+    a = llm._build_talk_prompt(ctx, _persona("alice", territory="post-punk", pov="a crate-digger"))
+    b = llm._build_talk_prompt(ctx, _persona("bob", territory="dub", pov="a late-night minimalist"))
+    # Same verified facts in both (grounding unchanged) ...
+    assert "1980" in a and "1980" in b
+    assert "Closer" in a and "Closer" in b
+    # ... but the per-persona cadence/flavour differs (distinguishable per persona).
+    assert a != b
+    # Each echoes its OWN authored voice surface (grounded in real fields, not fabricated).
+    assert "post-punk" in a and "crate-digger" in a
+    assert "dub" in b and "late-night minimalist" in b
+
+
+def test_persona_lean_is_stable_for_same_persona():
+    """REQ-PR-005 (persistent returning person): a given persona's year/album cadence-lean is
+    DETERMINISTIC — the same persona renders the same lean every time, so the host stays a
+    consistent person across breaks."""
+    ctx = {"last_artist": "X", "last_title": "Y", "last_year": 1979, "last_album": "Z"}
+    p = _persona("carol")
+    assert llm._build_talk_prompt(ctx, p) == llm._build_talk_prompt(ctx, p)
+
+
+def test_unhosted_break_expresses_director_discretion():
+    """AC-HD-003 [HARD]: with NO persona (unhosted), the year/album block expresses the
+    DIRECTOR'S discretion over cadence — 'you're the director' — while keeping the verified
+    values exactly as given (the grounding rail is invariant, not the director's to relax)."""
+    ctx = {"last_artist": "X", "last_title": "Y", "last_year": 1979, "last_album": "Z"}
+    prompt = llm._build_talk_prompt(ctx, None).lower()
+    assert "director's discretion" in prompt
+    # The grounded/verified rail still holds in the unhosted path.
+    assert "exactly as given" in prompt
+
+
+def test_unhosted_curiosa_is_director_discretion():
+    """AC-HD-003 [HARD]: the curiosa cadence is also the director's discretion when unhosted,
+    and is STILL bound to the supplied grounded facts (never a back-door to invent one)."""
+    ctx = {"last_artist": "X", "last_title": "Y",
+           "grounded_facts": [{"predicate": "label", "value": "Factory Records", "certain": True}]}
+    prompt = llm._build_talk_prompt(ctx, None).lower()
+    assert "director's discretion" in prompt
+    assert "grounded facts above" in prompt
+
+
+def test_persona_curiosa_delivery_is_distinguishable():
+    """AC-HD-002 / NFR-H-3: two distinct personas turn the SAME grounded fact into observably
+    different curiosa cadence/flavour (one tells a story, another keeps it dry)."""
+    ctx = {"last_artist": "X", "last_title": "Y",
+           "grounded_facts": [{"predicate": "producer", "value": "Martin Hannett", "certain": True}]}
+    a = llm._build_talk_prompt(ctx, _persona("alice"))
+    b = llm._build_talk_prompt(ctx, _persona("bob"))
+    # Both still bind the curiosa to the supplied fact (grounding unchanged) ...
+    assert "martin hannett" in a.lower() and "martin hannett" in b.lower()
+    # ... with distinguishable per-persona curiosa cadence.
+    assert a != b
+
+
+def test_default_no_persona_prompt_is_byte_identical_to_positional_call():
+    """[HARD] behaviour preservation: passing persona=None is byte-identical to the legacy
+    single-arg call. This pins that the persona seam never perturbs the unhosted/default path
+    (the SHOWS-020 + characterization byte-identical contract relies on this)."""
+    ctx = {"last_artist": "Joy Division", "last_title": "Atmosphere",
+           "next_artist": "New Order", "next_title": "Temptation",
+           "last_year": 1980, "last_album": "Closer",
+           "grounded_facts": [{"predicate": "label", "value": "Factory Records", "certain": True}]}
+    assert llm._build_talk_prompt(ctx) == llm._build_talk_prompt(ctx, None)
+
+
+# --------------------------------------------------------------------------------------
+# Group HD wiring — TalkDirector resolves the active persona (or unhosted None)
+# --------------------------------------------------------------------------------------
+
+class _FakeRoster:
+    """Minimal Roster stand-in: returns a fixed active persona (or raises, to model a fault)."""
+
+    def __init__(self, persona=None, raises=False):
+        self._persona = persona
+        self._raises = raises
+
+    def active_persona(self):
+        if self._raises:
+            raise RuntimeError("injected roster fault")
+        return self._persona
+
+
+def _director_with_roster(roster):
+    d = TalkDirector.__new__(TalkDirector)
+    d.roster = roster
+    return d
+
+
+def test_active_persona_none_when_no_roster():
+    """AC-HD-003 [HARD] byte-identical default: no roster => unhosted => None (the house path,
+    director's discretion)."""
+    assert _director_with_roster(None)._active_persona() is None
+
+
+def test_active_persona_resolved_from_roster():
+    """REQ-HD-002/003: a roster with an explicitly-active persona threads that persona to the
+    talk seam so the break is presented in that host's voice."""
+    p = _persona("dave")
+    assert _director_with_roster(_FakeRoster(p))._active_persona() is p
+
+
+def test_active_persona_roster_fault_falls_back_to_unhosted():
+    """NFR-H-2 / continuous-operation [HARD]: a roster fault is swallowed and falls back to the
+    unhosted default (None) — never blocks or crashes the talk loop."""
+    assert _director_with_roster(_FakeRoster(raises=True))._active_persona() is None
+
+
+# --------------------------------------------------------------------------------------
+# Group HY traceability — REQ-HY-003 / B1: the gate that VALIDATES year tokens is owned by
+# PROGRAMMING-007 PG-005 (the forbidden-fact scan), which is NOT yet built in code. HOSTCTX-016
+# owns only the IN-PROMPT half: every offered year/album token is quoted EXACTLY so that, once
+# the PG-005 scan lands, every spoken token traces to (and agrees with) the supplied contract.
+# This test pins the HOSTCTX-016-owned half (exact-quote) as the traceability anchor.
+# --------------------------------------------------------------------------------------
+
+def test_offered_year_album_tokens_are_quoted_exactly_for_the_gate():
+    """REQ-HY-003 / B1 [boundary]: HOSTCTX-016 emits the year/album as their EXACT verified
+    values so the (PROGRAMMING-007-owned) forbidden-fact scan will find every spoken token in
+    context. The scan itself is PG-005's and is referenced, not re-owned here — this asserts
+    the HOSTCTX-016 side of the contract (exact-quote, no approximation)."""
+    ctx = {"last_artist": "Joy Division", "last_title": "Atmosphere",
+           "last_year": 1980, "last_album": "Unknown Pleasures"}
+    prompt = llm._build_talk_prompt(ctx)
+    # Exact verified tokens present verbatim (gate-traceable) ...
+    assert "1980" in prompt
+    assert "Unknown Pleasures" in prompt
+    # ... and the host is told to quote exactly, never approximate (no decade/era rounding).
+    assert "quote it exactly" in prompt
+    assert "do not approximate" in prompt

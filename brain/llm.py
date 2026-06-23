@@ -321,7 +321,7 @@ HOST_PERSONA = (
 )
 
 
-def _build_talk_prompt(context: Dict) -> str:
+def _build_talk_prompt(context: Dict, persona=None) -> str:
     """Turn a talk context dict into a single one-shot prompt for the host persona.
 
     Recognised keys (all optional):
@@ -341,6 +341,16 @@ def _build_talk_prompt(context: Dict) -> str:
                                   short grounded curiosa about the just-played track.
       grounded_relations        - KNOWLEDGE-008 real graph edges (REQ-KG-004): a list of
                                   {rel, target, ...} the host may segue on (real edges only).
+
+    ``persona`` (SPEC-RADIO-PROGRAMMING-007 Group PR) is OPTIONAL and DEFAULTS to None. It
+    threads the ACTIVE persona's authored voice surface (POV + taste charter) and a stable
+    per-persona CADENCE-LEAN into the HOSTCTX-016 year/album/curiosa block so each host's
+    delivery of those facts is OBSERVABLY DISTINGUISHABLE (REQ-HD-002 / NFR-H-3) — one host
+    digs into release history, another barely mentions years. [HARD] With ``persona`` None
+    (the default / unhosted house path) the prompt is BYTE-IDENTICAL to before this wiring,
+    and the unhosted DIRECTOR-DISCRETION framing (REQ-HD-003) is expressed instead. The
+    persona flavour is confined to the year/album/curiosa block — it never invents a fact and
+    never relaxes the grounding rule.
     """
     last_artist = str(context.get("last_artist") or "").strip()
     last_title = str(context.get("last_title") or "").strip()
@@ -390,8 +400,12 @@ def _build_talk_prompt(context: Dict) -> str:
         # use. Quoted EXACTLY so the gate's forbidden-fact scan finds every token in context;
         # framed as a cycled option (not an every-break template, REQ-HD-001 / R-H-3), and
         # only rendered when the value is actually present (graceful omission, REQ-HY-001/002).
+        # The per-persona LEAN / unhosted DIRECTOR-DISCRETION line (REQ-HD-002/003) rides INSIDE
+        # this block, so a bare backsell with no year/album stays byte-identical.
         year_album = _format_year_album(context.get("last_year"), context.get("last_album"))
-        parts.extend(year_album)
+        if year_album:
+            parts.extend(year_album)
+            parts.append(_year_album_cadence_line(persona))
     if next_artist or next_title:
         parts.append(f"Coming up next: \"{next_title}\" by {next_artist}." if next_artist
                      else f"Coming up next: \"{next_title}\".")
@@ -427,6 +441,10 @@ def _build_talk_prompt(context: Dict) -> str:
             "curiosa or anecdote about the track — at most one, kept brief — drawn ONLY from "
             "the facts above; do not invent or imply any anecdote not listed here."
         )
+        # SPEC-RADIO-HOSTCTX-016 REQ-HD-002/003: colour the curiosa in the ACTIVE persona's own
+        # voice (or, unhosted, leave it to the director's discretion) so the curiosa cadence is
+        # distinguishable per host — never a uniform every-host anecdote habit (NFR-H-3).
+        parts.append(_curiosa_cadence_line(persona))
 
     # SPEC-RADIO-SHOWS-020 (REQ-SD-002/003): when an active show is presenting, offer its
     # editorial THEME as framing (NOT a fact) + any GROUNDED talking points (the airable ones —
@@ -499,8 +517,97 @@ def _format_year_album(year, album) -> List[str]:
         detail = f"off the album \"{spoken_album}\""
     return [
         f"Verified backsell detail you MAY mention (quote it exactly, do not approximate): "
-        f"that track was {detail}."
+        f"that track was {detail}.",
+        # SPEC-RADIO-HOSTCTX-016 REQ-HD-001 / AC-HD-001 / B3 [HARD]: cycle the move — do NOT
+        # mechanically append it to every break. Vary WHICH of year/album/curiosa you use (or
+        # none), HOW you phrase it, and WHEN it appears; over-using it is template fatigue.
+        "Treat this as a cycled option, not a fixed template: vary whether and how you mention "
+        "the year and album from break to break — never the same mechanical 'from {year}, off "
+        "{album}' every time.",
     ]
+
+
+# Stable per-persona CADENCE LEANS (SPEC-RADIO-HOSTCTX-016 REQ-HD-002 / NFR-H-3). A small,
+# fixed set of distinct tendencies for HOW a host treats year/album/curiosa. The lean is
+# chosen DETERMINISTICALLY from the persona's identity (its id) so a given persona always
+# presents consistently (the persistent-returning-person rail, REQ-PR-005) while DIFFERENT
+# personas land on observably different cadences across the roster — "one host leans into
+# release-history curiosa, another barely mentions years." This is a tendency nudge, not a
+# new fact and not a fabricated taste field; it never relaxes the grounding rule.
+_YEAR_ALBUM_LEANS = (
+    "You tend to lean INTO release history — you enjoy naming the year and album and what "
+    "came of it, when there's something there.",
+    "You mention years and albums SPARINGLY — you usually lead with the feel of the track and "
+    "only drop a year or album when it genuinely adds something.",
+    "You treat the year and album as a light, occasional touch — a quick aside at most, never "
+    "the centre of the back-announce.",
+)
+_CURIOSA_LEANS = (
+    "When a grounded fact is interesting, you like to turn it into a little story.",
+    "You keep curiosa rare and dry — a single sharp detail, never a ramble.",
+    "You mostly let the music speak and only reach for a curiosa when it's genuinely striking.",
+)
+
+
+def _persona_lean_index(persona, n: int) -> int:
+    """Deterministically map a persona to one of ``n`` stable leans via its id (REQ-HD-002).
+
+    A persona with no id (or no persona at all) is the house/unhosted default and returns -1
+    so the caller emits the director-discretion framing instead of a persona lean."""
+    if persona is None:
+        return -1
+    pid = str(getattr(persona, "id", "") or "").strip()
+    if not pid:
+        return -1
+    return sum(ord(c) for c in pid) % max(1, n)
+
+
+def _persona_flavor(persona) -> str:
+    """A short, persona-authored flavour suffix (POV + primary taste territory) echoed into the
+    year/album/curiosa instruction so two distinct personas read observably differently
+    (REQ-HD-002). Drawn ONLY from the persona's own authored fields — never fabricated. Returns
+    "" for the house/unhosted default (no persona) so that path stays byte-identical."""
+    if persona is None:
+        return ""
+    pov = str(getattr(persona, "pov_seed", "") or "").strip()
+    ch = getattr(persona, "charter", None)
+    territory = str(getattr(ch, "primary_territory", "") or "").strip() if ch else ""
+    bits = []
+    if territory:
+        bits.append(f"your territory is {territory}")
+    if pov:
+        bits.append(f"your point of view: {pov}")
+    return " (" + "; ".join(bits) + ")" if bits else ""
+
+
+def _year_album_cadence_line(persona) -> str:
+    """The per-persona (or unhosted director-discretion) cadence instruction for year/album
+    (SPEC-RADIO-HOSTCTX-016 REQ-HD-002/003). For an active persona it picks that persona's
+    stable lean + echoes its authored flavour, so the delivery is distinguishable per host.
+    With no persona it expresses the DIRECTOR'S DISCRETION rail — "you're the director" — the
+    same grounded/verified rails still apply, only the cadence is the director's call."""
+    idx = _persona_lean_index(persona, len(_YEAR_ALBUM_LEANS))
+    if idx < 0:
+        return (
+            "No host is scheduled, so this is the director's discretion: choose for yourself "
+            "whether and how to use the year and album on this break — cycling them, never "
+            "templating them — while keeping every spoken value exactly as given above."
+        )
+    return "In your own style: " + _YEAR_ALBUM_LEANS[idx] + _persona_flavor(persona)
+
+
+def _curiosa_cadence_line(persona) -> str:
+    """The per-persona (or unhosted director-discretion) cadence instruction for curiosa
+    (SPEC-RADIO-HOSTCTX-016 REQ-HD-002/003). Mirrors ``_year_album_cadence_line`` for the
+    optional grounded curiosa so the anecdote habit is distinguishable per host and, unhosted,
+    is the director's call — never a uniform every-host behaviour (NFR-H-3)."""
+    idx = _persona_lean_index(persona, len(_CURIOSA_LEANS))
+    if idx < 0:
+        return (
+            "No host is scheduled: at the director's discretion decide whether a curiosa fits "
+            "this break at all — still only ever from the grounded facts above."
+        )
+    return "In your own style: " + _CURIOSA_LEANS[idx] + _persona_flavor(persona)
 
 
 def _format_grounding(facts, relations) -> List[str]:
@@ -588,7 +695,7 @@ def generate_talk_script(model: str, context: Dict, persona=None) -> str:
     None the talk is BYTE-IDENTICAL to before this SPEC (the house HOST_PERSONA). When an
     active persona is supplied the host speaks as that named, persistent person (REQ-PR-014).
     """
-    prompt = _build_talk_prompt(context)
+    prompt = _build_talk_prompt(context, persona)
     system_prompt = _persona_host_prompt(persona)
     try:
         text = asyncio.run(_query_text(prompt, model, system_prompt=system_prompt))

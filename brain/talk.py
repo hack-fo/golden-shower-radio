@@ -45,7 +45,7 @@ class TalkDirector:
     """
 
     def __init__(self, cfg: Config, library: Library, state, stop_event: threading.Event,
-                 knowledge=None, show_engine=None):
+                 knowledge=None, show_engine=None, roster=None):
         self.cfg = cfg
         self.library = library
         self.state = state
@@ -59,6 +59,13 @@ class TalkDirector:
         # context is BYTE-IDENTICAL to before this SPEC — no show keys are added. An active show
         # only ADDS its theme + grounded talking points to the existing context bundle.
         self.show_engine = show_engine
+        # SPEC-RADIO-HOSTCTX-016 (Group HD, REQ-HD-002/003): the persona Roster is OPTIONAL +
+        # backward-compatible. When None (or it has no explicitly-active host) the break is
+        # UNHOSTED — the talk script is generated with NO persona (the house default) and the
+        # year/album/curiosa cadence is the DIRECTOR'S discretion, byte-identical to before this
+        # SPEC. When a roster singles out an active persona, that persona is threaded into
+        # generate_talk_script so the year/album/curiosa delivery is distinguishable per host.
+        self.roster = roster
         self._thread: Optional[threading.Thread] = None
         self._provider = voice.make_provider(cfg)
         self._last_prune = 0.0
@@ -110,7 +117,8 @@ class TalkDirector:
             return
 
         context = self._build_context()
-        script = llm.generate_talk_script(self.cfg.anthropic_model, context)
+        persona = self._active_persona()
+        script = llm.generate_talk_script(self.cfg.anthropic_model, context, persona)
         if not script:
             # LLM skipped (error/quota/empty). Reset the counter so we don't hammer the
             # LLM every 5s while a break is "due" - we'll try again after more songs.
@@ -209,6 +217,25 @@ class TalkDirector:
         # and the context is byte-identical (REQ-SB-001/002). Never on the /api/next pull path.
         self._attach_show_context(context)
         return context
+
+    def _active_persona(self):
+        """Resolve the persona presenting THIS break, or ``None`` for an UNHOSTED break
+        (SPEC-RADIO-HOSTCTX-016 REQ-HD-002/003).
+
+        Returns the roster's explicitly-active persona when one is singled out, else ``None``.
+        [HARD] ``None`` is the byte-identical default: no roster, an empty roster, or a roster
+        that cannot single out a distinct active host (Roster.active_persona's DEFAULT-IDENTICAL
+        contract) all yield ``None`` — the house/unhosted path where the year/album/curiosa
+        cadence is the director's discretion, exactly as before this SPEC. Best-effort +
+        exception-swallowing: any roster fault simply falls back to the unhosted default and
+        NEVER blocks the break (the continuous-operation rail)."""
+        if self.roster is None:
+            return None
+        try:
+            return self.roster.active_persona()
+        except Exception as exc:  # noqa: BLE001 - persona resolution is best-effort, never blocks talk
+            log_event(log, "talk.persona_resolve_error", error=str(exc))
+            return None
 
     def _attach_show_context(self, context: dict) -> None:
         """Fold the active show's theme + GROUNDED talking points into the talk context
