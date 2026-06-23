@@ -264,6 +264,24 @@ class Config:
     # worst case when disabled is exactly today's exact-slug behaviour (NFR-D-5).
     dedup_enabled: bool = field(default_factory=lambda: _env("BRAIN_DEDUP_ENABLED", "1") not in ("0", "false", "no"))
 
+    # --- FILENAME-024: filename <-> id3 consistency (detect-and-flag + optional gated rename) ---
+    # DETECT-ENABLE (default ON): the always-on, non-destructive background check that flags any
+    # music FILENAME not containing the ENRICH-012-corrected artist+title (REQ-FD-001/002,
+    # REQ-FC-001). Read-only w.r.t. the filesystem — it inspects names + records a per-track flag;
+    # it renames NOTHING. Off -> no consistency flag is recorded (pure pass-through).
+    filename_detect_enabled: bool = field(default_factory=lambda: _env("BRAIN_FILENAME_DETECT_ENABLED", "1") not in ("0", "false", "no"))
+    # RENAME-ENABLE (default OFF — opt-in surgery, REQ-FR-001/NFR-F-6): the OPTIONAL rename of a
+    # flagged file to the canonical scheme. A rename happens ONLY when BOTH this toggle AND the
+    # write-files discipline (``enrich_write_files``) are on — the SHARED write gate. A fresh
+    # install renames ZERO files. There is no automatic mass rename. Even with this ON the rename
+    # never touches the in-flight (on-air / handed-out / prefetch-horizon) file (REQ-FS-001).
+    filename_rename_enabled: bool = field(default_factory=lambda: _env("BRAIN_FILENAME_RENAME_ENABLED", "0") not in ("0", "false", "no"))
+    # CANONICAL SCHEME TEMPLATE (default ``{artist} - {title}``, REQ-FR-002/FC-001). The target
+    # basename stem before the preserved extension + a preserved leading disc/track number. The
+    # ``{artist}`` and ``{title}`` placeholders are filled from the canonical Track fields and
+    # filesystem-sanitized; an unknown placeholder is left literal.
+    filename_scheme_template: str = field(default_factory=lambda: _env("BRAIN_FILENAME_TEMPLATE", "{artist} - {title}"))
+
     # --- DATASTORE-022: brain local persistence backend (json | sqlite) ---
     # Selects how the operational JSON stores (library/attempts/watch_manifest)
     # persist. "sqlite" (default) routes them onto the partitioned SQLite (WAL)

@@ -22,6 +22,7 @@ from .analyzer import Analyzer
 from .config import load_config
 from .director import Director
 from .enrich import EnrichmentWorker
+from .filename import FilenameWorker
 from .knowledge import KnowledgeStore
 from .library import Library
 from .logging_setup import log_event, setup_logging
@@ -116,6 +117,12 @@ def run() -> int:
     enricher = EnrichmentWorker(cfg, library, state, stop_event)
     if cfg.enrich_tags_enabled:
         acquirer.enricher = enricher  # on-download hook (best-effort; see Acquirer)
+    # FILENAME-024: background, serialized, non-blocking filename-hygiene worker. Detect-and-flag
+    # is the always-on default (flags any music FILENAME not carrying the ENRICH-012-corrected
+    # artist+title); the OPTIONAL rename to the canonical scheme stays OFF until the operator opts
+    # in (BRAIN_FILENAME_RENAME_ENABLED + the write-files discipline) and never touches the
+    # in-flight file. Best-effort + bounded; NEVER on the <1s /api/next pull path.
+    filename_worker = FilenameWorker(cfg, library, state, stop_event)
     # KNOWLEDGE-008: background, serialized, non-blocking research worker (Group KR). Fills
     # the editorial-knowledge store from MusicBrainz / Last.fm / etc. Best-effort + bounded +
     # throttled; degrades gracefully on a source outage. NEVER blocks playout.
@@ -141,6 +148,7 @@ def run() -> int:
     talk_director.start()
     analyzer.start()
     enricher.start()
+    filename_worker.start()
     if researcher is not None:
         researcher.start()
     log_event(

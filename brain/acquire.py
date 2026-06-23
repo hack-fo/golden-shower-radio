@@ -264,6 +264,27 @@ class Acquirer:
         # DEDUP-014: now that ENRICH-012 has (maybe) stamped this track's recording_mbid,
         # check whether it duplicates a recording already owned. Best-effort + isolated.
         self._dedup_detect(key)
+        # FILENAME-024: after ENRICH-012 has corrected the tags, classify the fresh file's
+        # FILENAME against them and FLAG a mismatch (the always-on, non-destructive default).
+        # Rides the enrichment horizon (R-F-4). Best-effort + isolated; renames nothing unless
+        # the operator has opted in (the worker handles the gated rename, off the pull path).
+        self._filename_detect(key)
+
+    def _filename_detect(self, key: str) -> None:
+        """FILENAME-024 post-enrichment consistency DETECTION for a just-landed track.
+
+        Non-destructive by default: classify the filename against the ENRICH-012-corrected
+        artist/title and record the per-track flag (REQ-FD-001/002). It renames nothing here —
+        the optional gated rename is the FilenameWorker's job, off the pull path. Exception-
+        isolated: any fault is swallowed (the golden rule — the stream never stops for a flag).
+        """
+        if not getattr(self.cfg, "filename_detect_enabled", True):
+            return
+        try:
+            from . import filename  # noqa: PLC0415 - lazy; keeps acquire import-light.
+            filename.FilenameHygiene(self.cfg, self.library, self.state).detect(key)
+        except Exception as exc:  # noqa: BLE001 - detection is best-effort; never break a download.
+            log_event(log, "acquire.filename_error", key=key, error=str(exc))
 
     def _dedup_detect(self, key: str) -> None:
         """DEDUP-014 post-enrichment duplicate DETECTION for a just-landed track.

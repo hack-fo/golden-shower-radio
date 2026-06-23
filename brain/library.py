@@ -593,6 +593,63 @@ class Library:
             self._persist_row(t)
             return True
 
+    # @MX:ANCHOR: [AUTO] The ONLY sanctioned writer of the frozen Track.path — FILENAME-024's
+    #   atomic rename+path-update. Everywhere else Track.path is frozen identity (the allowlist
+    #   writers hard-exclude it); this one method changes it, and ONLY together with the on-disk
+    #   os.rename, UNDER self._lock, so Library.scan (same RLock) never sees a vanished-then-new
+    #   intermediate state and the picker never resolves a stale path.
+    # @MX:REASON: load-bearing for SPEC-RADIO-FILENAME-024 REQ-FR-003 / NFR-F-3. The os.rename and
+    #   the path update either BOTH succeed or NEITHER does: on ANY failure the file is moved back
+    #   and t.path is left unchanged, so a Track NEVER points at a moved/missing file (which would
+    #   404 the air path). Caller (brain/filename.py) pre-sanitizes + pre-disambiguates the target;
+    #   this method re-checks collision under the lock (race-safe) and is purely mechanical.
+    #   Characterized in brain/test_characterize_filename.py (atomic / rollback / collision / noop).
+    # @MX:SPEC: SPEC-RADIO-FILENAME-024 REQ-FR-003
+    def rename_track_file(self, key: str, new_basename: str) -> Dict[str, Any]:
+        """Atomically rename the track's file to ``new_basename`` (same dir) + update Track.path.
+
+        The file rename AND the in-memory/persisted ``Track.path`` update happen together under
+        the library lock as one step. On ANY failure the operation ROLLS BACK (the file is moved
+        back to its original name; ``Track.path`` is left unchanged), never leaving a dangling /
+        orphaned path or a name/``Track.path`` mismatch (REQ-FR-003). Returns a result dict::
+
+            {"renamed": bool, "reason": str, "old_path": str, "new_path": str}
+
+        ``reason`` is one of: ``ok`` (renamed), ``missing`` (no such track), ``noop`` (target ==
+        current, idempotent skip), ``collision`` (target already exists — caller must
+        disambiguate), ``error`` (os/persist failure, rolled back). NEVER raises.
+        """
+        with self._lock:
+            t = self._tracks.get(key)
+            if t is None:
+                return {"renamed": False, "reason": "missing", "old_path": "", "new_path": ""}
+            old_path = t.path
+            new_path = os.path.join(os.path.dirname(old_path) or ".", new_basename)
+            if new_path == old_path:
+                return {"renamed": False, "reason": "noop", "old_path": old_path, "new_path": new_path}
+            # Re-check collision UNDER the lock (race-safe): never overwrite another file.
+            if os.path.exists(new_path):
+                return {"renamed": False, "reason": "collision", "old_path": old_path, "new_path": new_path}
+            try:
+                os.rename(old_path, new_path)
+            except Exception as exc:  # noqa: BLE001 - a filesystem error leaves the file as-is.
+                log_event(log, "library.rename_fs_failed", key=key, error=str(exc))
+                return {"renamed": False, "reason": "error", "old_path": old_path, "new_path": new_path}
+            # File moved. Update + persist the path; on persist failure move the file BACK so the
+            # Track never points at a name that disagrees with the persisted record (atomic-or-none).
+            t.path = new_path
+            try:
+                self._persist_row(t)
+            except Exception as exc:  # noqa: BLE001 - persist failed -> undo the on-disk move.
+                log_event(log, "library.rename_persist_failed_rollback", key=key, error=str(exc))
+                try:
+                    os.rename(new_path, old_path)
+                except Exception as exc2:  # noqa: BLE001 - best-effort undo; log if even that fails.
+                    log_event(log, "library.rename_rollback_failed", key=key, error=str(exc2))
+                t.path = old_path
+                return {"renamed": False, "reason": "error", "old_path": old_path, "new_path": new_path}
+            return {"renamed": True, "reason": "ok", "old_path": old_path, "new_path": new_path}
+
     def note_source(self, key: str, source: str) -> None:
         """Record where a track entered the library (e.g. 'slskd', 'manual', 'ytdlp').
 

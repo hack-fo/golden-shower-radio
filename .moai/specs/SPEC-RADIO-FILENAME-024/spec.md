@@ -13,6 +13,29 @@ issue_number: 24
 
 ## HISTORY
 
+- 2026-06-23 (v0.2.0): DDD slice BUILT (status draft → partial). New module `brain/filename.py`:
+  the consistency check (`classify_consistency` — reuses `library.normalize_key`'s ASCII-folding
+  transform via `normalized()`), the canonical-name build (`build_canonical_basename` +
+  `leading_number_prefix` + `sanitize_component` + `disambiguate`), the `FilenameHygiene` engine
+  (detect/flag + preview/dry-run + the gated `rename_one` with the in-flight guard) and the
+  background `FilenameWorker`. New `Library.rename_track_file` is the ONLY sanctioned writer of the
+  frozen `Track.path`: the atomic os.rename + path-update under the library `RLock` with rollback
+  (REQ-FR-003). Config gains `filename_detect_enabled` (ON), `filename_rename_enabled` (OFF — the
+  gate is `rename_enabled AND enrich_write_files`), `filename_scheme_template`. The acquire
+  post-enrich hook (`_filename_detect`) flags the just-landed file (rides the enrichment horizon);
+  `main.py` starts the worker. BUILT REQs: FD-001/002/003 (detect+flag, queryable provenance flag,
+  indeterminate), FR-001/002/003/004/005 (gate-off-default, canonical scheme + leading-number/ext
+  preserve, atomic-or-rollback, idempotent + reversible old→new record, dry-run preview), FS-001/002
+  (in-flight defer, background off-pull-path), FF-001/002/003 (sanitize/length/unicode, collision
+  disambiguate, skip-unknown-tag), FC-001 (config knobs), FX-002 (filename-only). 24 characterization
+  tests in `brain/test_characterize_filename.py` (suite 255 → 279, 0 skips). PARTIAL / DEFERRED:
+  FX-001 emits flag/rename events via the structured `log_event` sink (the spec's graceful-degrade
+  path) — it does NOT write filename rows into the LOOKUPLOG-023 `lookup_log` ledger (that schema is
+  identification-shaped; folding filename events in would re-own it — forbidden); align the ledger
+  event shape when LOOKUPLOG-023 is authored. CHARACTERIZED LIMITATION: a non-Latin-only (e.g.
+  Cyrillic) artist/title normalizes to "" under the inherited `normalize_key` transform, so it is
+  INDETERMINATE (never flagged/renamed) — the safe outcome; widening normalization to full unicode
+  would be a CORE-001 `normalize_key` change, out of this SPEC's scope.
 - 2026-06-23 (v0.1.0): Initial draft, occupying the new global-incrementing FILENAME-024 id.
   The thirteenth-numbered authored SPEC in the golden-shower-radio RADIO series (CORE-001, VOICE-002,
   CALLIN-003, OPS-004, ORCH-005, ANALYSIS-006, PROGRAMMING-007, KNOWLEDGE-008, TAGSTREAM-009,
