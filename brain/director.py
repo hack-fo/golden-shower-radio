@@ -93,6 +93,11 @@ class Director:
             library = self.library.count()
             now = time.time()
 
+            # @MX:NOTE: [AUTO] tick fires on low OR due — the LLM-quota-protection rule.
+            #   We only spend a curation call (5h subscription quota) when the wishlist+
+            #   library has drained below the low-watermark (low) or the scheduled interval
+            #   has elapsed (due); a well-stocked, not-yet-due loop deliberately ticks NOTHING.
+            #   Locked by test_characterize_director.py (the _should_tick predicate tests).
             low = (backlog + library) < self.cfg.wishlist_low_watermark
             due = now >= next_scheduled
             if low or due:
