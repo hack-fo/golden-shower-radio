@@ -1,6 +1,6 @@
 ---
 id: SPEC-RADIO-PROGRAMMING-007
-version: 0.9.0
+version: 0.10.0
 status: draft
 created: 2026-06-22
 updated: 2026-06-23
@@ -447,6 +447,54 @@ issue_number: 7
   grab-reason-is-an-unverified-claim rule is GENERALIZED by REFLECT-026 Group RH into a station-wide
   hypothesis discipline; the Group PI persona FROZEN ANCHORS remain OWNED here -- reflection MAY AUDIT
   anchor drift but MUST NOT write anchors. Total: 85 REQ + 13 NFR = 98, 1:1 REQ↔AC preserved.
+- 2026-06-23 (v0.10.0): USER-FACING MANUAL HOST/PERSONA CREATION — five additions to Group PR
+  (namespace PR) that close a genuine gap: the roster model to date specs a FIXED AUTHORED ROSTER
+  (the ~5 EN + 2 FO personas the developer/AI defines as persona-entities) plus an AI-AUTONOMOUS
+  growth gate (REQ-PR-008 adds a persona for a documented editorial gap, never for appeal). NEITHER
+  covers the OPERATOR creating a new host BY HAND on demand. This wave adds that operator-driven
+  creation mechanism, REUSING every existing Group PR invariant — it is a DIFFERENT ENTRY into the
+  SAME gates, NEVER a bypass and NEVER a fork. THE LOAD-BEARING TENET: a manually-created persona is
+  a FIRST-CLASS persona-entity identical to an authored one (same CORE-001 runtime-extensible persona
+  model REQ-PR-001, same 1:1 voice bind REQ-PR-003, same taste charter REQ-PR-006, same persistent POV
+  REQ-PR-005, same frozen anchor contract REQ-PI-001) — the manual path only changes WHO authors it
+  (the human operator), never WHAT a persona is or WHICH invariants hold. All ADDITIVE; REQ-PR-008
+  (AI-autonomous growth) is UNCHANGED and COEXISTS — both paths pass the SAME both-axes distinctness
+  test. Net +5 REQ (PR-010..PR-014), 0 new NFR (the existing integrity NFRs already cover the
+  invariants the manual path must uphold — NFR-P-1 anti-convergence holds across the roster,
+  NFR-P-5/NFR-P-6 never-silences-the-stream + no-new-seam): (1) REQ-PR-010 MANUAL CREATION INTERFACE
+  [HARD, Event] — an operator-facing creation entry that CAPTURES the minimum identity a persona-entity
+  needs (display name, persona identity/POV, an UNUSED voice from the VOICE-002 palette honoring the
+  1:1 rule, an initial/seed taste charter expressed in ANALYSIS-006-queryable terms, language/roster,
+  and the ≥2 frozen anchor focuses incl. the REQ-PR-004 primary genre territory); the requirement owns
+  WHAT is captured, the UI/transport tech is deferred to implementation. (2) REQ-PR-011 CREATION-TIME
+  VALIDATION [HARD, Event] — on every create/edit submission the system REUSES (never forks) the
+  REQ-PR-003 1:1 firewall (REJECTS a voice already bound to another persona) and the REQ-PR-004
+  anti-convergence firewall via the SAME both-axes distinctness check REQ-PR-008 already runs (free
+  unused voice AND a territory materially distinct from every existing persona), and requires the
+  minimum identity fields; a submission failing any check is REJECTED and the persona never enters the
+  roster — the manual path can NEVER admit a host that violates an invariant. The anti-appeal/gap-motive
+  judgment is the human OPERATOR'S editorial call here (distinct from REQ-PR-008's AI-autonomous motive
+  rail), while the distinctness INVARIANT is shared and non-negotiable. (3) REQ-PR-012 PERSISTENCE AS A
+  FIRST-CLASS ENTITY [HARD, Ubiquitous] — a validated manual persona is persisted in the SAME
+  system-owned, runtime-extensible persona store existing personas use (CORE-001 REQ-PR-001 model; the
+  DATASTORE-022 substrate is the natural home — the table/schema design is DEFERRED to implementation,
+  this requirement owns only that the entity is durable across restarts and indistinguishable in kind
+  from an authored persona). (4) REQ-PR-013 LIFECYCLE: EDIT / DISABLE / REMOVE [HARD, Event] — an
+  operator may edit a manual persona (re-validated through REQ-PR-011), DISABLE it (removed from future
+  host assignment + curation), or REMOVE it; [HARD] GOLDEN RULE — disabling/removing NEVER cuts an
+  in-flight talk break or in-progress curation and NEVER takes down a healthy stream: an on-air or
+  mid-render persona finishes its current break/episode gracefully and is excluded only from the NEXT
+  selection cycle (inherits the NFR-P-5 never-silences posture). A removed persona's freed voice returns
+  to the palette as assignable (REQ-PR-003). (5) REQ-PR-014 INTEGRATION: SAME DOWNSTREAM ENGINES [HARD,
+  Ubiquitous] — a manual persona is treated IDENTICALLY to an authored one by every downstream consumer:
+  the per-persona curation taste/profile (REQ-PL-004), the talk/craft rules (Group PC) + grounded-voice
+  gate (Group PG) + delivery craft (Group PV), the anti-convergence layers (REQ-PR-004/PR-009), the
+  per-persona DJ-craft loop (Group CL), and — when built — OPS-004 scheduling + SHOWS-020 shows; these
+  consumers ITERATE OVER ROSTER ENTITIES and the manual host is simply another entity, so no consumer
+  needs a special case. References (not re-owned): CORE-001 persona model (REQ-PR-001), VOICE-002 voice
+  palette (REQ-PR-003), DATASTORE-022 persona-store substrate, and PROGRAMMING REQ-PR-004/PR-005/PR-006/
+  PR-008/PR-009 + REQ-PI-001 + REQ-PL-004 + Groups PC/PG/PV/CL. SCHEDULING is NOT touched (OPS-004 +
+  SHOWS-020 own it). Total: 90 REQ + 13 NFR = 103, 1:1 REQ↔AC preserved.
 
 ---
 
@@ -1538,6 +1586,92 @@ and the distinctness test are the fixed rails; the editorial judgment of what co
 gap is the AI's call (consistent with the anti-appeal ethos).
 
 **Acceptance criteria:** see acceptance.md AC-PR-008.
+
+### REQ-PR-010 — Manual host/persona creation interface (Event-driven) [HARD]
+
+When an OPERATOR submits a request to create a NEW host on demand, the system shall provide
+a creation ENTRY that CAPTURES the minimum identity a persona-entity requires: (a) a display
+NAME; (b) the persona's IDENTITY / point-of-view seed (the basis of its REQ-PR-005 persistent
+POV); (c) an explicit VOICE assignment chosen from the VOICE-002 palette and honoring the
+strict 1:1 binding (REQ-PR-003) — the operator selects an UNUSED voice; (d) an INITIAL/SEED
+TASTE CHARTER (REQ-PR-006) expressed in terms the ANALYSIS-006 feature dimensions can query
+(REQ-AD-003), so the new persona drives a distinct candidate pool; (e) the LANGUAGE / roster
+(English or Faroese — a persona is never bilingual, REQ-PR-003/PR-007); and (f) the ≥2 FROZEN
+ANCHOR FOCUSES (REQ-PI-001) including the REQ-PR-004 PRIMARY genre territory. This requirement
+owns WHAT is captured at creation; the UI / transport / form technology is DEFERRED to
+implementation. This is the OPERATOR-DRIVEN companion to the AI-autonomous growth gate
+(REQ-PR-008): a DIFFERENT ENTRY, the SAME persona-entity model and the SAME invariants.
+
+**Acceptance criteria:** see acceptance.md AC-PR-010.
+
+### REQ-PR-011 — Creation-time validation: 1:1 firewall + anti-convergence reuse (Event-driven) [HARD]
+
+When a manual create OR edit (REQ-PR-013) request is submitted, the system shall VALIDATE it
+before the persona enters the roster, REUSING the existing Group PR gates (never forking them):
+(a) [HARD] it REJECTS a voice already bound to another persona — the REQ-PR-003 strict-1:1
+voice↔persona firewall; (b) [HARD] it runs the SAME BOTH-AXES DISTINCTNESS test REQ-PR-008
+already applies — a free unused voice is available AND the proposed taste charter occupies a
+territory that passes the REQ-PR-004 ANTI-CONVERGENCE FIREWALL against EVERY existing persona
+(materially distinct candidate pool over the ANALYSIS-006 dimensions); and (c) it requires the
+minimum REQ-PR-010 identity fields (name, voice, charter, language, ≥2 anchors incl. the
+primary territory). [HARD] A submission that fails ANY check is REJECTED with the reason and the
+persona is NOT added — the manual path can NEVER admit a host that violates an invariant. The
+anti-convergence firewall and the 1:1 rule are the SHARED, non-negotiable invariant here; the
+editorial MOTIVE judgment (why this host) is the human OPERATOR'S call on the manual path
+(distinct from REQ-PR-008's AI-autonomous documented-gap / anti-appeal motive rail), while the
+distinctness INVARIANT is identical. ANALYSIS-006 owns the dimensions; REQ-PR-004 owns the
+firewall POLICY; this requirement owns the manual-path INVOCATION of those gates.
+
+**Acceptance criteria:** see acceptance.md AC-PR-011.
+
+### REQ-PR-012 — Persistence as a first-class persona-entity (Ubiquitous) [HARD]
+
+The system shall persist a validated manually-created persona as a FIRST-CLASS persona-entity
+in the SAME system-owned, runtime-extensible persona model existing personas use (CORE-001's
+persona model, REQ-PR-001 — no fork, no second model): a manual persona is INDISTINGUISHABLE
+IN KIND from an authored one (it carries the same charter REQ-PR-006, POV REQ-PR-005, 1:1 voice
+REQ-PR-003, and frozen anchor contract REQ-PI-001). [HARD] The persona is DURABLE ACROSS
+RESTARTS — once created it survives a brain/process restart and is reloaded into the roster.
+The DATASTORE-022 substrate is the natural home for the persona store; this requirement owns
+only that the entity is durable and first-class — the persona-store TABLE / SCHEMA design is
+DEFERRED to implementation (reference the existing persona-entity model rather than re-specify it
+here).
+
+**Acceptance criteria:** see acceptance.md AC-PR-012.
+
+### REQ-PR-013 — Lifecycle: edit / disable / remove a manual host, golden rule (Event-driven) [HARD]
+
+When an operator EDITS, DISABLES, or REMOVES a manually-created host, the system shall apply the
+lifecycle operation as follows: (a) an EDIT re-runs through the REQ-PR-011 validation (so an edit
+can never break the 1:1 or anti-convergence invariants); (b) a DISABLE removes the persona from
+FUTURE host assignment and curation while leaving its record intact (re-enablable); (c) a REMOVE
+deletes the persona-entity and RETURNS its bound voice to the palette as assignable (REQ-PR-003).
+[HARD] GOLDEN RULE — disabling or removing a persona shall NEVER cut an IN-FLIGHT talk break or an
+in-progress curation/render, and shall NEVER take down a healthy stream: a persona that is on air
+or mid-render FINISHES its current break/episode gracefully and is excluded only from the NEXT
+selection cycle (inherits the NFR-P-5 never-silences-the-stream posture and the OPS-004 buffer/gate
+graceful-skip discipline). The lifecycle operations apply to MANUALLY-created hosts; the authored
+launch roster and the AI-autonomous growth path (REQ-PR-008) are unaffected.
+
+**Acceptance criteria:** see acceptance.md AC-PR-013.
+
+### REQ-PR-014 — Integration: a manual persona feeds the same downstream engines (Ubiquitous) [HARD]
+
+The system shall treat a manually-created persona IDENTICALLY to an authored one across EVERY
+downstream consumer, because those consumers ITERATE OVER ROSTER ENTITIES and a manual host is
+simply another entity (no consumer needs a special case): (a) the per-persona curation taste /
+evolving profile (REQ-PL-004 + the seed charter REQ-PR-006); (b) the talk / radio-craft rules
+(Group PC), the grounded-host-voice + quality gate (Group PG), and the delivery-craft / voice-card
+machinery (Group PV); (c) the anti-convergence layers (REQ-PR-004 pool firewall + REQ-PR-009
+per-track exclusivity); (d) the per-persona DJ-craft learning loop (Group CL); and (e) — WHEN
+those engines are built — OPS-004 scheduling (its per-persona shows / 24h clock) and SHOWS-020
+shows. [HARD] These downstream seams are EXISTING and UNCHANGED — this requirement adds no new
+engine and forks nothing; it asserts only that the manual host participates in them on equal
+footing. SCHEDULING itself is OWNED by OPS-004 + SHOWS-020 and is NOT specified here (referenced
+by number). The news anchor remains excluded by construction (REQ-PI-005): it is not a Group-PR
+curator persona and the manual-creation flow does not reach it.
+
+**Acceptance criteria:** see acceptance.md AC-PR-014.
 
 ---
 
@@ -3561,6 +3695,11 @@ Section B).
 | REQ-PR-007 | Roster & Persona Model | High | Ubiquitous | AC-PR-007 |
 | REQ-PR-008 | Roster & Persona Model | High | Event | AC-PR-008 |
 | REQ-PR-009 | Roster & Persona Model | High | State | AC-PR-009 |
+| REQ-PR-010 | Roster & Persona Model | High | Event | AC-PR-010 |
+| REQ-PR-011 | Roster & Persona Model | High | Event | AC-PR-011 |
+| REQ-PR-012 | Roster & Persona Model | High | Ubiquitous | AC-PR-012 |
+| REQ-PR-013 | Roster & Persona Model | High | Event | AC-PR-013 |
+| REQ-PR-014 | Roster & Persona Model | High | Ubiquitous | AC-PR-014 |
 | REQ-PC-001 | Radio-Craft Playbook & Talk Rules | High | Event | AC-PC-001 |
 | REQ-PC-002 | Radio-Craft Playbook & Talk Rules | High | State | AC-PC-002 |
 | REQ-PC-003 | Radio-Craft Playbook & Talk Rules | High | Event | AC-PC-003 |
@@ -3653,7 +3792,7 @@ Section B).
 
 ---
 
-Version: 0.9.0
+Version: 0.10.0
 Status: draft
 Last Updated: 2026-06-23
-Total: 85 REQ + 13 NFR = 98, 1:1 REQ↔AC.
+Total: 90 REQ + 13 NFR = 103, 1:1 REQ↔AC.
