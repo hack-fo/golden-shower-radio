@@ -175,6 +175,12 @@ class TalkDirector:
             "last_title": np.get("title", ""),
             "station_name": self.state.station_name,
         }
+        # SPEC-RADIO-HOSTCTX-016 Group HW (REQ-HW-001/002): ADD the verified year + album of
+        # the JUST-PLAYED track into the SAME fact bundle the talk prompt consumes. Read from
+        # the ANALYSIS-006 Track record (filled by ENRICH-012) via the existing by-path lookup;
+        # best-effort + exception-swallowing exactly like _attach_grounding, so a miss / fault
+        # simply omits the keys and NEVER touches the sub-1s /api/next pull path (REQ-HW-002).
+        self._attach_year_album(context, np.get("path"))
         try:
             exclude_path = np.get("path")
             recent_keys = self.state.recent_keys(normalize_key)
@@ -192,6 +198,32 @@ class TalkDirector:
         # host falls back to genre/feel talk (Scenario B-6). Never raises into the loop.
         self._attach_grounding(context)
         return context
+
+    def _attach_year_album(self, context: dict, path) -> None:
+        """Fold the just-played track's VERIFIED year + album into the talk context
+        (SPEC-RADIO-HOSTCTX-016 REQ-HW-001).
+
+        Resolves the on-air file (``path`` from now_playing) to its ANALYSIS-006 Track record
+        and adds ``last_year`` / ``last_album`` when present. Backward-compatible + best-effort:
+        a missing path, an unanalyzed/unenriched track, an empty field, or ANY error simply
+        leaves the keys unset and the prompt falls back to a plain backsell (graceful omission,
+        REQ-HY-001/002). Never raises into the talk loop and never reaches the pull path
+        (REQ-HW-002) — the assembly runs only here, on the talk-context path.
+        """
+        if not path:
+            return
+        try:
+            track = self.library.track_for_path(str(path))
+            if track is None:
+                return
+            year = getattr(track, "year", None)
+            if year:
+                context["last_year"] = year
+            album = str(getattr(track, "album", "") or "").strip()
+            if album:
+                context["last_album"] = album
+        except Exception as exc:  # noqa: BLE001 - additive enrichment, never blocks talk
+            log_event(log, "talk.year_album_error", error=str(exc))
 
     def _attach_grounding(self, context: dict) -> None:
         """Fold the knowledge grounding feed into the talk context (REQ-KI-001).

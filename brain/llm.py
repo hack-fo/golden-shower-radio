@@ -328,9 +328,17 @@ def _build_talk_prompt(context: Dict) -> str:
       last_artist / last_title  - the track that just finished (for a back-announce)
       next_artist / next_title  - the upcoming track (for an intro)
       station_name              - station identity, for the occasional ident
+      last_year / last_album    - SPEC-RADIO-HOSTCTX-016 (Group HY): the VERIFIED release
+                                  year + album of the JUST-PLAYED track (read from the
+                                  ANALYSIS-006 Track record, filled by ENRICH-012). Backsell
+                                  detail only; the host MAY (not must) voice them, quoted
+                                  exactly. Absent/empty => simply not offered (graceful
+                                  omission). NEVER read for the next track (REQ-PV-007/008).
       grounded_facts            - KNOWLEDGE-008 verified facts (REQ-KI-001): a list of
                                   {predicate, value, certain, hedge, ...}. CERTAIN facts may
                                   be stated plainly; QUALIFIED facts MUST carry their hedge.
+                                  HOSTCTX-016 (Group HC): one of these MAY be voiced as a
+                                  short grounded curiosa about the just-played track.
       grounded_relations        - KNOWLEDGE-008 real graph edges (REQ-KG-004): a list of
                                   {rel, target, ...} the host may segue on (real edges only).
     """
@@ -377,6 +385,13 @@ def _build_talk_prompt(context: Dict) -> str:
         parts.append(f"You just played: \"{last_title}\" by {last_artist}." if last_artist
                      else f"You just played: \"{last_title}\".")
         parts.append("Briefly back-announce it (a touch of character or a tasteful aside is welcome).")
+        # SPEC-RADIO-HOSTCTX-016 Group HY (REQ-HY-001/002/003): offer the VERIFIED release
+        # year + album of the just-played track as an OPTIONAL backsell detail the host MAY
+        # use. Quoted EXACTLY so the gate's forbidden-fact scan finds every token in context;
+        # framed as a cycled option (not an every-break template, REQ-HD-001 / R-H-3), and
+        # only rendered when the value is actually present (graceful omission, REQ-HY-001/002).
+        year_album = _format_year_album(context.get("last_year"), context.get("last_album"))
+        parts.extend(year_album)
     if next_artist or next_title:
         parts.append(f"Coming up next: \"{next_title}\" by {next_artist}." if next_artist
                      else f"Coming up next: \"{next_title}\".")
@@ -402,8 +417,52 @@ def _build_talk_prompt(context: Dict) -> str:
             "State CERTAIN facts plainly; for any fact marked QUALIFIED you MUST keep its "
             "hedge and never present it as established. Only segue on a listed relationship."
         )
+        # SPEC-RADIO-HOSTCTX-016 Group HC (REQ-HC-001/002/003): the host MAY turn ONE of the
+        # supplied facts above into a short curiosa / anecdote about the just-played track —
+        # but ONLY from those supplied, sourced facts (the single KNOWLEDGE-008 feed seam,
+        # REQ-HW-003). A curiosa it cannot point to in the facts above is FORBIDDEN exactly
+        # like an unsourced claim (grounding REQ-PG-002); never invent one to fill the slot.
+        parts.append(
+            "You MAY (not every break) work ONE of these into a short, genuinely interesting "
+            "curiosa or anecdote about the track — at most one, kept brief — drawn ONLY from "
+            "the facts above; do not invent or imply any anecdote not listed here."
+        )
     parts.append("Keep it tight - this is a link, not a monologue.")
     return "\n".join(parts)
+
+
+def _format_year_album(year, album) -> List[str]:
+    """Render the verified release year + album of the just-played track into OPTIONAL
+    backsell prompt lines (SPEC-RADIO-HOSTCTX-016 Group HY).
+
+    Returns [] when neither is present so the prompt stays the plain backsell (graceful
+    omission, REQ-HY-001/002 — absence is never a defect). Both are quoted EXACTLY: the year
+    as its 4-digit value and the album as its verified title, so every spoken token traces to
+    the supplied fact contract and passes the unchanged REQ-PG-005 forbidden-fact scan. The
+    'may' framing keeps it a cycled option, never a mandatory every-break template (REQ-HD-001).
+    """
+    # A year is only a fact token when it is a real positive 4-digit-ish value; 0/None/""/
+    # a non-numeric tag never renders (no guessed or partial year, REQ-HY-001).
+    spoken_year = ""
+    try:
+        y = int(str(year).strip()) if year not in (None, "") else 0
+        if y > 0:
+            spoken_year = str(y)
+    except (TypeError, ValueError):
+        spoken_year = ""
+    spoken_album = str(album or "").strip()
+    if not spoken_year and not spoken_album:
+        return []
+    if spoken_year and spoken_album:
+        detail = f"released in {spoken_year}, off the album \"{spoken_album}\""
+    elif spoken_year:
+        detail = f"released in {spoken_year}"
+    else:
+        detail = f"off the album \"{spoken_album}\""
+    return [
+        f"Verified backsell detail you MAY mention (quote it exactly, do not approximate): "
+        f"that track was {detail}."
+    ]
 
 
 def _format_grounding(facts, relations) -> List[str]:
