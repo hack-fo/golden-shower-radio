@@ -50,6 +50,11 @@ class Config:
     download_timeout_seconds: int = field(default_factory=lambda: int(_env("BRAIN_DL_TIMEOUT_SEC", "180")))
     ytdlp_timeout_seconds: int = field(default_factory=lambda: int(_env("BRAIN_YTDLP_TIMEOUT_SEC", "120")))
     min_lossy_bitrate: int = field(default_factory=lambda: int(_env("BRAIN_MIN_BITRATE", "192")))
+    # Download size/duration caps: reject anything too large or too long BEFORE
+    # enqueuing (slskd) or downloading (yt-dlp). Guards against multi-GB lossless
+    # rips and hour-long DJ mixes/podcasts polluting the song library.
+    max_download_mb: int = field(default_factory=lambda: int(_env("BRAIN_MAX_DOWNLOAD_MB", "200")))
+    max_download_duration_seconds: int = field(default_factory=lambda: int(_env("BRAIN_MAX_DURATION_SEC", "2400")))
 
     # --- director loop tuning ---
     director_interval_seconds: int = field(default_factory=lambda: int(_env("BRAIN_DIRECTOR_INTERVAL_SEC", "1800")))

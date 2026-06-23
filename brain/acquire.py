@@ -222,7 +222,10 @@ class Acquirer:
             return False
         self._slskd.wait_for_search(sid, timeout=min(self.cfg.download_timeout_seconds, 30))
         responses = self._slskd.get_responses(sid)
-        best = self._slskd.best_candidate(responses, self.cfg.min_lossy_bitrate)
+        max_size_bytes = max(0, self.cfg.max_download_mb) * 1024 * 1024
+        best = self._slskd.best_candidate(
+            responses, self.cfg.min_lossy_bitrate, max_size_bytes
+        )
         if best is None:
             log_event(log, "acquire.slskd_no_candidate", query=item.query)
             return False
@@ -246,7 +249,12 @@ class Acquirer:
 
     def _try_ytdlp(self, item: WishItem) -> bool:
         ok = ytdlp.fetch(
-            item.artist, item.title, self.cfg.music_dir, timeout=self.cfg.ytdlp_timeout_seconds
+            item.artist,
+            item.title,
+            self.cfg.music_dir,
+            timeout=self.cfg.ytdlp_timeout_seconds,
+            max_mb=self.cfg.max_download_mb,
+            max_duration_seconds=self.cfg.max_download_duration_seconds,
         )
         if ok:
             self.library.scan()

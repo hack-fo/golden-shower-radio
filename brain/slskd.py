@@ -143,7 +143,13 @@ class SlskdClient:
     # -- candidate extraction + acceptability ------------------------------------
 
     @staticmethod
-    def acceptable(username: str, response: Dict[str, Any], file: Dict[str, Any], min_bitrate: int) -> bool:
+    def acceptable(
+        username: str,
+        response: Dict[str, Any],
+        file: Dict[str, Any],
+        min_bitrate: int,
+        max_size_bytes: int = 0,
+    ) -> bool:
         """Decide whether a single file is an acceptable download candidate.
 
         Rules (see SPEC brief):
@@ -153,6 +159,8 @@ class SlskdClient:
           - bitrate MISSING/0 -> do NOT skip; keep it (it gets downranked later).
             Many Soulseek clients don't broadcast bitrate; skipping starves the lib.
           - non-audio extensions -> skip.
+          - size > max_size_bytes (when both known and cap > 0) -> skip. Guards
+            against multi-GB rips. Unknown size (0) -> keep (the cap can't apply).
         """
         # Private / locked users.
         if "[private]" in (username or "").lower():
@@ -169,6 +177,13 @@ class SlskdClient:
         ext = _ext(filename)
         if ext not in AUDIO_EXTS:
             return False
+
+        # Size cap: reject anything over the cap when both the size and the cap
+        # are known (applies to lossless and lossy alike, before the ext gate).
+        size = int(_first(file, "size", "Size", default=0) or 0)
+        if max_size_bytes > 0 and size > max_size_bytes:
+            return False
+
         if ext in LOSSLESS_EXTS:
             return True
 
@@ -179,7 +194,7 @@ class SlskdClient:
         return True  # unknown bitrate -> keep, downranked in rank_key()
 
     def collect_candidates(
-        self, responses: List[Dict[str, Any]], min_bitrate: int
+        self, responses: List[Dict[str, Any]], min_bitrate: int, max_size_bytes: int = 0
     ) -> List[Candidate]:
         candidates: List[Candidate] = []
         for response in responses:
@@ -194,7 +209,7 @@ class SlskdClient:
             for file in files:
                 if not isinstance(file, dict):
                     continue
-                if not self.acceptable(username, response, file, min_bitrate):
+                if not self.acceptable(username, response, file, min_bitrate, max_size_bytes):
                     continue
                 filename = str(_first(file, "filename", "Filename", "name", default=""))
                 ext = _ext(filename)
@@ -215,12 +230,18 @@ class SlskdClient:
                 )
         return candidates
 
-    def best_candidate(self, responses: List[Dict[str, Any]], min_bitrate: int) -> Optional[Candidate]:
-        candidates = self.collect_candidates(responses, min_bitrate)
+    def best_candidate(
+        self, responses: List[Dict[str, Any]], min_bitrate: int, max_size_bytes: int = 0
+    ) -> Optional[Candidate]:
+        candidates = self.collect_candidates(responses, min_bitrate, max_size_bytes)
         if not candidates:
             return None
         candidates.sort(key=lambda c: c.rank_key(), reverse=True)
-        return candidates[0]
+        best = candidates[0]
+        # Final guard: never enqueue a download over the cap (size known + cap set).
+        if max_size_bytes > 0 and best.size > max_size_bytes:
+            return None
+        return best
 
     # -- download ----------------------------------------------------------------
 

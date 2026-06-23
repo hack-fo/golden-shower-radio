@@ -27,10 +27,18 @@ def _snapshot(music_dir: str) -> Set[str]:
         return set()
 
 
-def fetch(artist: str, title: str, music_dir: str, timeout: int = 120) -> bool:
+def fetch(
+    artist: str,
+    title: str,
+    music_dir: str,
+    timeout: int = 120,
+    max_mb: int = 200,
+    max_duration_seconds: int = 2400,
+) -> bool:
     """Try to download the track via yt-dlp. Returns True if a new file appeared.
 
-    Never raises; logs and returns False on any failure/timeout.
+    Never raises; logs and returns False on any failure/timeout. The duration and
+    file-size caps reject hour-long mixes / multi-hundred-MB rips BEFORE download.
     """
     query = f"{artist} {title}".strip()
     if not query:
@@ -45,6 +53,12 @@ def fetch(artist: str, title: str, music_dir: str, timeout: int = 120) -> bool:
         "--audio-quality", "0",
         "--no-playlist",
         "--no-progress",
+    ]
+    if max_duration_seconds > 0:
+        cmd += ["--match-filter", f"duration < {max_duration_seconds}"]
+    if max_mb > 0:
+        cmd += ["--max-filesize", f"{max_mb}M"]
+    cmd += [
         "-o", os.path.join(music_dir, "%(title)s.%(ext)s"),
         f"ytsearch1:{query} audio",
     ]
