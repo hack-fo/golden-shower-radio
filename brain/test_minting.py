@@ -312,3 +312,140 @@ def test_gender_derived_from_voice_prefix():
     assert minting._gender_for_voice("bm_george") == "male"
     assert minting._gender_for_voice("") == ""
     assert minting._gender_for_voice("zz_unknown") == ""
+
+
+# --------------------------------------------------------------------------- #
+# 5. Documented editorial GAP — a persona is added ONLY for a documented gap.
+#    (REQ-PR-008 / AC-PR-008(a))
+# --------------------------------------------------------------------------- #
+
+def test_mint_documents_editorial_gap(tmp_path, store):
+    """AC-PR-008(a): a successful mint carries a DOCUMENTED editorial gap, derived from REAL
+    roster/charter state — it names the territory filled and the territories already covered,
+    so the persona's existence is auditable (added for a gap, not silently)."""
+    lib = _multi_genre_library(tmp_path)
+    roster = P.Roster(store=store)
+
+    res = minting.mint_persona(roster, lib, llm_fn=_stub_identity([]))
+    assert res.ok
+    # The gap reason is non-empty and grounded in the persona's own minted territory.
+    terr = res.persona.charter.primary_territory
+    assert res.gap_reason
+    assert "editorial gap" in res.gap_reason.lower()
+    assert terr.lower() in res.gap_reason.lower()
+
+    # A SECOND mint documents a gap against the now-larger roster: it references the first
+    # persona's (now-covered) territory as part of the documented existing coverage.
+    res2 = minting.mint_persona(roster, lib, llm_fn=_stub_identity([]))
+    assert res2.ok
+    assert res2.gap_reason
+    assert P._norm(terr) in res2.gap_reason.lower()  # the prior territory is now "covered"
+    # The two gaps document DIFFERENT territories (each fills a distinct uncovered region).
+    assert res2.persona.charter.primary_territory != terr
+
+
+def test_mint_gap_reason_derived_from_real_roster_not_fabricated(tmp_path, store):
+    """The gap documentation is DERIVED from real state (the firewall keys of the existing
+    roster), not a free-text justification — _document_gap reflects exactly the covered set."""
+    # Empty roster: the first territory is documented as the first, with no fabricated coverage.
+    first = minting._document_gap("deep house", set())
+    assert "deep house" in first.lower()
+    assert "first documented territory" in first.lower()
+    # Non-empty roster: the covered territories appear verbatim (sorted, normalized).
+    later = minting._document_gap("tropicalia", {"soul", "ambient", "reggae"})
+    assert "tropicalia" in later.lower()
+    for covered in ("ambient", "reggae", "soul"):
+        assert covered in later.lower()
+
+
+# --------------------------------------------------------------------------- #
+# 6. Anti-appeal motive rail — REJECT a mint proposed for appeal, not a gap.
+#    (REQ-PR-008 / AC-PR-008(b), B-2 scenario 2)
+# --------------------------------------------------------------------------- #
+
+def test_is_appeal_motive_predicate():
+    """The anti-appeal predicate flags appeal/reach/popularity motives and passes genuine
+    editorial-gap framings (the spec's anti-goal vocabulary, REQ-PR-008)."""
+    # Appeal motives (the failure mode REQ-PR-008 forbids).
+    assert minting.is_appeal_motive("because a pop show would attract more listeners")
+    assert minting.is_appeal_motive("for reach")
+    assert minting.is_appeal_motive("to boost popularity")
+    assert minting.is_appeal_motive("drives engagement")
+    assert minting.is_appeal_motive("this would go viral / trending")
+    assert minting.is_appeal_motive("grow our audience")
+    # Genuine editorial-gap framings are NOT appeal motives.
+    assert not minting.is_appeal_motive("no one covers vintage Brazilian / tropicalia")
+    assert not minting.is_appeal_motive("fills a documented deep-house gap")
+    assert not minting.is_appeal_motive("")
+
+
+def test_mint_rejects_appeal_motive(tmp_path, store):
+    """B-2 scenario 2 / AC-PR-008(b): a mint proposed for APPEAL (not a documented gap) is
+    REJECTED with code ``appeal_motive`` and the roster does NOT grow — appeal is an anti-goal."""
+    lib = _multi_genre_library(tmp_path)
+    roster = P.Roster(store=store)
+    before = len(roster.all())
+
+    res = minting.mint_persona(
+        roster, lib, llm_fn=_stub_identity([]),
+        motive="because a pop show would attract more listeners",
+    )
+    assert not res.ok
+    assert res.code == "appeal_motive"
+    assert res.persona is None
+    # The roster never grew — an appeal-motivated mint admits no persona.
+    assert len(roster.all()) == before
+
+
+def test_mint_accepts_genuine_gap_motive(tmp_path, store):
+    """A NON-appeal motive (a real editorial-gap framing) is permitted — the anti-appeal rail
+    refuses only appeal motives, never a genuine documented-gap rationale."""
+    lib = _multi_genre_library(tmp_path)
+    roster = P.Roster(store=store)
+    res = minting.mint_persona(
+        roster, lib, llm_fn=_stub_identity([]),
+        motive="fills the documented gap: no current persona covers this taste territory",
+    )
+    assert res.ok and res.persona is not None
+    assert res.gap_reason  # the success still documents the derived gap
+
+
+def test_mint_personas_appeal_motive_refuses_whole_batch(tmp_path, store):
+    """An appeal motive applies to every attempt identically: mint_personas refuses the whole
+    batch (the first attempt is rejected and ends the loop), admitting no persona."""
+    lib = _multi_genre_library(tmp_path)
+    roster = P.Roster(store=store)
+    results = minting.mint_personas(roster, lib, 3, llm_fn=_stub_identity([]),
+                                    motive="to maximize listener engagement")
+    assert all(not r.ok for r in results)
+    assert results[0].code == "appeal_motive"
+    assert roster.all() == []
+
+
+# --------------------------------------------------------------------------- #
+# 7. Durability across restart — REQ-PR-012 / AC-PR-012(c).
+# --------------------------------------------------------------------------- #
+
+def test_minted_persona_survives_restart(tmp_path, store):
+    """AC-PR-012(c): a minted persona is DURABLE ACROSS RESTARTS — after a fresh Roster is
+    constructed over the SAME store (simulating a brain/process restart) the minted persona is
+    reloaded intact (id, voice, territory, anchors, origin), indistinguishable in kind."""
+    lib = _multi_genre_library(tmp_path)
+    roster = P.Roster(store=store)
+    res = minting.mint_persona(roster, lib, llm_fn=_stub_identity([]))
+    assert res.ok
+    pid = res.persona.id
+    voice = res.persona.voice
+    terr = res.persona.charter.primary_territory
+    anchors = [a for a in res.persona.anchors if a.strip()]
+
+    # "Restart": a brand-new Roster bound to the SAME persisted store reloads the entity.
+    reloaded = P.Roster(store=store)
+    got = reloaded.get(pid)
+    assert got is not None, "minted persona did not survive the restart"
+    assert got.voice == voice
+    assert got.charter.primary_territory == terr
+    assert [a for a in got.anchors if a.strip()] == anchors
+    assert got.origin == "authored"  # the AI-autonomous growth path, preserved across restart
+    # The reloaded persona still holds its 1:1 voice binding (the firewall state is durable).
+    assert voice in reloaded.used_voices()

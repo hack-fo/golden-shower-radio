@@ -96,12 +96,59 @@ IdentityFn = Callable[..., Dict[str, str]]
 class MintResult:
     """Outcome of a mint attempt. ``ok`` False => no persona was created, with a
     human-readable ``reason`` + a machine ``code`` (mirrors ``persona.ValidationResult`` so
-    callers log + surface why a mint was skipped). On success ``persona`` is the new entity."""
+    callers log + surface why a mint was skipped). On success ``persona`` is the new entity.
+
+    ``gap_reason`` documents the editorial GAP a SUCCESSFUL mint filled (REQ-PR-008 /
+    AC-PR-008(a): "a persona is added ONLY with a documented editorial GAP"). It is DERIVED
+    from real roster/charter state at mint time (the minted territory + the territories the
+    roster already covers) — never a fabricated justification — so a mint is auditable: a
+    persona exists because a documented taste territory was uncovered, not for appeal."""
 
     ok: bool
     persona: Optional[P.Persona] = None
     code: str = ""
     reason: str = ""
+    gap_reason: str = ""
+
+
+# --------------------------------------------------------------------------- #
+# Anti-appeal motive predicate (REQ-PR-008 / AC-PR-008(b), B-2 scenario 2).
+# --------------------------------------------------------------------------- #
+
+# The anti-goal vocabulary: a mint motivated by APPEAL / REACH / POPULARITY is the failure
+# mode REQ-PR-008 explicitly forbids ("NEVER for appeal, reach, or popularity"; the B-2
+# scenario rejects "because a pop show would attract more listeners"). These tokens are the
+# spec's own anti-goal words (REQ-PR-008 + NFR-O-7 anti-appeal + the OPS-004 curation bright
+# line) — a motive containing one is an appeal motive, not a documented editorial gap.
+_APPEAL_TOKENS = frozenset({
+    "appeal", "reach", "popularity", "popular", "listeners", "audience", "engagement",
+    "engaging", "viral", "trending", "trendy", "clicks", "growth metric", "subscribers",
+    "attract", "retention", "monetiz", "marketable",
+})
+
+
+def is_appeal_motive(text: str) -> bool:
+    """True when a SUPPLIED mint motive is driven by appeal/reach/popularity rather than a
+    genuine editorial gap (REQ-PR-008 anti-appeal rail; AC-PR-008(b)). A pure substring scan
+    over the spec's anti-goal vocabulary on the lowercased motive. Runs ONLY on an EXPLICIT
+    operator/director-supplied motive string — never on the autonomously-derived gap_reason —
+    so the autonomous gap-driven mint is never self-rejected."""
+    low = (text or "").lower()
+    return any(tok in low for tok in _APPEAL_TOKENS)
+
+
+def _document_gap(territory: str, taken: set) -> str:
+    """Derive the editorial-GAP documentation for a successful mint from REAL roster state
+    (REQ-PR-008 / AC-PR-008(a)). Names the territory being filled and the territories the
+    roster ALREADY covers — a factual, auditable record that this persona exists because a
+    documented taste territory was uncovered, not for appeal. ``taken`` is the set of
+    normalized primary territories already on the roster (the firewall keys)."""
+    covered = sorted(t for t in taken if t)
+    if covered:
+        return (f"editorial gap: no current persona covers the taste territory "
+                f"'{territory}'; the roster already covers {covered}")
+    return (f"editorial gap: the roster is empty of curated taste territories — "
+            f"'{territory}' is the first documented territory")
 
 
 # --------------------------------------------------------------------------- #
@@ -271,20 +318,33 @@ def _candidate_from_charter(charter: P.TasteCharter, voice: str, roster: P.Roste
 
 
 # @MX:ANCHOR: [AUTO] the autonomous-mint entry — designs a persona and routes it through the
-#   ONE shared gate. @MX:REASON: this is the headline AI-autonomous creation path (REQ-PR-008);
-#   it MUST call Roster.create (the single shared gate) and never a parallel/bypass admission,
-#   or a convergent/invariant-violating host reaches the air. Locked by the mint tests +
-#   test_mint_routes_through_shared_gate. @MX:SPEC: SPEC-RADIO-SEEDING-029 Step 2 / REQ-PR-008
+#   ONE shared gate, gated by the anti-appeal motive rail and documenting the editorial gap.
+#   @MX:REASON: this is the headline AI-autonomous creation path (REQ-PR-008); it MUST call
+#   Roster.create (the single shared gate) and never a parallel/bypass admission, or a
+#   convergent/invariant-violating host reaches the air; it MUST refuse an appeal-motivated
+#   mint (anti-appeal rail) and DOCUMENT the editorial gap a success fills (AC-PR-008 a/b).
+#   Locked by the mint tests + test_mint_routes_through_shared_gate +
+#   test_mint_rejects_appeal_motive + test_mint_documents_editorial_gap.
+#   @MX:SPEC: SPEC-RADIO-SEEDING-029 Step 2 / REQ-PR-008
 def mint_persona(roster: P.Roster, library: Any, *,
                  model: str = DEFAULT_IDENTITY_MODEL,
                  llm_fn: Optional[IdentityFn] = None,
-                 overlap_cap: Optional[float] = None) -> MintResult:
+                 overlap_cap: Optional[float] = None,
+                 motive: str = "") -> MintResult:
     """Autonomously mint ONE persona — NO human input. Returns a ``MintResult``.
 
-    Pipeline: derive a grounded distinct charter (Step 1, ``seeding``) that the roster does
-    not yet occupy -> assign a FREE voice (1:1 firewall) -> design an identity (LLM via
-    ``llm_fn``, deterministic fallback) -> route through the EXISTING shared ``Roster.create``
-    gate. On success the persona is persisted + voiced + distinct + grounded.
+    Pipeline: refuse an APPEAL motive (REQ-PR-008 anti-appeal rail) -> derive a grounded
+    distinct charter (Step 1, ``seeding``) that the roster does not yet occupy -> assign a
+    FREE voice (1:1 firewall) -> design an identity (LLM via ``llm_fn``, deterministic
+    fallback) -> route through the EXISTING shared ``Roster.create`` gate. On success the
+    persona is persisted + voiced + distinct + grounded, and the ``MintResult`` carries the
+    DOCUMENTED editorial gap it filled (AC-PR-008(a)).
+
+    ``motive`` is an OPTIONAL operator/director framing for WHY the mint is proposed. The
+    default ("") is the pure autonomous gap-driven path. If a motive is supplied and it is an
+    APPEAL motive (appeal/reach/popularity/listeners/... — REQ-PR-008's anti-goal), the mint is
+    REFUSED with code ``appeal_motive`` BEFORE any work (AC-PR-008(b) / B-2 scenario 2) — a
+    persona is added only for a documented editorial gap, never for appeal.
 
     Degrade-safe: no free voice => a clean ``no_free_voice`` failure (not a crash); no derivable
     distinct charter (dry/over-clustered catalog) => ``no_distinct_charter``; the gate itself
@@ -295,6 +355,16 @@ def mint_persona(roster: P.Roster, library: Any, *,
     """
     fn: IdentityFn = llm_fn or llm.design_persona_identity
     cap = overlap_cap if overlap_cap is not None else roster.overlap_cap
+
+    # ANTI-APPEAL RAIL (REQ-PR-008 / AC-PR-008(b)): a mint proposed for appeal/reach/popularity
+    # is refused up front — a persona is added ONLY for a documented editorial gap, never for
+    # appeal. The autonomous (motive-less) path skips this; only an EXPLICIT motive is screened.
+    if motive and is_appeal_motive(motive):
+        log_event(log, "minting.appeal_motive_rejected", motive=motive)
+        return MintResult(False, None, "appeal_motive",
+                          "mint refused: the proposed motive is driven by appeal/reach/"
+                          "popularity, which is an anti-goal — a persona is added only for a "
+                          "documented editorial gap (REQ-PR-008)")
 
     # A FREE voice must exist before we spend an LLM call (cheap fail-fast, no half-work).
     free = _free_voices(roster)
@@ -320,6 +390,11 @@ def mint_persona(roster: P.Roster, library: Any, *,
                           "the library yields no grounded taste territory distinct from the "
                           "existing roster — grounding wins over fabricating a region")
 
+    # DOCUMENT THE EDITORIAL GAP (REQ-PR-008 / AC-PR-008(a)) from REAL roster state — derived
+    # BEFORE create() while ``taken`` still reflects the pre-mint roster, so the record reads
+    # "no current persona covers '<territory>'; the roster already covers <covered>".
+    gap_reason = _document_gap(charter.primary_territory, taken)
+
     voice = free[0]
     candidate = _candidate_from_charter(charter, voice, roster, model=model, llm_fn=fn)
 
@@ -330,24 +405,32 @@ def mint_persona(roster: P.Roster, library: Any, *,
         log_event(log, "minting.gate_rejected", code=result.code, reason=result.reason)
         return MintResult(False, None, result.code, result.reason)
 
+    # Structured mint record: the territory filled + the roster state (covered territories) at
+    # mint time + the documented gap — the auditable proof a persona was added for a gap.
     log_event(log, "minting.minted", id=created.id, name=created.display_name,
-              voice=created.voice, territory=created.charter.primary_territory)
-    return MintResult(True, created, "ok", "")
+              voice=created.voice, territory=created.charter.primary_territory,
+              roster_covered=sorted(t for t in taken if t), gap_reason=gap_reason)
+    return MintResult(True, created, "ok", "", gap_reason)
 
 
 def mint_personas(roster: P.Roster, library: Any, n: int, *,
                   model: str = DEFAULT_IDENTITY_MODEL,
                   llm_fn: Optional[IdentityFn] = None,
-                  overlap_cap: Optional[float] = None) -> List[MintResult]:
+                  overlap_cap: Optional[float] = None,
+                  motive: str = "") -> List[MintResult]:
     """Autonomously mint up to ``n`` personas, each distinct from all already in the roster
     (including ones minted earlier in THIS call). Stops early on the first failure that means
-    no more can be minted (no free voice / no distinct charter), so a partial success is a
-    coherent roster, never a half-mutated one. Returns the per-attempt ``MintResult`` list."""
+    no more can be minted (no free voice / no distinct charter / an appeal motive), so a
+    partial success is a coherent roster, never a half-mutated one. ``motive`` is threaded to
+    every attempt — an appeal motive refuses the whole batch (REQ-PR-008). Returns the
+    per-attempt ``MintResult`` list."""
     results: List[MintResult] = []
     for _ in range(max(n, 0)):
-        res = mint_persona(roster, library, model=model, llm_fn=llm_fn, overlap_cap=overlap_cap)
+        res = mint_persona(roster, library, model=model, llm_fn=llm_fn,
+                           overlap_cap=overlap_cap, motive=motive)
         results.append(res)
-        # These two codes mean the roster cannot grow further — stop rather than spin.
-        if not res.ok and res.code in ("no_free_voice", "no_distinct_charter"):
+        # These codes mean the roster cannot grow further — stop rather than spin. An appeal
+        # motive applies to every attempt identically, so the first refusal ends the batch.
+        if not res.ok and res.code in ("no_free_voice", "no_distinct_charter", "appeal_motive"):
             break
     return results
