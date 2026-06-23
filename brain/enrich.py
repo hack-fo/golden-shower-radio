@@ -48,7 +48,7 @@ CORE_FIELDS = ("artist", "title", "album", "year", "genre")
 # for (re-)enrichment; once processed it is stamped to this value so the bounded backfill
 # skips it — even when no correction was applied (so we never re-query MB/AcoustID for a
 # track we already resolved). Bump it to force a one-time re-pass over the whole library.
-ENRICH_SCHEMA_VERSION = 1
+ENRICH_SCHEMA_VERSION = 2
 
 SRC_ACOUSTID = "acoustid"
 SRC_MUSICBRAINZ_TEXT = "musicbrainz-text"
@@ -350,10 +350,34 @@ def _canonical_from_acoustid(data: Dict[str, Any]) -> Optional[Canonical]:
     return None
 
 
+def _filename_corroborates(canonical: "Canonical", path: str, title: str) -> bool:
+    """Cross-check an identification against the FILENAME (+ current title). AcoustID prints
+    are usually right but CAN be mis-submitted in their DB, so a match whose artist/title
+    shares NOTHING with the filename is suspect. Lenient: any reasonable overlap corroborates;
+    only a gross mismatch is rejected. Leading track-number prefixes ("09 - ", "01_") are
+    stripped first so they do not drown the signal."""
+    stem = os.path.splitext(os.path.basename(path or ""))[0]
+    stem = re.sub(r"^\s*\d{1,3}\s*[-_.]\s*", "", stem)
+    hay = stem + " " + (title or "")
+    if canonical.title and (_contains(hay, canonical.title) or similarity(stem, canonical.title) >= 0.5):
+        return True
+    if canonical.artist and _contains(hay, canonical.artist):
+        return True
+    return False
+
+
 def identify(path: str, artist: str, title: str, cfg: Any) -> Optional[Canonical]:
     """Full identification: AcoustID fingerprint first (most reliable for garbled files),
-    then text-match fallback. Returns the higher-confidence result, or None."""
+    then text-match fallback. Returns the higher-confidence result, or None.
+
+    An AcoustID match is CROSS-CHECKED against the filename: a fingerprint can be mis-submitted
+    in AcoustID's crowd DB, so a match that shares nothing with the filename/title is discarded
+    as untrustworthy (falls through to text-match, which the propose() gate then vets)."""
     fp = identify_acoustid(path, cfg) if getattr(cfg, "acoustid_api_key", "") else None
+    if fp is not None and not _filename_corroborates(fp, path, title):
+        log_event(log, "enrich.acoustid_filename_mismatch",
+                  path=os.path.basename(path or ""), got="%s - %s" % (fp.artist, fp.title))
+        fp = None
     txt = identify_text(artist, title, cfg)
     candidates = [c for c in (fp, txt) if c is not None]
     if not candidates:
