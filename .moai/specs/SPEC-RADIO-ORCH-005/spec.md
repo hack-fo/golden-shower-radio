@@ -1,9 +1,9 @@
 ---
 id: SPEC-RADIO-ORCH-005
-version: 0.2.0
+version: 0.5.1
 status: draft
 created: 2026-06-22
-updated: 2026-06-22
+updated: 2026-06-23
 author: charlie
 priority: High
 issue_number: null
@@ -13,6 +13,111 @@ issue_number: null
 
 ## HISTORY
 
+- 2026-06-23 (v0.5.1): Audit convergence fixes (label-only, parity preserved) — corrected one
+  citation outlier (OB-006 play-history now attributed to OPS-004, matching the four other
+  mentions); relabeled REQ-RA-002 Ubiquitous→Event-driven (text was already event-driven) in
+  header + traceability table; relabeled the negative-ubiquitous prohibitions RE-005, RC-003,
+  RA-004, RN-006, RI-004 from Unwanted→Ubiquitous (genuinely conditional Unwanted REQs RL-006,
+  RW-005, RE-006, RD-001 left as-is). No requirement text, REQ count, or AC mapping changed.
+- 2026-06-22 (v0.5.0): Batched additive amendment from two verified dossiers — (A) the
+  UNIFIED CROSS-SURFACE DEDUP framework and (B) the persona/show LIFECYCLE action on the
+  action surface. (A) The dossier confirmed almost the whole dedup stack is already specced
+  (every surface is a VIEW over the one OPS-004 REQ-OD-007 ledger; per-surface identity keys
+  + recency windows all exist) and found exactly 3 genuine gaps. NEW REQ-RW-006 [HARD]
+  (Ubiquitous) — a single READ-side UNIFIED CROSS-SURFACE DEDUP/RECENCY VIEW with one query
+  `classify(surface, surface_key, scope) -> {fresh | recently-by-self | recently-by-other}`,
+  scope ∈ {this_persona, any_persona}. It ORCHESTRATES each surface's EXISTING key + window
+  (track=normalize_key OPS-004 REQ-OA-010 + play-history REQ-OB-006 + PROGRAMMING-007
+  REQ-PR-004; topic=OPS-004 REQ-OX-001 key + REQ-OX-003 window, per-persona REQ-OX-006;
+  news=REQ-RN-002 story_id + REQ-RN-003 window; segment-type=OPS-004 Group OY REQ-OY-001
+  registry identity + REQ-PR-004 distinctness) — computes NOTHING new, forks NO store; it is
+  the formalized READ over the REQ-RW-002 sensors and [HARD] degrades gracefully (REQ-RW-005:
+  a slow/errored surface read airs without that surface's dedup memory, never stalls).
+  REQ-RW-006 carries the REFERENCE-vs-DUPLICATION tri-state rule as sub-rules: recently-by-SELF
+  => FORBID re-air (restates OPS-004 REQ-OC-006 + REQ-OX-002/003 self-scope); recently-by-OTHER
+  => FORBID verbatim/near-verbatim COPY but PERMIT + ENCOURAGE a LIGHT cross-persona break ONLY
+  IF (a) ATTRIBUTED to the originating host/thread, (b) ADDITIVE (new angle/fact/opinion, not a
+  restate), (c) in the borrowing persona's OWN frozen voice (still passes PROGRAMMING-007
+  REQ-PV-009/PV-010 lints); DEPTH beyond light is director-gated (REQ-RW-003 decision, logged);
+  fresh => unconstrained. Enforcement is a deterministic + adversarial two-tier gate modeled on
+  PROGRAMMING-007 REQ-PG-005 (the lint is OWNED by PROGRAMMING-007 — REQ-PV-010 extended;
+  ORCH-005 SUPPLIES the recently-by-other signal — not re-owned here). The shared-awareness
+  substrate is a cross-persona-readable THREAD slice over the OPS-004 REQ-OD-007 `active_threads`
+  + REQ-OD-008 diary (a sibling VIEW to Group RN / Group RI), and a reference writes ONE
+  `topic_referenced`/decision event (no new store). [HARD COORDINATION NOTE] OPS-004 REQ-OX-006's
+  current cross-persona default treats host A's topic as "fresh" for host B (permitting copying);
+  that FIX is being applied in OPS-004 IN PARALLEL — REQ-RW-006's reference-vs-dup rule is the
+  cross-surface GENERALIZATION that DEPENDS on it (ORCH-005 does NOT edit OPS-004). NEW
+  REQ-RW-007 [HARD] (Event-driven) — a director-DECLARED, TIME-BOXED SPECIAL-EVENT EXCEPTION
+  (themed night / Christmas / NYE / anniversary) that SANCTIONS cross-host SHARED themes the
+  dedup normally forbids: declared scope + window logged to the ledger, AUTO-REVERTS at window
+  end (inherits OPS-004 REQ-OB-005 override-and-restore), relaxes ONLY cross-host THEME
+  distinctness for the declared theme, NEVER recently-by-self, never track/segment/news dedup
+  unless separately declared, and NEVER grounding/quality/safety/apolitical (all inherited
+  verbatim; bounded by OPS-004 REQ-OD-006 measured-change). REQ-RL-007 AMENDED (one line) to
+  CONSUME the unified view on the planning tick and honor any active special-event exception.
+  (B) NEW REQ-RA-005 [HARD] (Event-driven) — a PERSONA/SHOW LIFECYCLE action (retire/launch
+  persona, discontinue/relaunch show) added to the enumerated action surface (REQ-RA-001 gains
+  clause (i)) that DISPATCHES into OPS-004 Group OB's lifecycle FSM (REQ-OB-010..014, now
+  committed) — reference, don't re-own; dispatched-through-seam (REQ-RA-002), recorded to ledger
+  (REQ-RA-003), bounded by OPS-004 REQ-OD-006 rarity tier (REQ-OD-010) + the [HARD]
+  always-staffed atomic invariant (OPS-004 REQ-OB-014). News anchor exempt by construction
+  (PROGRAMMING-007 REQ-PI-005). Net: +3 REQ (RW-006, RW-007, RA-005), +0 NFR; RW grows 5→7,
+  RA grows 4→5; +3 Section B scenarios (B-17 cross-persona reference-vs-copy, B-18 special-event
+  exception, B-19 lifecycle action). Total: 42 REQ + 8 NFR = 50 (was 39 + 8 = 47); 1:1 REQ↔AC
+  preserved. All VIEWs over the one OD-007 ledger; no new datastore, no new playout kind, no
+  Liquidsoap change, brain-only. REFERENCE-not-re-own throughout (OPS-004 OX/OY/OB/OC-006/
+  OD-005..010/OA-010, PROGRAMMING-007 PR-004/PC-006/PV-009/PV-010/PG-005/PI-004/PI-005,
+  OPS-004 REQ-OB-006 play-history).
+- 2026-06-22 (v0.4.0): Owner-plan refinement relayed during authoring (confirm with user —
+  R-R-12). HARD DATA-vs-CODE EDITORIAL-WRITE-ONLY RAIL on the action surface. NEW REQ-RA-004
+  [HARD] (Unwanted): no action on the operator's action surface (REQ-RA-001) shall write to
+  source code or critical runtime config; every editorial/orchestration write goes to a
+  persisted DATA store through an existing subsystem seam (REQ-RA-002). It RESTATES (does not
+  fork) the canonical rail OPS-004 REQ-OD-009 as it applies to the orchestration action
+  surface — the same not-a-fork discipline ORCH-005 already uses for the apolitical rail
+  (REQ-RE-005) and the anti-appeal rail (REQ-RI-004). The brain dispatches editorial actions
+  + records to the ledger; it never edits the machinery that keeps it on air (FROZEN-zone
+  discipline, design-system constitution Section 2 + Frozen Guard Layer 1; references the
+  per-persona Frozen Guard PROGRAMMING-007 Group PI, being added in parallel). Group RA grows
+  3→4 REQ. Net: +1 REQ (RA-004), +0 NFR; +1 Section B scenario (B-16). Total: 39 REQ + 8 NFR
+  = 47 (was 38 + 8 = 46); 1:1 REQ↔AC preserved. No new datastore, no Liquidsoap change,
+  brain-only.
+- 2026-06-22 (v0.3.0): Gap-fill extension from a verified gap-analysis of the
+  autonomous-operator pillars (inventory / topic-banks / listener-responses / editorial
+  continuity). The analysis confirmed the operator contract is ~85% already covered and
+  identified two remaining holes whose home is ORCH-005. (a) NEW Group RI — Listener-
+  Interaction Memory (REQ-RI-001..004): a listener-specific VIEW over the OPS-004
+  REQ-OD-007/008 ledger (using/extending the `listener_message` + `listener_reaction`
+  event types plus a feedback→action→outcome linkage with idempotent IDs), SIBLING to
+  Group RN. It makes the feedback→action-taken→outcome through-line a first-class,
+  queryable awareness layer instead of a one-way input that evaporates: REQ-RI-001
+  maintains the view (NOT a forked store); REQ-RI-002 records the signal→action→outcome
+  linkage (self-declared, no analytics dependency) so it is durable, auditable (NFR-R-6),
+  and readable as continuity next cycle (REQ-RL-005); REQ-RI-003 applies a no-spam/dedup
+  discipline analogous to REQ-RN-003; REQ-RI-004 [HARD] forbids using feedback
+  volume/sentiment as an optimization target (restates, does not fork, the anti-appeal
+  rail CORE-001 REQ-D-008 / OPS-004 REQ-OB-009 / REQ-OF-004), and is sensor-shaped so
+  future CALLIN-003 / SOCIAL inputs (Section 15 roadmap) feed the SAME view. (b) Group RL
+  extended with REQ-RL-007 — CROSS-STORE MAINTENANCE: on the PLANNING tick the director
+  reads the integrated world model (REQ-RW-002, now including the topic-bank and
+  listener-response sensor slices), DETECTS cross-store imbalances (library genre coverage
+  vs OPS-004 Group OX topic-distribution; listener-response demand vs talk/imaging buffer
+  depth; persona-rotation drift in the diary; topic-repetition creep), and DISPATCHES
+  targeted maintenance ONLY through the EXISTING REQ-RA-001 action surface, recording
+  decisions to the ledger (REQ-RA-003), bounded by the OPS-004 REQ-OD-006 measured-change
+  rails. [HARD] It adds NO new Group RS, NO new action kind, and NO parallel datastore —
+  it is a cognition-phase requirement of the existing director loop, not a new subsystem.
+  (c) REQ-RW-002 AMENDED (not a new REQ): the enumerated sensor set gains a TOPIC-BANK
+  inventory slice (consumed from OPS-004 Group OX REQ-OX-001/005 — ORCH owns the sensor
+  add, OPS owns the store) and a LISTENER-RESPONSE memory slice (consumed from Group RI);
+  both consumed, never recomputed. Boundary discipline unchanged: every new REQ REFERENCES
+  rather than re-owns (OPS-004 OD-007/008 ledger, OX topic-bank store, OD-006
+  measured-change rails, OB-009/D-008 listener channel + anti-appeal guard, RA-001 action
+  surface). Group count 7→8 (add RI); RL grows 6→7 REQ. Net: +5 REQ (RI-001..004,
+  RL-007), +0 NFR; +1 Section B scenario pair (B-14 listener-interaction memory, B-15
+  cross-store maintenance). Total: 38 REQ + 8 NFR = 46 (was 33 + 8 = 41); 1:1 REQ↔AC
+  preserved. No new datastore, no Liquidsoap change, brain-only.
 - 2026-06-22 (v0.2.0): Added Group RN — News Ledger, Dedup & News-Cycle (REQ-RN-001..006).
   Answers the user's news-memory ask: "remember what news we've grabbed, from where, and at
   what time, so we don't repeat the same news continuously — unless it's major/important; we
@@ -120,11 +225,22 @@ restate or fork any CORE-001, VOICE-002, OPS-004, or ANALYSIS-006 requirement.
 
 OWNS:
 - The DIRECTOR LOOP: the long-lived perception→cognition→action operator, its tick
-  cadence (cheap rule ticks + occasional batched LLM planning), and the operator/
-  generator dispatch contract (Group RL).
+  cadence (cheap rule ticks + occasional batched LLM planning), the operator/
+  generator dispatch contract, and the CROSS-STORE MAINTENANCE cognition sub-phase
+  (REQ-RL-007) that reads the integrated world model on the planning tick, detects
+  imbalances ACROSS the inventories, and dispatches maintenance through the existing
+  action surface (Group RL).
 - The WORLD MODEL: the single continuously-refreshed situational-awareness snapshot the
   brain consults each tick, aggregating every sensor, with a defined refresh cadence and
-  graceful per-sensor degradation (Group RW).
+  graceful per-sensor degradation (Group RW). Within Group RW it also owns the UNIFIED
+  CROSS-SURFACE DEDUP/RECENCY VIEW (REQ-RW-006) — one read-side `classify()` query that
+  ORCHESTRATES every surface's EXISTING per-surface key + window (it computes nothing new
+  and forks no store) and the REFERENCE-vs-DUPLICATION tri-state rule (self => forbid re-air;
+  other => forbid copy but permit a light, attributed, additive, own-voice cross-persona
+  break; fresh => unconstrained) — and the director-DECLARED, time-boxed SPECIAL-EVENT
+  EXCEPTION (REQ-RW-007) that sanctions cross-host shared themes for a themed night and
+  auto-reverts. The dedup ENFORCEMENT lint is OWNED by PROGRAMMING-007 (REQ-PV-010 extended,
+  PG-005-modeled); ORCH-005 SUPPLIES the recently-by-other signal, it does not re-own the lint.
 - EVENT DETECTION + the graduated, apolitical, rate-limited REACTION POLICY: significance
   tiers, reaction tiers, mood adjustment, cooldowns, best-effort (Group RE). It drives
   OPS-004's existing news production + breaking-news-interrupt seam; it does NOT re-own
@@ -136,12 +252,25 @@ OWNS:
 - GRACEFUL DEGRADATION as a cross-cutting policy: per-sensor and per-subsystem failure
   handling, self-recovery, never silence the stream (Group RD).
 - The ACTION SURFACE: the enumerated set of actions the director may take and how each
-  is dispatched (Group RA).
+  is dispatched (Group RA), under the [HARD] data-vs-code constraint that every action
+  writes to a persisted DATA store through an existing seam and NEVER edits code/critical
+  config (REQ-RA-004, restating OPS-004 REQ-OD-009 as it applies to the action surface). The
+  surface includes the PERSONA/SHOW LIFECYCLE action (REQ-RA-005 — retire/launch persona,
+  discontinue/relaunch show) which DISPATCHES into OPS-004 Group OB's lifecycle FSM
+  (REQ-OB-010..014), bounded by the OPS-004 rarity tier (REQ-OD-010) + the always-staffed
+  atomic invariant (REQ-OB-014); ORCH-005 owns DISPATCHING the action, OPS-004 owns the FSM.
+  News anchor is exempt by construction (PROGRAMMING-007 REQ-PI-005).
 - The NEWS LEDGER + DEDUP + NEWS-CYCLE memory/selection policy (Group RN): the append-only
   record of fetched/aired news (a VIEW over the OPS-004 ledger), normalized/semantic story
   identity, the no-repeat policy with the major-breaking exception, the news-cycle/freshness
   selector, and the same-day-recap fallback. It DRIVES OPS-004 Group OG production; it does
   NOT fork the ledger store or re-own news sourcing.
+- The LISTENER-INTERACTION MEMORY (Group RI): the listener-specific VIEW over the OPS-004
+  ledger that links listener-feedback → station-action-taken → outcome into a first-class,
+  queryable awareness layer (sibling to Group RN), with its own no-spam/dedup discipline.
+  It READS the listener-signals channel CORE-001/OPS-004 own (REQ-D-008 / REQ-OB-009) and
+  WRITES the linkage through the OPS-004 ledger; it does NOT fork a store and [HARD] never
+  becomes an engagement/appeal optimization target (inherits the anti-appeal guard).
 
 REFERENCES (consumes / drives; does not restate):
 - **OPS-004 REQ-OA-013** — the editorial RUN MODES (maintenance/responsive/continuity/
@@ -165,6 +294,51 @@ REFERENCES (consumes / drives; does not restate):
   acquisition accounting + bounded queue. The world model READS acquisition/disk state
   as a sensor; the director throttles acquisition via this policy. ORCH-005 reads + drives;
   OPS-004 owns the policy.
+- **OPS-004 Group OX (REQ-OX-001/002/003/005/006)** — the TOPIC-BANK inventory (persisted
+  theme/segment instances, the topic-identity key REQ-OX-001, the self-scope avoid-list
+  REQ-OX-002, the freshness/rotation window REQ-OX-003, the per-persona scoping REQ-OX-006)
+  as a VIEW over the OPS-004 ledger. The world model READS topic freshness/distribution as a
+  sensor (REQ-RW-002); cross-store maintenance (REQ-RL-007) acts on topic-vs-library imbalance
+  + topic-repetition creep; and the unified dedup view (REQ-RW-006) dispatches the TOPIC
+  surface to the OX key + window. ORCH-005 reads + drives; OPS-004 owns the topic store + the
+  per-persona-vs-cross-persona scope. (The thin topic-freshness sensor slice is ORCH's add.)
+  [HARD COORDINATION] REQ-OX-006's cross-persona default is being FIXED in OPS-004 in parallel
+  so host A's topic is no longer "fresh" for host B; REQ-RW-006's reference-vs-dup rule DEPENDS
+  on that fix and generalizes it cross-surface. ORCH-005 does NOT edit OPS-004.
+- **OPS-004 Group OY (REQ-OY-001)** — the SEGMENT-TYPE REGISTRY type identity. The unified
+  dedup view (REQ-RW-006) dispatches the SEGMENT-TYPE surface to the OY registry identity (with
+  PROGRAMMING-007 REQ-PC-006 generator-category + REQ-PR-004 distinctness). OPS-004 owns the
+  registry; ORCH-005 reads.
+- **OPS-004 REQ-OA-010 + REQ-OB-006 + CORE-001 play-history** — the track `normalize_key` and
+  the per-air play-history rotation window. The unified dedup view (REQ-RW-006) dispatches the
+  TRACK surface to these existing keys + windows (with PROGRAMMING-007 REQ-PR-004's rotation
+  cap). OPS-004/CORE own them; ORCH-005 reads, computes nothing new.
+- **OPS-004 REQ-OC-006** — the SELF-IMITATION avoid-list (recent output is an avoid-list, never
+  an exemplar; self-only). REQ-RW-006's recently-by-SELF tri-state state RESTATES this for the
+  unified view, not a fork; OPS-004 owns it.
+- **OPS-004 REQ-OB-005** — the override-and-restore discipline (special-show override restores
+  the default clock cleanly). REQ-RW-007's time-boxed special-event exception inherits the
+  override-and-restore + auto-revert pattern verbatim; OPS-004 owns it.
+- **OPS-004 Group OB (REQ-OB-010..014)** — the persona/show LIFECYCLE FSM (retire/launch
+  persona, discontinue/relaunch show; the [HARD] always-staffed atomic invariant REQ-OB-014).
+  REQ-RA-005's lifecycle ACTION DISPATCHES into this FSM through the existing seam; OPS-004
+  owns the FSM + the staffing invariant. ORCH-005 dispatches, never re-owns.
+- **OPS-004 REQ-OD-006 + REQ-OD-010** — the measured-change rails + the RARITY TIER (identity/
+  existence changes are the rarest tier). REQ-RA-005's lifecycle dispatch is bounded by the
+  rarity tier; REQ-RW-006/RW-007 are bounded by the measured-change rails. OPS-004 owns them.
+- **OPS-004 REQ-OD-007 (`active_threads`) + REQ-OD-008 (diary)** — the shared-awareness
+  substrate. REQ-RW-006's cross-persona THREAD slice is a VIEW over `active_threads` + the
+  diary's running threads/themes (sibling to Group RN / Group RI); a cross-persona reference
+  writes ONE `topic_referenced`/decision event. OPS-004 owns the ledger event vocabulary;
+  ORCH-005 reads + records, never forks.
+- **PROGRAMMING-007 REQ-PR-004 / REQ-PC-006 / REQ-PV-009 / REQ-PV-010 / REQ-PG-005 / REQ-PI-004
+  / REQ-PI-005** — the anti-convergence firewall + generator-category taxonomy + the per-persona
+  voice card + the cross-persona collision/tic lint + the two-tier quality gate + the distinctness
+  canary + the news-anchor-excluded-by-construction carve-out. REQ-RW-006's reference-vs-dup
+  ENFORCEMENT is the deterministic + adversarial two-tier gate (PG-005-modeled) OWNED by
+  PROGRAMMING-007 (REQ-PV-010 extended); ORCH-005 SUPPLIES the recently-by-other signal, it does
+  not re-own the lint. REQ-RA-005's lifecycle action treats the news anchor as exempt (REQ-PI-005).
+  PROGRAMMING-007 owns these; ORCH-005 references them.
 - **OPS-004 REQ-OB-009 + CORE-001 REQ-D-008** — the listener feedback channel + the
   typed listener-signals contract. The world model READS listener signals as a sensor;
   CORE/OPS own the channel + the [HARD] anti-appeal-optimization guard, which ORCH-005
@@ -173,6 +347,11 @@ REFERENCES (consumes / drives; does not restate):
   ORCH-005's reaction policy is bound by it; OPS-004 owns the constraint. ORCH-005
   restates the constraint ONLY as it newly applies to event-reaction (REQ-RE-005),
   not as a fork.
+- **OPS-004 REQ-OD-009** — the [HARD] data-vs-code editorial-write-only rail (editorial
+  self-expansion writes to persisted DATA only, never code/critical config; the FROZEN-zone
+  discipline applied to the running station). OPS-004 owns the canonical rail; ORCH-005
+  restates it ONLY as it applies to the orchestration action surface (REQ-RA-004), not as a
+  fork. References the per-persona Frozen Guard (PROGRAMMING-007 Group PI), not re-owned.
 - **ANALYSIS-006 (Groups AE/AT/AM/AD/AP)** — track intelligence (genre/key/bpm/energy/
   era + cue points). The world model READS the queryable catalog's feature dimensions as
   the now-playing / library-stats sensor; ANALYSIS-006 owns producing them. ORCH-005
@@ -255,12 +434,15 @@ Consumed VOICE-002 concepts:
 
 Consumed OPS-004 concepts (by number, deliberately):
 - **REQ-OA-013** (editorial run modes), **REQ-OA-001..014** (PD decisions), **REQ-OD-007/
-  OD-008** (ledger + diary), **REQ-OE-012 / NFR-O-10** (pre-stock buffer + serialized
+  OD-008** (ledger + diary), **REQ-OD-006** (measured-change rails — bounds REQ-RL-007
+  cross-store maintenance), **REQ-OE-012 / NFR-O-10** (pre-stock buffer + serialized
   generators), **Group OG** (news sourcing + production + breaking-news interrupt seam),
-  **Group OH** (acquisition balance / disk / bounded queue), **REQ-OB-009** (listener
-  feedback channel), **REQ-OF-004 / NFR-O-7** (apolitical + factual integrity), **NFR-O-1/
-  2** (subscription auth + quota + two LLM modes), **NFR-O-4** (resilience), **NFR-O-6**
-  (observability surface).
+  **Group OH** (acquisition balance / disk / bounded queue), **Group OX (REQ-OX-001/005)**
+  (the topic-bank inventory — read as a world-model sensor, maintained via cross-store
+  maintenance; OPS owns the store), **REQ-OB-009** (listener feedback channel — read as a
+  sensor and linked through Group RI), **REQ-OF-004 / NFR-O-7** (apolitical + factual
+  integrity), **NFR-O-1/2** (subscription auth + quota + two LLM modes), **NFR-O-4**
+  (resilience), **NFR-O-6** (observability surface).
 
 Consumed ANALYSIS-006 concepts:
 - **Groups AE/AT/AM/AD** — the track-intelligence feature dimensions + the queryable
@@ -304,6 +486,19 @@ Consumed ANALYSIS-006 concepts:
 | **Recency window** | The TUNABLE interval within which an already-aired story is NOT re-aired (REQ-RN-003) — unless it is major-breaking, the one exception that may recur (framed as "still developing"). |
 | **News cycle / freshness selection** | The selection discipline (REQ-RN-004) that prefers fresh not-yet-aired items, ages out stale stories, and rotates across the Faroese→Sweden→international source tiers so the station follows a real news cycle and never loops the same handful of stories. |
 | **Same-day rehash / recap** | The fallback (REQ-RN-005) when no fresh items are available: the station MAY recap same-day news — framed HONESTLY as a recap, never as breaking/fresh — only after fresh items are exhausted. |
+| **Listener-interaction memory** | The append-only listener-specific record (Group RI) linking each listener signal to the station action taken in response and the later outcome — a feedback→action→outcome through-line. Implemented as a listener-specific VIEW / event-type over the OPS-004 ledger (REQ-OD-007/008), reusing/extending `listener_message` + `listener_reaction` plus a `listener_response` / outcome linkage; NOT a forked store. Sibling to the news ledger. [HARD] human-curatorial context only — never an engagement/appeal optimization target. |
+| **Feedback→action→outcome linkage** | A single recorded chain: a listener signal (the feedback), the station action attributable to it (REQ-RA-001 surface), and the later self-declared outcome/result. The linkage is the AI's own judgement (self-declared, like a diary entry), not a measured analytics signal. |
+| **Cross-store maintenance** | The cognition-phase imbalance CHECK the director runs on a planning tick (REQ-RL-007): reading the integrated world model, it detects imbalances ACROSS the inventories (library genre coverage vs topic-bank distribution, listener-response demand vs talk/imaging buffer depth, persona-rotation drift, topic-repetition creep) and dispatches targeted maintenance ONLY through the existing action surface (REQ-RA-001), bounded by the OPS-004 measured-change rails (REQ-OD-006). It is a sub-phase of the existing loop — NOT a new group, action kind, or datastore. |
+| **Topic-bank sensor** | The world-model slice (REQ-RW-002) that reads topic freshness / distribution / rotation state from OPS-004 Group OX (REQ-OX-001/005). ORCH owns this thin sensor add; OPS-004 owns the topic store. Consumed, never recomputed. |
+| **Unified cross-surface dedup/recency view** | The single read-side dedup/recency view (REQ-RW-006) over the REQ-RW-002 sensors. Before airing any item it answers one query — `classify(surface, surface_key, scope)` — by ORCHESTRATING each surface's EXISTING key + window. It computes NOTHING new and forks NO store; it is the formalized USE of sensors the world model already mandates, sibling to the Group RN / Group RI views (VIEW-over-one-ledger). |
+| **Surface** | One dedup domain the unified view spans: TRACK, TOPIC/THEME, NEWS, or SEGMENT-TYPE. Each surface has its own owning subsystem, identity key, and recency window — all pre-existing; the view dispatches to them. |
+| **Surface-key** | The per-surface normalized identity the view reuses VERBATIM: track = `normalize_key` (OPS-004 REQ-OA-010); topic/theme = topic-identity key (REQ-OX-001); news = `story_id` (REQ-RN-002); segment-type = registry type identity (OPS-004 Group OY REQ-OY-001 / generator-category PROGRAMMING-007 REQ-PC-006). The view never recomputes a key; it calls each surface's own normalizer. |
+| **classify() tri-state** | The view's answer for a (surface, surface_key, scope): `fresh` (not recently seen), `recently-by-self` (the same persona recently aired it), or `recently-by-other` (a DIFFERENT persona recently aired it). Each state drives a distinct reference-vs-duplication behavior (REQ-RW-006). |
+| **Scope** | The dedup horizon a query asks about: `this_persona` (the asking persona's own history) or `any_persona` (cross-persona / station-wide). Generalizes the OPS-004 REQ-OX-006 (topics) and REQ-PR-004 (tracks/segments) per-persona-vs-cross-persona flag across ALL surfaces. |
+| **Reference vs duplication** | The tri-state behavior rule (REQ-RW-006): recently-by-SELF => FORBID re-air (restates OPS-004 REQ-OC-006 + REQ-OX-002/003 self-scope); recently-by-OTHER => FORBID verbatim/near-verbatim COPY but PERMIT + ENCOURAGE a LIGHT cross-persona break ONLY IF it is ATTRIBUTED to the originating host/thread, ADDITIVE (new angle/fact/opinion, not a restate), and in the borrowing persona's OWN frozen voice (passes PROGRAMMING-007 REQ-PV-009/PV-010); depth beyond light is director-gated (REQ-RW-003) + logged; fresh => unconstrained. Enforced by a deterministic + adversarial two-tier gate OWNED by PROGRAMMING-007 (PG-005-modeled, REQ-PV-010 extended); ORCH-005 supplies the recently-by-other signal. |
+| **Shared-awareness thread slice** | The cross-persona-readable VIEW of running threads/themes over the OPS-004 REQ-OD-007 `active_threads` event type + the REQ-OD-008 diary — the substrate a cross-persona reference reads (and writes ONE `topic_referenced`/decision event back to). Sibling to the news ledger (RN) and listener-interaction memory (RI); same VIEW-over-one-ledger discipline, no new store. |
+| **Special-event exception** | A director-DECLARED, TIME-BOXED override (REQ-RW-007) for a themed night (Christmas / NYE / anniversary) that SANCTIONS cross-host SHARED themes the dedup normally forbids. It names the shared theme identity (REQ-OX-001 key) + the personas in scope, is recorded to the ledger, AUTO-REVERTS at window end (inherits OPS-004 REQ-OB-005 override-and-restore), relaxes ONLY the cross-host (recently-by-other) THEME distinctness for the declared theme, and NEVER relaxes recently-by-self, track/segment/news dedup (unless separately declared), or any grounding/quality/safety/apolitical rail. Bounded by OPS-004 REQ-OD-006 measured-change. Calendar/director-declared — distinct from the news significance-tier trigger (REQ-RE-002). |
+| **Persona/show lifecycle action** | The action-surface entry (REQ-RA-005, action (i) of REQ-RA-001) by which the operator retires/launches a persona or discontinues/relaunches a show. It DISPATCHES into OPS-004 Group OB's lifecycle FSM (REQ-OB-010..014) through the existing seam (REQ-RA-002), records to the ledger (REQ-RA-003), and is bounded by the OPS-004 rarity tier (REQ-OD-010) + the [HARD] always-staffed atomic invariant (REQ-OB-014). News anchor exempt by construction (PROGRAMMING-007 REQ-PI-005). ORCH-005 dispatches; OPS-004 owns the FSM. |
 
 ---
 
@@ -314,12 +509,23 @@ Consumed ANALYSIS-006 concepts:
 - **Group RL — Director Loop (perception → cognition → action).** The long-lived operator
   loop; the cheap-rule-tick vs. occasional-batched-LLM-planning-tick cadence; the
   operator/generator dispatch; run-mode selection invocation (OPS-004 REQ-OA-013);
-  ledger/diary read+write per cycle (OPS-004 REQ-OD-007/008); never blocks the pull.
+  ledger/diary read+write per cycle (OPS-004 REQ-OD-007/008); the CROSS-STORE MAINTENANCE
+  cognition sub-phase (REQ-RL-007) that detects imbalances across the inventories on the
+  planning tick and dispatches maintenance through the existing action surface; never
+  blocks the pull.
 - **Group RW — World Model / Situational Awareness.** The single refreshed snapshot;
   the enumerated sensors (clock/daypart Faroe TZ, now-playing+recent+queue, library
   stats, acquisition+disk state, listener signals, event-feed state, schedule/show
   context, ledger+diary, playbook); the refresh cadence; per-sensor graceful degradation;
-  the world model as the PD's reasoning input.
+  the world model as the PD's reasoning input. Plus the UNIFIED CROSS-SURFACE DEDUP/RECENCY
+  VIEW (REQ-RW-006) — one read-side `classify(surface, surface_key, scope)` query that
+  ORCHESTRATES every surface's EXISTING key + window (track / topic / news / segment-type),
+  computing nothing new and forking no store, carrying the REFERENCE-vs-DUPLICATION tri-state
+  rule (self => forbid re-air; other => forbid copy but permit a light attributed additive
+  own-voice cross-persona break; fresh => unconstrained), with graceful degradation — and the
+  director-DECLARED, time-boxed SPECIAL-EVENT EXCEPTION (REQ-RW-007) that sanctions cross-host
+  shared themes for a themed night and auto-reverts. The dedup ENFORCEMENT lint is owned by
+  PROGRAMMING-007 (REQ-PV-010 extended); ORCH-005 supplies the recently-by-other signal.
 - **Group RE — Event Detection & Reaction Policy (Q2).** The event sensor (trusted-feed
   scan, Faroese-first, fetched/grounded); significance classification (routine/notable/
   major-breaking); the graduated, bounded reaction policy (fold / elevate / interrupt +
@@ -333,7 +539,15 @@ Consumed ANALYSIS-006 concepts:
   cross-cutting policy: feed down / quota exhausted / analysis lagging / generator failed
   → degrade (fall back to music, skip the segment), self-recover, never silence.
 - **Group RA — Action Surface.** The enumerated actions the operator may dispatch and how
-  each is dispatched through the existing subsystem seams.
+  each is dispatched through the existing subsystem seams, under the [HARD] data-vs-code
+  constraint (REQ-RA-004) that every action writes to a persisted DATA store and never edits
+  code/critical config (restates OPS-004 REQ-OD-009 for the action surface). The surface
+  includes the PERSONA/SHOW LIFECYCLE action (REQ-RA-005, action (i) — retire/launch persona,
+  discontinue/relaunch show) that DISPATCHES into OPS-004 Group OB's lifecycle FSM
+  (REQ-OB-010..014) through the existing seam, recorded to the ledger, bounded by the OPS-004
+  rarity tier (REQ-OD-010) + the [HARD] always-staffed atomic invariant (REQ-OB-014); news
+  anchor exempt by construction (PROGRAMMING-007 REQ-PI-005). ORCH dispatches; OPS-004 owns
+  the FSM.
 - **Group RN — News Ledger, Dedup & News-Cycle.** The append-only news ledger (normalized
   story_id, source, source_url, fetched_at, aired_at, significance tier) as a VIEW over the
   OPS-004 ledger substrate; normalized/semantic story identity (one story across sources);
@@ -342,6 +556,15 @@ Consumed ANALYSIS-006 concepts:
   loop); the same-day rehash fallback (honest recap, only after fresh is exhausted); the
   inherited grounding + apolitical + never-block rails as they apply to selection. Drives
   OPS-004 Group OG production; does NOT fork the ledger store or re-own sourcing.
+- **Group RI — Listener-Interaction Memory.** A listener-specific VIEW over the OPS-004
+  REQ-OD-007/008 ledger (using/extending the `listener_message` + `listener_reaction`
+  event types plus a feedback→action→outcome linkage) that makes the listener-feedback →
+  station-action-taken → outcome through-line a first-class, queryable awareness layer
+  (sibling to Group RN), with a no-spam/dedup discipline and cross-run queryability.
+  [HARD] inherits the anti-appeal rail (CORE-001 REQ-D-008 / OPS-004 REQ-OB-009 /
+  REQ-OF-004): human-curatorial context, NEVER an engagement/popularity optimization
+  target. Sensor-shaped so future CALLIN-003 / SOCIAL inputs (Section 15 roadmap) feed
+  the same view. Does NOT fork the ledger store.
 - Plus **NFRs** (Section 13) and **Risks** (Section 14).
 
 ### 4.2 Out of scope (explicitly deferred)
@@ -478,6 +701,34 @@ no blocking lock with the director loop, so loop latency never delays or stalls 
 
 **Acceptance criteria:** see acceptance.md AC-RL-006.
 
+### REQ-RL-007 — Cross-store maintenance on the planning tick (Event-driven) [HARD]
+
+When the director loop runs a PLANNING tick, the system shall perform a CROSS-STORE
+IMBALANCE CHECK over the integrated world model (REQ-RW-002, now including the topic-bank
+and listener-response sensor slices) and dispatch targeted maintenance to correct
+imbalances that span the inventories — at least: library genre/feature coverage vs. the
+OPS-004 Group OX topic-bank theme distribution; listener-response demand (e.g. "more talk")
+vs. talk/imaging buffer depth; persona-rotation drift in the director diary; and
+topic-repetition creep (a generator-category over-aired relative to its rotation). [HARD]
+The maintenance shall be dispatched ONLY through the EXISTING action surface (REQ-RA-001 —
+acquisition trigger, talk/imaging generation, run-mode bias, topic seeding/refresh via
+OPS-004 Group OX), recorded as decisions to the ledger (REQ-RA-003), and BOUNDED by the
+OPS-004 REQ-OD-006 measured-change rails (rate-limit + cooldown) so maintenance does not
+thrash the station. [HARD] This requirement adds NO new action kind, NO new Group, and NO
+new/parallel datastore — it is a cognition-phase sub-requirement of the existing loop, not
+a new subsystem. The imbalance-signal set is the rail (these cross-store checks must run);
+WHICH maintenance the AI dispatches in response is its creative call, kept tightly scoped
+(NFR-R-8) — it is an imbalance CHECK + DISPATCH, never a richer deliberative/look-ahead
+planner (deferred, Section 15). The cross-store imbalance check shall CONSUME the REQ-RW-006
+unified cross-surface dedup/recency view to detect cross-surface / cross-persona convergence
+drift (e.g. two personas' overlap nearing the PROGRAMMING-007 REQ-PR-004 cap, a
+generator-category over-aired vs. its rotation, repetition creep across surfaces) and shall
+HONOR any active REQ-RW-007 special-event exception (drift inside a declared themed window is
+sanctioned, not corrected) — dispatching correction only through the existing action surface,
+bounded by REQ-OD-006, adding no new store or action kind.
+
+**Acceptance criteria:** see acceptance.md AC-RL-007.
+
 ---
 
 ## 7. Requirement Group RW — World Model / Situational Awareness
@@ -510,6 +761,12 @@ owning subsystem (never recomputed here):
   (OPS-004 Group OH: REQ-OH-004 disk, REQ-OH-006 accounting/bounded queue).
 - **Listener signals** — feedback-form messages + any other listener signals via the typed
   contract (CORE-001 REQ-D-008 / OPS-004 REQ-OB-009), as human-curatorial input only.
+- **Listener-response memory** — the feedback→action→outcome linkages + standing listener
+  demand drawn from Group RI (REQ-RI-001), as human-curatorial context only (NEVER an
+  appeal/popularity score); consumed from the Group RI view, never recomputed.
+- **Topic-bank inventory** — topic-bank theme distribution, freshness/recency, and rotation
+  state drawn from OPS-004 Group OX (REQ-OX-001/005). ORCH owns this thin sensor add; OPS
+  owns the store; consumed, never recomputed. (Feeds cross-store maintenance, REQ-RL-007.)
 - **News / event feed state** — the current event picture from the event sensor (Group RE).
 - **Schedule / show context** — the active/upcoming shows, segments, and special windows
   (CORE-001 scheduler + OPS-004 Groups OA/OB).
@@ -552,6 +809,86 @@ one — rather than failing the tick or blocking. [HARD] A missing sensor degrad
 never the loop, never the stream (continuous operation wins; ties to Group RD).
 
 **Acceptance criteria:** see acceptance.md AC-RW-005.
+
+### REQ-RW-006 — Unified cross-surface dedup/recency view + reference-vs-duplication rule (Ubiquitous) [HARD]
+
+The system shall provide a single READ-side UNIFIED CROSS-SURFACE DEDUP/RECENCY VIEW over the
+REQ-RW-002 world-model sensors that, BEFORE airing any item, classifies it by a per-surface
+SURFACE-KEY — REUSING the existing identity key of each surface (track = `normalize_key`
+OPS-004 REQ-OA-010; topic/theme = topic-identity key OPS-004 REQ-OX-001; news = `story_id`
+ORCH-005 REQ-RN-002; segment-type = registry type identity OPS-004 Group OY REQ-OY-001 /
+generator-category PROGRAMMING-007 REQ-PC-006) — within that surface's existing recency window
+(track = REQ-OB-006 play-history + PROGRAMMING-007 REQ-PR-004 rotation cap; topic = REQ-OX-003
+freshness window, per-persona REQ-OX-006; news = REQ-RN-003 window; segment-type = Group OY +
+REQ-PR-004 distinctness), and returns a TRI-STATE result `classify(surface, surface_key, scope)
+-> {fresh | recently-by-self | recently-by-other}` for a requested `scope ∈ {this_persona,
+any_persona}`. [HARD] The view shall ORCHESTRATE each surface's EXISTING check — it shall
+COMPUTE NOTHING new and FORK NO store (it is the formalized USE of the REQ-RW-002 sensors over
+the one OPS-004 REQ-OD-007 ledger substrate, a sibling VIEW to Group RN / Group RI). The query
+is the rail (the picker/director MUST consult it before airing); the per-surface keys, windows,
+and scopes are owned where cited and reused verbatim.
+
+REFERENCE-vs-DUPLICATION (the tri-state behavior, sub-rules):
+- **recently-by-SELF => FORBID re-air.** A persona shall NOT re-air its own recently-aired
+  item on that surface within the window (restates OPS-004 REQ-OC-006 self-imitation avoid-list
+  + REQ-OX-002/003 self-scope; not a fork).
+- **recently-by-OTHER => FORBID verbatim/near-verbatim COPY, PERMIT + ENCOURAGE a LIGHT
+  cross-persona break ONLY IF** it is (a) ATTRIBUTED to the originating host/thread (read from
+  the shared-awareness thread slice over OPS-004 REQ-OD-007 `active_threads` + REQ-OD-008
+  diary), (b) ADDITIVE — adds a new angle/fact/opinion, not a restatement, and (c) in the
+  borrowing persona's OWN frozen voice (still passes PROGRAMMING-007 REQ-PV-009 voice card +
+  REQ-PV-010 disjoint-tic/field-collision lints — it NEVER adopts host A's voice or script).
+  DEPTH beyond a LIGHT comment shall require a program-director decision (REQ-RW-003), recorded
+  as a decision event on the ledger (REQ-RA-003); the default is light unless the director
+  declares deeper. A cross-persona reference writes ONE `topic_referenced`/decision event back
+  to the same ledger (no new store).
+- **fresh => unconstrained.**
+
+[HARD] ENFORCEMENT (reliable, not advisory): the reference-vs-duplication rule shall be enforced
+by a DETERMINISTIC + ADVERSARIAL two-tier gate modeled on PROGRAMMING-007 REQ-PG-005 — Tier-1
+deterministic FAILs a cross-persona break whose surface_key is recently-by-other AND that lacks
+an attribution token AND whose semantic overlap with the prior host's break exceeds a TUNABLE
+threshold (near-verbatim => FAIL); Tier-2 adversarial FAILs a break that adds nothing beyond
+restating the prior host's point; on FAIL, regenerate once then skip the break (same disposition
+as REQ-PG-005). [HARD] The LINT itself is OWNED by PROGRAMMING-007 (REQ-PV-010 extended); the
+two-tier gate engine is OPS-004's; ORCH-005 SUPPLIES the recently-by-other signal and consumes
+the gate — it does NOT re-own the lint or the engine (the OWN-binding-layer / REFERENCE-by-number
+discipline). [HARD COORDINATION] OPS-004 REQ-OX-006's current cross-persona default treats host
+A's topic as "fresh" for host B (permitting copying); that DEFAULT INVERSION is being FIXED in
+OPS-004 in parallel — this requirement's recently-by-other state is the cross-surface
+GENERALIZATION that DEPENDS on the fix. [HARD] Degradation: if a surface read is unavailable,
+errored, or stale, the system shall air WITHOUT that surface's dedup memory and shall NOT stall
+(inherits REQ-RW-005; mirrors REQ-RN-006 never-block-the-stream).
+
+**Acceptance criteria:** see acceptance.md AC-RW-006.
+
+### REQ-RW-007 — Special-event cross-host theme exception, time-boxed and auto-reverting (Event-driven) [HARD]
+
+When the program director DECLARES a TIME-BOXED special event (a themed night — Christmas, NYE,
+an anniversary), the system shall, for the DECLARED WINDOW ONLY, RELAX the recently-by-other
+cross-host THEME distinctness check (REQ-RW-006) for the DECLARED theme — sanctioning cross-host
+SHARED themes the dedup normally forbids — and at the window's end shall AUTO-REVERT to full
+cross-host distinctness with NO orphaned state (inherits OPS-004 REQ-OB-005 override-and-restore
+verbatim, making the convergence TRANSIENT by construction, never permanent). [HARD] The
+declaration shall be EXPLICIT and director-DECLARED (never auto-inferred), recorded as a
+`decision` event on the OPS-004 REQ-OD-007 ledger + REQ-OD-008 diary, naming (a) the shared
+theme identity (the REQ-OX-001 topic-identity key) and (b) the set of personas it applies to,
+with explicit start + end. [HARD] The exception shall be SCOPE-LIMITED: it relaxes ONLY the
+cross-host THEME distinctness for the declared theme; it shall NOT relax recently-by-SELF (a host
+still never repeats its own theme verbatim — REQ-OC-006 holds), track no-same-song (REQ-OB-006 +
+REQ-PR-004), segment-type distinctness (Group OY + REQ-PR-004), or news dedup (REQ-RN-003) unless
+each is SEPARATELY + explicitly declared. [HARD] The exception INHERITS ALL grounding / quality /
+safety rails VERBATIM and can only ADD permission to share one theme, never SUBTRACT a rail:
+apolitical + factual (OPS-004 REQ-OF-004 / NFR-O-7), anti-slop + distinctness/collision lints
+(PROGRAMMING-007 REQ-PV-010), per-persona Frozen Guard + distinctness canary (PROGRAMMING-007
+REQ-PI-004), grounded news/event tie-in (REQ-RN-006). It is bounded + auditable by the OPS-004
+REQ-OD-006 measured-change rails (rate-limit + cooldown + canary) so a run of declared exceptions
+cannot silently become the permanent baseline. [HARD] A missing/unreadable exception declaration
+shall degrade to "air with FULL distinctness enforced," never a stall (inherits REQ-RW-005). The
+trigger is calendar / director-declared (rides the REQ-RW-002 season/holiday + special-windows
+sensors) — distinct from the news significance-tier trigger (REQ-RE-002).
+
+**Acceptance criteria:** see acceptance.md AC-RW-007.
 
 ---
 
@@ -622,7 +959,7 @@ with OPS-004 REQ-OD-006 measured-change ethos.)
 
 **Acceptance criteria:** see acceptance.md AC-RE-004.
 
-### REQ-RE-005 — Event reaction is apolitical and factual (Unwanted) [HARD]
+### REQ-RE-005 — Event reaction is apolitical and factual (Ubiquitous) [HARD]
 
 The system shall NOT produce partisan, political, or opinionated commentary in ANY event
 reaction — a news break or mood shift conveys FACTUAL significance and what trusted sources
@@ -672,7 +1009,7 @@ generator runs concurrently with another; the pull-serving picker is a pure read
 
 **Acceptance criteria:** see acceptance.md AC-RC-002.
 
-### REQ-RC-003 — No shared blocking lock between the loop and the pull path (Unwanted) [HARD]
+### REQ-RC-003 — No shared blocking lock between the loop and the pull path (Ubiquitous) [HARD]
 
 The system shall NOT place a shared blocking lock, synchronous call, or long critical
 section on the code path between the director loop / generators and the `/api/next` pull
@@ -747,14 +1084,15 @@ ENQUEUE / generate a talk segment; (c) ENQUEUE / generate an imaging or station-
 (d) ENQUEUE / produce a newscast; (e) TRIGGER acquisition (gap-driven, within Group OH
 policy); (f) UPDATE the website (schedule/show descriptions/play-history); (g) PLAN or
 ADJUST the schedule/shows (invoke the PD, OPS-004 Group OA/OB); (h) REACT to an event
-(news break + optional mood shift, Group RE). The surface is the rail (these actions must
-be dispatchable); WHICH actions the AI takes each tick is its creative call. Every action
-routes through an existing subsystem seam — ORCH dispatches, it does not re-implement the
-subsystem.
+(news break + optional mood shift, Group RE); (i) PERSONA/SHOW LIFECYCLE transition
+(retire/launch a persona, discontinue/relaunch a show — REQ-RA-005, dispatched into OPS-004
+Group OB's lifecycle FSM). The surface is the rail (these actions must be dispatchable);
+WHICH actions the AI takes each tick is its creative call. Every action routes through an
+existing subsystem seam — ORCH dispatches, it does not re-implement the subsystem.
 
 **Acceptance criteria:** see acceptance.md AC-RA-001.
 
-### REQ-RA-002 — Every action is dispatched through an existing subsystem seam (Ubiquitous) [HARD]
+### REQ-RA-002 — Every action is dispatched through an existing subsystem seam (Event-driven) [HARD]
 
 When the operator takes any action, the system shall dispatch it through the OWNING
 subsystem's existing seam — music/talk/imaging/news enqueue via the `Picker` /
@@ -776,6 +1114,48 @@ and available as continuity context on the next cycle (REQ-RL-005). ORCH-005 own
 the orchestration action; OPS-004 owns the ledger store.
 
 **Acceptance criteria:** see acceptance.md AC-RA-003.
+
+### REQ-RA-004 — Action surface writes to DATA only, never code/config (Ubiquitous) [HARD]
+
+No action on the operator's action surface (REQ-RA-001) shall write to source code, the
+Liquidsoap configuration, or other critical runtime/deployment config: every editorial and
+orchestration write — enqueues, generation outputs, schedule/website/show updates, ledger
+records, topic-bank and listener-memory updates — shall land in a persisted DATA store
+through an EXISTING subsystem seam (REQ-RA-002). [HARD] This RESTATES (does not fork) the
+canonical data-vs-code editorial-write-only rail OPS-004 REQ-OD-009 as it applies to the
+orchestration action surface — the same not-a-fork discipline ORCH-005 already uses for the
+apolitical rail (REQ-RE-005) and the anti-appeal rail (REQ-RI-004). The operator dispatches
+editorial actions and records decisions to the ledger; it NEVER edits the machinery that
+keeps the station on air (the FROZEN-zone discipline of the design-system constitution
+Section 2 + Frozen Guard Layer 1, applied to the running orchestrator; references the
+per-persona Frozen Guard PROGRAMMING-007 Group PI, being added in parallel — not re-owned).
+The HUMAN developer's out-of-loop tool/code changes are out of scope.
+
+**Acceptance criteria:** see acceptance.md AC-RA-004.
+
+### REQ-RA-005 — Persona/show lifecycle action dispatches into the OPS-004 lifecycle FSM (Event-driven) [HARD]
+
+When the operator decides on an editorial PERSONA/SHOW LIFECYCLE transition — retire or launch a
+curator persona, or discontinue or relaunch a show — the system shall dispatch it as action (i)
+of the REQ-RA-001 action surface INTO the OPS-004 Group OB lifecycle FSM (REQ-OB-010..014: persona
+retire/launch, show discontinue/relaunch) through the EXISTING subsystem seam (REQ-RA-002),
+recording the decision to the append-only ledger (REQ-RA-003 / OPS-004 REQ-OD-007). [HARD] The
+dispatch shall be BOUNDED by the OPS-004 rarity tier (REQ-OD-010 — identity/existence changes are
+the RAREST measured-change tier, throttled harder than evolvable drift, with a documented editorial
+reason required) and shall respect the [HARD] ALWAYS-STAFFED atomic invariant (OPS-004 REQ-OB-014 —
+a transition does not commit unless every affected slot is atomically rebound to a present eligible
+successor; if none exists the transition is REJECTED and the persona stays on air, continuity wins).
+[HARD] ORCH-005 owns DISPATCHING the action and recording the decision; OPS-004 OWNS the lifecycle
+FSM, the rarity tier, the always-staffed invariant, the voice quarantine (REQ-OB-013), and the
+schedule-grid mutation — ORCH-005 references them by number and does NOT re-own any of them (the
+OWN-binding-layer / REFERENCE-by-number discipline; this adds NO new playout kind, NO new store,
+and NO Liquidsoap change, consistent with REQ-RA-002 / REQ-RA-004). [HARD] The news anchor is
+EXEMPT BY CONSTRUCTION (PROGRAMMING-007 REQ-PI-005 — it is a TTS route, not a curator persona) and
+is NEVER subject to lifecycle/staffing transitions. WHEN the AI initiates a lifecycle transition is
+its editorial call on the rarity-tier cadence; THAT it dispatches only through this seam, bounded by
+the rarity tier + staffing invariant, is the rail.
+
+**Acceptance criteria:** see acceptance.md AC-RA-005.
 
 ---
 
@@ -859,7 +1239,7 @@ permitted (REQ-RN-006).
 
 **Acceptance criteria:** see acceptance.md AC-RN-005.
 
-### REQ-RN-006 — News selection is grounded, apolitical, and never blocks the stream (Unwanted) [HARD]
+### REQ-RN-006 — News selection is grounded, apolitical, and never blocks the stream (Ubiquitous) [HARD]
 
 The system shall NOT air a news item that is not traceable to a fetched source in the news
 ledger (no hallucinated news), NOR introduce any partisan/political framing through dedup,
@@ -873,6 +1253,75 @@ inherited grounding + apolitical + never-block rails ONLY as they newly apply to
 selection; it does not fork them.
 
 **Acceptance criteria:** see acceptance.md AC-RN-006.
+
+---
+
+## 11B. Requirement Group RI — Listener-Interaction Memory
+
+Priority: High. (The listener-facing SIBLING to Group RN: where RN remembers the news
+through-line, RI remembers the LISTENER through-line — what a listener said, what the
+station did about it, and how it turned out — as a first-class, queryable awareness layer
+instead of a one-way input that evaporates. It is a listener-specific VIEW over the OPS-004
+ledger substrate — it does NOT fork a store — and it READS the listener-signals channel
+CORE-001/OPS-004 already own. [HARD] It inherits the anti-appeal rail unchanged: listener
+interaction is human-curatorial context the AI weighs, NEVER an engagement/popularity
+optimization target.)
+
+### REQ-RI-001 — Listener-response memory as a view over the OPS-004 ledger (Ubiquitous) [HARD]
+
+The system shall maintain a LISTENER-RESPONSE memory recording, per listener interaction,
+the listener signal, the station action taken in response (if any), and the later outcome —
+a feedback→action→outcome through-line. [HARD] This memory shall be implemented as a
+LISTENER-SPECIFIC VIEW / event-type over the EXISTING OPS-004 append-only event ledger
+(REQ-OD-007/008) — reusing/extending the `listener_message` + `listener_reaction` event
+types plus a `listener_response` / outcome-linkage event, each with an idempotent ID — and
+shall NOT fork a new datastore (sibling to the Group RN news ledger). It READS the
+listener-signals channel CORE-001/OPS-004 own (REQ-D-008 / REQ-OB-009); it does not re-own
+the channel. The memory is the durable record of "what listeners said, what we did about
+it, and how it turned out" that is queryable across cycles and restarts.
+
+**Acceptance criteria:** see acceptance.md AC-RI-001.
+
+### REQ-RI-002 — Record the feedback → action → outcome linkage (Event-driven)
+
+When the operator takes an action attributable to a listener signal (e.g. plays a request,
+shapes a show idea, adjusts direction — via the REQ-RA-001 action surface), the system
+shall RECORD the linkage signal → action → later outcome through the ledger, so the
+through-line is durable, auditable after the fact (NFR-R-6), and readable as continuity
+context on the next cycle (REQ-RL-005). The outcome is the AI's own SELF-DECLARED judgement
+(like a diary entry, OPS-004 REQ-OD-008) — it is NOT a measured analytics signal and adds
+no analytics dependency (full listener analytics remains a future SPEC, Section 15). Which
+actions the AI attributes to which signals is its creative call; that the linkage is
+recorded when an attributable action is taken is the rail.
+
+**Acceptance criteria:** see acceptance.md AC-RI-002.
+
+### REQ-RI-003 — No-spam / dedup discipline when reading listener memory (State-driven)
+
+While reading the listener-response memory to inform decisions, the system shall apply a
+NO-SPAM / DEDUP discipline so that one listener flooding the channel does not dominate the
+station's awareness — analogous to the news-ledger dedup (REQ-RN-003): repeated/identical
+signals from one source are collapsed/weighted down, and the memory reflects the breadth of
+listener input rather than its loudest single voice. The dedup window and weighting are
+TUNABLE config; that a single flooding listener cannot dominate is the rail. (This is a
+fairness/awareness discipline, NOT a popularity ranking — REQ-RI-004 still holds.)
+
+**Acceptance criteria:** see acceptance.md AC-RI-003.
+
+### REQ-RI-004 — Listener interaction is never an engagement/appeal optimization target (Ubiquitous) [HARD]
+
+The system shall NOT use listener-feedback VOLUME or SENTIMENT as an optimization target,
+a score to maximize, or a popularity signal to chase — through the listener-response memory,
+the no-spam weighting, or any reasoning that reads them. [HARD] This RESTATES (does not
+fork) the inherited anti-appeal rail (CORE-001 REQ-D-008 / OPS-004 REQ-OB-009 / REQ-OF-004 /
+NFR-O-7) specifically as it newly applies to the listener-interaction memory: listener
+interaction is human-curatorial context the AI WEIGHS, never a metric it optimizes; the
+station does not pander or chase popularity. The view is sensor-shaped so that future
+listener inputs — live call-in (SPEC-RADIO-CALLIN-003) and social DMs/comments
+(SPEC-RADIO-SOCIAL), Section 15 roadmap — feed the SAME view under the SAME anti-appeal
+rail, without re-architecture.
+
+**Acceptance criteria:** see acceptance.md AC-RI-004.
 
 ---
 
@@ -906,11 +1355,49 @@ selection; it does not fork them.
 - **Multi-node / distributed orchestration, leader election, cross-process coordination**
   — single brain process, single box.
 - **Any partisan / political reasoning or content** of any kind (bound by OPS-004
-  REQ-OF-004); **using listener signals or event reaction as an engagement/appeal-
-  optimization target** (bound by CORE-001 REQ-D-008 / OPS-004 REQ-OB-009 anti-appeal
-  guard).
+  REQ-OF-004); **using listener signals, the listener-interaction memory (Group RI), or
+  event reaction as an engagement/appeal-optimization target** (bound by CORE-001
+  REQ-D-008 / OPS-004 REQ-OB-009 anti-appeal guard, restated by REQ-RI-004).
+- **The TOPIC-BANK store / its discovery + freshness POLICY** — owned by OPS-004 Group OX;
+  ORCH reads topic freshness/distribution as a sensor (REQ-RW-002) and acts on cross-store
+  topic imbalance through the action surface (REQ-RL-007), never re-owns the topic store.
+- **The listener-signals channel + the typed contract** — owned by CORE-001 REQ-D-008 /
+  OPS-004 REQ-OB-009; Group RI is a listener-specific VIEW over the OPS-004 ledger that
+  LINKS feedback→action→outcome, NOT a new channel, a new store, or a fork of the contract.
+- **A richer deliberative / look-ahead planner** — REQ-RL-007 is an imbalance CHECK +
+  bounded DISPATCH on a single planning tick, NOT a multi-step look-ahead programmer (that
+  remains a future enhancement, Section 15); a new Group RS or a parallel maintenance
+  datastore is explicitly NOT built.
+- **A full listener-analytics product** — REQ-RI-002's outcome is the AI's self-declared
+  judgement; no measured analytics signal or dependency is introduced (SPEC-RADIO-ANALYTICS).
+- **The operator action surface editing source code or critical runtime config** —
+  REQ-RA-004 [HARD] confines every action to persisted-DATA writes through existing seams;
+  the orchestrator never rewrites code, `radio.liq`, or deployment config (restates OPS-004
+  REQ-OD-009 for the action surface — the canonical rail lives in OPS-004, not re-owned).
+  The human developer's out-of-loop tool/code changes are out of scope.
+- **The per-surface dedup MECHANISMS (identity keys + recency windows) + their stores** —
+  owned by their subsystems (track `normalize_key` OPS-004 REQ-OA-010 + play-history REQ-OB-006;
+  topic key/window OPS-004 REQ-OX-001/003/006; news `story_id`/window Group RN; segment-type
+  registry OPS-004 Group OY + REQ-PR-004). REQ-RW-006 is a READ-side VIEW that ORCHESTRATES
+  these existing checks — it computes no new key, no new window, and forks no store.
+- **The cross-persona reference ENFORCEMENT LINT + the two-tier gate engine** — the lint is
+  owned by PROGRAMMING-007 (REQ-PV-010 extended, PG-005-modeled); the gate engine is OPS-004's.
+  ORCH-005 SUPPLIES the recently-by-other signal and consumes the gate — it does NOT author or
+  re-own the lint or the engine.
+- **The OPS-004 REQ-OX-006 cross-persona-default FIX (topic A no longer "fresh" for host B)** —
+  owned by and being applied in OPS-004 in parallel; REQ-RW-006's reference-vs-dup rule DEPENDS
+  on it and generalizes it cross-surface. ORCH-005 does NOT edit OPS-004.
+- **The persona/show LIFECYCLE FSM, the rarity tier, the always-staffed invariant, the voice
+  quarantine, and the schedule-grid mutation** — owned by OPS-004 (Group OB REQ-OB-010..014,
+  REQ-OD-010, Group OA, CORE-001 REQ-B-003). REQ-RA-005 DISPATCHES into the FSM through the
+  existing seam and records the decision; it does NOT implement retirement/launch/staffing/voice
+  logic. The news anchor is exempt by construction (PROGRAMMING-007 REQ-PI-005).
 - **A new `kind`, a new datastore, a new service, or a Liquidsoap change** — ORCH-005 is a
-  brain-only orchestration layer over existing seams.
+  brain-only orchestration layer over existing seams (Group RI, the topic-bank sensor, the
+  unified dedup view REQ-RW-006, and the shared-awareness thread slice are all VIEWs/reads over
+  the existing OPS-004 ledger / Group OX / Group OY stores; REQ-RL-007 and REQ-RA-005 dispatch
+  only through the existing action surface; REQ-RW-007's special-event exception writes only a
+  ledger decision event).
 
 ---
 
@@ -1022,6 +1509,73 @@ AC-NFR-R-8.
   fixed sensor set (REQ-RW-002) drawn only from subsystems that already exist in the suite;
   new sensors (call-in events, social) are explicitly future-SPEC seams (Section 2), not
   built here. Simplicity is NFR-R-8.
+- **R-R-10 — Listener-interaction memory + anti-appeal (Low/Medium, gap-fill).** Group RI
+  (REQ-RI-001..004) makes the feedback→action→outcome through-line a first-class queryable
+  view over the OPS-004 ledger (a sibling to Group RN). The standing risk is that a durable,
+  queryable listener-response memory drifts toward an engagement/popularity metric.
+  Mitigated by the [HARD] anti-appeal restatement (REQ-RI-004; inherits CORE-001 REQ-D-008
+  / OPS-004 REQ-OB-009 / REQ-OF-004) and the no-spam/dedup discipline (REQ-RI-003) that
+  keeps one loud voice from dominating. Build concerns: (a) outcome attribution is
+  inherently fuzzy — satisfied by a SELF-DECLARED linkage (REQ-RI-002, like a diary entry),
+  not a measured analytics signal, to avoid an analytics dependency; (b) the view must stay
+  sensor-shaped so future CALLIN-003 / SOCIAL inputs feed the same view under the same rail.
+  Gap-fill extension (verified gap-analysis); confirm with the user.
+- **R-R-11 — Cross-store maintenance scope creep (Low/Medium, gap-fill).** REQ-RL-007 adds
+  a cross-store imbalance CHECK on the planning tick that dispatches maintenance through the
+  existing action surface. The risk is it grows into a richer deliberative/look-ahead
+  planner (explicitly deferred, Section 15) or a parallel maintenance subsystem/store.
+  Mitigated by [HARD] constraints: it adds no new action kind, no new Group, no new store;
+  it dispatches ONLY through REQ-RA-001; it is bounded by the OPS-004 REQ-OD-006
+  measured-change rails; and the imbalance-signal set is tightly enumerated (library-vs-topic
+  coverage, listener-demand-vs-buffer-depth, persona-rotation drift, topic-repetition creep)
+  to stay within NFR-R-8 simplicity. Gap-fill extension (verified gap-analysis); confirm
+  with the user.
+- **R-R-12 — Data-vs-code editorial-write-only rail on the action surface (Low/Medium,
+  relayed; [HARD]).** REQ-RA-004 [HARD] confines every action-surface write to a persisted
+  DATA store through an existing seam; no orchestration action edits source code or critical
+  runtime config — the FROZEN-zone discipline (design-system constitution Section 2 + Frozen
+  Guard Layer 1) applied to the orchestrator. It RESTATES (not forks) the canonical rail
+  OPS-004 REQ-OD-009 and references the per-persona Frozen Guard (PROGRAMMING-007 Group PI,
+  being added in parallel). Build concern: a clear data/code boundary so the action surface's
+  write targets are data paths only; the human developer's out-of-loop changes are out of
+  scope. Relayed during authoring (owner plan); confirm with the user.
+- **R-R-13 — Unified dedup view + reference-vs-duplication reliability + the OX-006 default
+  inversion dependency (Medium, dossier-verified; [HARD]).** REQ-RW-006 is a thin read-side
+  VIEW that orchestrates existing per-surface checks (verdict: not refuted) — the risk is the
+  reference-vs-duplication rule being ADVISORY rather than reliable (the dossier REFUTED a naive
+  "the rule reliably forbids copying while allowing attributed commentary" claim). Mitigated by
+  making enforcement a deterministic + adversarial two-tier gate (PROGRAMMING-007-owned, REQ-PV-010
+  extended, PG-005-modeled): Tier-1 blocks unattributed near-verbatim, Tier-2 blocks
+  non-additive restatement; on FAIL regenerate once then skip. [HARD DEPENDENCY] The rule depends
+  on the OPS-004 REQ-OX-006 cross-persona-default FIX (host A's topic must not count as "fresh"
+  for host B) being applied in OPS-004 IN PARALLEL — without the fix, the cross-persona default
+  still permits copying. ORCH-005 references the fix by number and does NOT edit OPS-004; build
+  concern: confirm the OX-006 fix lands before/with REQ-RW-006 so it does not ship a dangling
+  dependency. Open: the cross-persona overlap threshold separating "additive comment" from
+  "disguised copy" is a TUNABLE config owned by PROGRAMMING-007 (the lint), not ORCH-005.
+- **R-R-14 — Special-event exception causing permanent convergence (Low/Medium, dossier-verified;
+  [HARD]).** REQ-RW-007 relaxes cross-host distinctness for a declared themed night (verdict: not
+  refuted — safe IF time-boxed + scope-limited + rails inherited). The standing risk is a run of
+  declared exceptions silently becoming the permanent baseline, or a themed night quietly relaxing
+  a safety rail. Mitigated by [HARD] bounds: director-DECLARED + explicit (never auto-inferred),
+  TIME-BOXED with AUTO-REVERT (inherits OPS-004 REQ-OB-005), SCOPE-LIMITED to cross-host THEME
+  distinctness only (never recently-by-self, never track/segment/news unless separately declared),
+  INHERITS all grounding/quality/safety/apolitical rails VERBATIM (can only ADD permission, never
+  SUBTRACT a rail), and bounded + auditable by OPS-004 REQ-OD-006 measured-change. A
+  missing/unreadable declaration degrades to FULL distinctness enforced. Dossier-verified extension;
+  confirm with the user. Open: whether a themed night may optionally relax segment-type distinctness
+  (default: themes/topics only) — supported via explicit per-surface declaration.
+- **R-R-15 — Lifecycle action dispatch + always-staffed atomicity (Medium, dossier-verified;
+  [HARD]).** REQ-RA-005 adds a persona/show lifecycle action that dispatches into the OPS-004
+  Group OB FSM. The dossier REFUTED that the always-staffed invariant holds today (CORE-001's
+  no-gap is a TIME-coverage property at build/edit time, not a host-availability guarantee across a
+  retire/quit transition) and REFUTED that identity changes are enforceably rare today (REQ-OD-006
+  was a single undifferentiated budget). BOTH FIXES are owned by OPS-004 (the always-staffed atomic
+  invariant REQ-OB-014; the rarity tier REQ-OD-010) and are committed there in parallel — REQ-RA-005
+  is bounded by both and references them by number, NOT re-owning the FSM/invariant/tier. Build
+  concern: confirm the OB-010..014 + OD-010 commit lands before/with REQ-RA-005 so it does not ship
+  a dangling reference; the news anchor (PROGRAMMING-007 REQ-PI-005) must stay exempt by
+  construction. Dossier-verified extension; confirm with the user.
 
 ---
 
@@ -1055,33 +1609,42 @@ Section B).
 | REQ-RL-004 | Director Loop | High | Event | AC-RL-004 |
 | REQ-RL-005 | Director Loop | Medium | Event | AC-RL-005 |
 | REQ-RL-006 | Director Loop | High | Unwanted | AC-RL-006 |
+| REQ-RL-007 | Director Loop | High | Event | AC-RL-007 |
 | REQ-RW-001 | World Model | High | Ubiquitous | AC-RW-001 |
 | REQ-RW-002 | World Model | High | Ubiquitous | AC-RW-002 |
 | REQ-RW-003 | World Model | High | Ubiquitous | AC-RW-003 |
 | REQ-RW-004 | World Model | Medium | State | AC-RW-004 |
 | REQ-RW-005 | World Model | High | Unwanted | AC-RW-005 |
+| REQ-RW-006 | World Model | High | Ubiquitous | AC-RW-006 |
+| REQ-RW-007 | World Model | High | Event | AC-RW-007 |
 | REQ-RE-001 | Event Detection & Reaction | High | Event/Self-scheduled | AC-RE-001 |
 | REQ-RE-002 | Event Detection & Reaction | High | Event | AC-RE-002 |
 | REQ-RE-003 | Event Detection & Reaction | High | Event | AC-RE-003 |
 | REQ-RE-004 | Event Detection & Reaction | High | State | AC-RE-004 |
-| REQ-RE-005 | Event Detection & Reaction | High | Unwanted | AC-RE-005 |
+| REQ-RE-005 | Event Detection & Reaction | High | Ubiquitous | AC-RE-005 |
 | REQ-RE-006 | Event Detection & Reaction | High | Unwanted | AC-RE-006 |
 | REQ-RC-001 | Subsystem Coordination | High | State | AC-RC-001 |
 | REQ-RC-002 | Subsystem Coordination | High | State | AC-RC-002 |
-| REQ-RC-003 | Subsystem Coordination | High | Unwanted | AC-RC-003 |
+| REQ-RC-003 | Subsystem Coordination | High | Ubiquitous | AC-RC-003 |
 | REQ-RC-004 | Subsystem Coordination | Medium | State | AC-RC-004 |
 | REQ-RD-001 | Graceful Degradation | High | Unwanted | AC-RD-001 |
 | REQ-RD-002 | Graceful Degradation | Medium | State | AC-RD-002 |
 | REQ-RD-003 | Graceful Degradation | High | State | AC-RD-003 |
 | REQ-RA-001 | Action Surface | High | Ubiquitous | AC-RA-001 |
-| REQ-RA-002 | Action Surface | High | Ubiquitous | AC-RA-002 |
+| REQ-RA-002 | Action Surface | High | Event | AC-RA-002 |
 | REQ-RA-003 | Action Surface | Medium | Event | AC-RA-003 |
+| REQ-RA-004 | Action Surface | High | Ubiquitous | AC-RA-004 |
+| REQ-RA-005 | Action Surface | High | Event | AC-RA-005 |
 | REQ-RN-001 | News Ledger, Dedup & News-Cycle | High | Ubiquitous | AC-RN-001 |
 | REQ-RN-002 | News Ledger, Dedup & News-Cycle | High | Event | AC-RN-002 |
 | REQ-RN-003 | News Ledger, Dedup & News-Cycle | High | State | AC-RN-003 |
 | REQ-RN-004 | News Ledger, Dedup & News-Cycle | High | State | AC-RN-004 |
 | REQ-RN-005 | News Ledger, Dedup & News-Cycle | Medium | Event | AC-RN-005 |
-| REQ-RN-006 | News Ledger, Dedup & News-Cycle | High | Unwanted | AC-RN-006 |
+| REQ-RN-006 | News Ledger, Dedup & News-Cycle | High | Ubiquitous | AC-RN-006 |
+| REQ-RI-001 | Listener-Interaction Memory | High | Ubiquitous | AC-RI-001 |
+| REQ-RI-002 | Listener-Interaction Memory | High | Event | AC-RI-002 |
+| REQ-RI-003 | Listener-Interaction Memory | Medium | State | AC-RI-003 |
+| REQ-RI-004 | Listener-Interaction Memory | High | Ubiquitous | AC-RI-004 |
 | NFR-R-1 | Non-Functional | High | Ubiquitous | AC-NFR-R-1 |
 | NFR-R-2 | Non-Functional | High | Ubiquitous | AC-NFR-R-2 |
 | NFR-R-3 | Non-Functional | High | Ubiquitous | AC-NFR-R-3 |

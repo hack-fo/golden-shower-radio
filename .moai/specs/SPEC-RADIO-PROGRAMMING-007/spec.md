@@ -1,9 +1,9 @@
 ---
 id: SPEC-RADIO-PROGRAMMING-007
-version: 0.3.0
+version: 0.7.1
 status: draft
 created: 2026-06-22
-updated: 2026-06-22
+updated: 2026-06-23
 author: charlie
 priority: High
 issue_number: null
@@ -106,6 +106,203 @@ issue_number: null
   the music-slop / LLM-tell register research + the grounding rationale ("silence beats a
   wrong fact"). Net: +6 REQ (PG-001…PG-006) and +1 NFR (NFR-P-8). Total: 44 REQ + 8 NFR = 52,
   1:1 REQ↔AC preserved.
+- 2026-06-22 (v0.4.0): Added Group PV — Host-Voice Persona-Awareness, Delivery Craft &
+  Continual Improvement (namespace PV). This group is a CALIBRATION layer that turns the
+  station's delivery warmth/energy/intimacy UP to the user's intensity WITHOUT reintroducing
+  any banned cliché/slop/forced-enthusiasm and WITHOUT touching grounding — it is grounded in
+  an adversarially-verified research+reconciliation dossier whose three core claims were not
+  refuted (the warmth/energy/teasing techniques add no banned register; the continual-
+  improvement loop stays bounded + safe with no runaway/self-imitation; the personas stay
+  DISTINCT after shared craft is applied). The unifying spine resolving every tension is
+  "WARMTH AND ENERGY IN DELIVERY, RESTRAINT IN CONTENT": the user's wishlist acts on the
+  DELIVERY/prosody/intimacy/persona-color axis; every existing ban acts on the
+  claim-making/adjective-density/hype axis — turning one up does not require turning the other
+  up. Group PV CALIBRATES and EXTENDS the existing PR/PC/PS/PG groups (it does NOT re-own
+  them) and REFERENCES — never restates — OPS-004 (the playbook store + measured-self-change
+  rails + no-self-imitation), ANALYSIS-006 (the features that derive a next-track MOOD hint),
+  KNOWLEDGE-008 (the grounding feed, UNTOUCHED), and the VOICE-002 blank-line-block ↔
+  synthesis chunk-silence pacing contract (REQ-PS-004, preserved as a HARD coordination).
+  Group PV adds: REQ-PV-001 LIVE-HUMAN PERSONA-AWARENESS [HARD] (a positive-identity
+  HOST_PERSONA replacing the negation-based one — "live human host" is a DELIVERY stance,
+  NEVER a claim the host states, never breaks the fourth wall); REQ-PV-002 CALIBRATED
+  DELIVERY DO-SET [HARD] (pacing punctuation, contractions, theater-of-the-mind ONE grounded
+  detail, one-to-one singular "you", Hook→Body→Exit ≤30s); REQ-PV-003 DELIVERY-ENERGY vs
+  HYPE split [HARD] (energy is a daypart-calibrated WRITING property — rhythm/specifics/block
+  length — never exclamation/hype); REQ-PV-004 EAR-WRITING RAILS carried IN the live talk
+  prompt [HARD] (closes the gap that PS-001..005 rails are absent from the current prompt;
+  preserves the REQ-PS-004 blank-line ↔ VOICE-002 chunk coordination); REQ-PV-005 the
+  UNIFYING PRINCIPLE [HARD] (warmth in delivery, restraint in content — the governing rule);
+  REQ-PV-006 EXTENDED BANNED LIST [HARD] (preserves every existing ban PLUS two: filler-as-
+  crutch ≤1 warmth-transition/break never the same tic two breaks running, and NO SHARED
+  cross-persona filler set — each persona's verbal-tic bank is DISJOINT); REQ-PV-007
+  TEASE-BY-FEELING FRONTSELL [HARD] (hint the next track's MOOD/energy, never its name, never
+  "coming up"; name is saved for the backsell); REQ-PV-008 the MANDATORY FRONTSELL CODE-FIX
+  [HARD] (the live regression — remove the banned `Coming up next: "{title}" by {artist}`
+  block in `_build_talk_prompt` and the next_artist/next_title name-passing in
+  `_build_context`, replace with a mood-hint frontsell derived from ANALYSIS-006 features);
+  REQ-PV-009 the EXTENDED VOICE CARD [HARD] (extends REQ-PG-006 with a per-daypart ENERGY
+  BAND, PACING SIGNATURE, REGISTER, and a 3-5-entry DISJOINT VERBAL-TIC BANK — the top
+  consistency lever, injected every call); REQ-PV-010 DISTINCTNESS + CRUTCH LINTS [HARD]
+  (extends the REQ-PG-005 Tier-1 lint with a warmth-transition over-use cap + a cross-persona
+  tic-collision check); REQ-PV-011 the BOUNDED CONTINUAL-IMPROVEMENT LOOP [HARD] (a measured
+  self-refinement of prompts/rules/voice-cards in the OPS-004 playbook store —
+  observation→heuristic→rule→graduated — under the REQ-OD-006 rate-limit/canary/contradiction
+  rails, with no-self-imitation (REQ-OC-006), NO engagement/appeal target (the curation
+  bright line), and a FROZEN invariant set the loop may NEVER evolve; "training/learning" =
+  iterative refinement, NOT model fine-tuning — the stack is claude-agent-sdk on the
+  subscription, no training path). Plus NFR-P-9 (delivery-vs-content integrity: the energy
+  calibration never reintroduces banned hype/slop, the loop stays bounded + never optimizes
+  appeal + preserves the disjoint-tic anti-convergence + never evolves the FROZEN invariants).
+  research.md Thread G records the calibration dossier + the live-regression code audit
+  (`brain/llm.py` HOST_PERSONA L261-269 negation form + `_build_talk_prompt` L300-303 banned
+  "Coming up next" block; `brain/talk.py` `_build_context` L137-138 name-passing). Net: +11
+  REQ (PV-001…PV-011) and +1 NFR (NFR-P-9). Total: 55 REQ + 9 NFR = 64, 1:1 REQ↔AC preserved.
+- 2026-06-22 (v0.5.0): ONE consolidated update merging TWO verified, COMPOSE-designed research
+  dossiers — a BANTER-AUTHENTICITY recalibration of Group PV and a new persona-IDENTITY model
+  (new Group PI). The two compose on the WARMTH-IN-DELIVERY / RESTRAINT-IN-CONTENT spine
+  (REQ-PV-005): the banter recalibration tunes DELIVERY/register on the EVOLVABLE layer; Group PI
+  freezes WHO each persona is. Purely ADDITIVE — no existing ban weakened, the FROZEN invariant
+  set untouched and EXTENDED (per-persona anchors join it).
+  • DIAGNOSIS made actionable (dossier 1): the live sterility is a STRUCTURAL/code-located
+    failure, not a content failure — the v0.4.0 positive PV identity was AUTHORED IN THE SPEC but
+    NOT WIRED INTO THE CODE, so what airs is an under-specified voice (`brain/llm.py` HOST_PERSONA
+    L261-269 still the OLD negation form) PLUS a long ban-list = the textbook sterility failure
+    mode (under-specified voice → typical-flowery-register default; negative-only bans →
+    pink-elephant retreat to contorted opinion-free praise). The fix is ADDITIVE: keep every ban +
+    the FROZEN gate, ADD the missing POSITIVE layer the v0.4.0 spec authored but the code never
+    received (wire the positive-identity HOST_PERSONA, install a named register lineage + addressee
+    frame, license blunt/plain/profane owned praise). (Honesty correction carried from the dossier:
+    the "larger models scale worse on negative instructions" rationale was DROPPED — the
+    pink-elephant mechanism is verified, the model-SCALE leg is not supported and not load-bearing.)
+  • Group PV AMENDMENTS (banter authenticity): REQ-PV-001 gains the named MUSIC-JOURNALIST
+    register lineage (BBC 6 Music / NTS / KEXP) + the "text one smart, slightly-impatient friend"
+    addressee frame + persona SELF-DISCLOSURE drawn from the persona's OWN frozen fictional life;
+    REQ-PV-002 gains the positive shape "LEAD with one plain OWNED reaction, THEN one concrete
+    grounded/audible detail"; REQ-PV-005 gains the banter band (blunt phrasing, dry humour,
+    grounded self-disclosure all ride the DELIVERY axis, never relaxing a content ban); REQ-PV-006
+    gains the directive that each ban is PAIRED IN THE PROMPT with a positive "say this instead"
+    twin (bans stay the firewall; twins fill the vacuum); REQ-PV-009 gains four new voice-card
+    fields (`profanity_tier` {none|mild|salty}, `humour_mode` {dry|warm|deadpan|none},
+    `self_disclosure` {frequency, register-slice}, a 2-3-entry blunt-praise starter set), all
+    DISJOINT across personas, and is split explicitly into FROZEN vs EVOLVABLE fields; REQ-PV-010
+    extends the cross-persona collision lint to the new card fields (no two personas share the
+    {profanity_tier + humour_mode + self-disclosure slice + praise-starter} combination).
+  • Group PV ADDITIONS: REQ-PV-012 the BLUNT-PRAISE LICENSE [HARD] — a praise/reaction line is
+    VALID only if (a) FIRST-PERSON/OWNED and (b) SPECIFIC (points at one concrete audible element
+    OR a grounded fact OR a true persona self-reaction); it FAILS if it uses borrowed critic/PR
+    vocabulary floating free ("This fucking rules — wait for the drum fill at 90 seconds" PASSES;
+    "a captivating sonic journey" FAILS) — the deterministic positive complement to the unchanged
+    slop firewall; REQ-PV-013 the PER-PERSONA/DAYPART PROFANITY + HUMOUR policy [HARD] (profanity
+    is delivery colour on an owned+specific reaction — never on an ungrounded fact or a banned
+    cliché — no quota, never aimed at a person, slur-banned at Tier-1 coordinated with CALLIN-003;
+    card tier is a CEILING the daypart only lowers, grounded in Ofcom/watershed: morning none →
+    overnight freest); REQ-PV-014 the THREE-CLASS CONTENT TAXONOMY + FENCED SELF-DISCLOSURE [HARD]
+    (every clause is music-fact | audible-opinion | persona-self-disclosure; music-fact → unchanged
+    fact contract REQ-PG-001/002; the other two licensed UNGATED for grounding; self-disclosure
+    fenced as fiction inheriting REQ-PT-005; a class-b/c clause embedding a music-fact token is
+    RECLASSIFIED to class-a and gated); REQ-PV-015 the POSITIVE-REGISTER WIRING + live-regression
+    fix [HARD] (inject the positive HOST_PERSONA + ban→twin pairings + 2-4 rotated GENERIC-track
+    GOOD-vs-BAD exemplar pairs labelled form-not-content; re-affirms the REQ-PV-008 "Coming up
+    next" code-fix still live in `brain/llm.py`/`talk.py`); REQ-PV-016 the SPECIFICITY+OWNERSHIP
+    PRAISE LINT [HARD] (Tier-1 fails a praise clause of borrowed PR vocabulary pointing at nothing;
+    Tier-2 also scans self-disclosure/opinion clauses for smuggled music-fact tokens).
+  • NEW Group PI — Persona Identity (anchors), additive on PR + PV: REQ-PI-001 the per-persona
+    FROZEN-ANCHOR IDENTITY CONTRACT [HARD] (a two-block voice card: a FROZEN CORE = ≥2 permanent
+    ANCHOR FOCUSES [primary genre territory = the REQ-PR-004 firewall key + ≥1 charter pillar] +
+    CORE TEMPERAMENT + VOICE SIGNATURE; and an EVOLVABLE LAYER = the only loop-writable surface);
+    REQ-PI-002 anchors are FROZEN [HARD] (the REQ-PV-011 + REQ-PL-006 loops add the per-persona
+    anchor block to the FROZEN invariant set); REQ-PI-003 the per-persona FROZEN GUARD [HARD]
+    (a graduation proposal targeting an anchor is BLOCKED at intake before canary, logged, never
+    churned — the literal encoding of "no drastic changes, keep it human/sane"); REQ-PI-004 the
+    DISTINCTNESS CANARY on evolvable change [HARD] (shadow-evaluate every evolvable change against
+    the anti-convergence firewall + tic-collision lint; reject drift toward another persona's
+    primary territory); REQ-PI-005 the NEWS ANCHOR EXCLUDED BY CONSTRUCTION [HARD] (it is NOT a
+    Group-PR curator persona — no charter/POV/taste-profile/firewall-slot/evolvable-card/anchor
+    contract — wholly frozen factual/sourced/attributed/apolitical, OWNED by OPS-004 Group OG +
+    ORCH-005 Group RN; with ONE frozen carve-out — bounded impartial IMPLICATION-ANALYSIS,
+    permitted ONLY when ATTRIBUTED-to-a-source or a logically-NECESSARY consequence of cited
+    facts, grounded+attributed exactly like a fact, dropped if ungroundable, never normative/
+    advocacy/opinion — referenced, NOT re-owned here). The per-persona FOCUS TABLE (5 EN + 2 FO,
+    anchors marked, all primary territories pairwise-distinct so REQ-PR-004 passes) is recorded as
+    illustrative seed content; the STRUCTURE (≥2 anchors + temperament + voice + distinct
+    secondaries) is the fixed rail. NFR-P-9 AMENDED with axis (d): the anchor block is never
+    evolved (REQ-PI-002/003) and the banter recalibration never drifts the frozen temperament or
+    collapses distinctness (REQ-PI-004). HONESTY NOTE: dossier 2's news-anchor implication-analysis
+    verdict was REFUTED on the claim that the implications-vs-opinion line is trivially "concrete
+    and checkable, not hand-wavy"; the carve-out is encoded WITH the dossier's own enforcement
+    discipline (attributed-OR-necessary + drop-on-ungroundable + a forbidden-normative-token lint)
+    and the contested checkability is recorded as R-P-20 — the carve-out TIGHTENS, never relaxes,
+    the apolitical rail (OPS-004 REQ-OF-004). References (not re-owned): KNOWLEDGE-008 grounding
+    (UNTOUCHED), the design-system FROZEN/EVOLVABLE split + 5 safety layers + learnings pipeline,
+    OPS-004 OD-006 measured-change + OG newscasting + REQ-OF-004 apolitical, ORCH-005 Group RN, the
+    anti-convergence firewall (REQ-PR-004), the quality gate (REQ-PG-005), and the VOICE-002
+    chunk-pacing contract (REQ-PS-004, preserved). Net: +10 REQ (PV-012…PV-016 + PI-001…PI-005),
+    0 new NFR (NFR-P-9 amended). Total: 65 REQ + 9 NFR = 74, 1:1 REQ↔AC preserved.
+- 2026-06-22 (v0.6.0): TRACK-LEVEL anti-convergence — tightened the anti-convergence policy
+  from POOL-overlap to PER-TRACK ROTATION EXCLUSIVITY, closing a verified gap (the
+  station-management dossier). The gap is genuine BECAUSE the catalog is an explicitly SHARED
+  pool: REQ-PL-002 makes a track "curatable by WHICHEVER persona's taste it fits," so the
+  existing REQ-PR-004 firewall (no two personas share a PRIMARY GENRE TERRITORY + rotation-POOL
+  overlap under a cap) still PERMITS the SAME INDIVIDUAL TRACK to air in two shows' regular
+  rotation. The owner's rule is "never the SAME music across two shows, slight thematic
+  crossover OK." Encoded as TWO DISTINCT LAYERS of one policy, kept non-contradictory by
+  measuring them over different things: Layer 1 (UNCHANGED, REQ-PR-004) is the genre-territory /
+  feature-POOL overlap cap over the ANALYSIS-006 taste DIMENSIONS (REQ-AD-003) = the bounded
+  "slight crossover OK" allowance; Layer 2 (NEW, REQ-PR-009) is per-TRACK / rotation exclusivity
+  over concrete TRACK IDs = "never the same individual track in two shows' regular rotation."
+  Because Layer 1 measures feature pools and Layer 2 measures track IDs, allowing thematic
+  adjacency and forbidding identical-track airplay are non-contradictory. REQ-PR-004 is refined
+  with a one-line Layer-2 pointer (its pool-firewall behavior is otherwise UNCHANGED) and a new
+  REQ-PR-009 owns the per-track exclusivity RULE. PROGRAMMING-007 owns the RULE; the RUNTIME
+  MECHANISM is the ORCH-005 UNIFIED DEDUP VIEW (REQ-RW-006) `any_persona` TRACK-surface scope,
+  which already dispatches the track surface to OPS-004 REQ-OA-010 (`normalize_key`) +
+  REQ-OB-006 (per-air play-history with show association) "with PROGRAMMING-007 REQ-PR-004's
+  rotation cap" — referenced, NOT re-owned. REQ-PR-009 is enforced as a HARD selection-time
+  predicate alongside OPS-004 REQ-OA-003a (the sole hard no-repeat/artist/LRP rail), keyed on
+  the REQ-OB-006 play-history `show_or_episode_id` plus a per-track `adopted_by_show` field
+  extending the ANALYSIS-006 `Track` record (REQ-AD-001) IN PLACE (defaulting empty so
+  pre-adoption tracks stay valid — the same in-place extension pattern REQ-PL-001/REQ-AD-001
+  already use; no new store). A bounded THEMATIC CROSSOVER exception is allowed (a director-
+  declared, TIME-BOXED program/theme may reference a specific track cross-show — never a shared
+  REGULAR rotation), inheriting the ORCH-005 REQ-RW-007 special-event override-and-restore +
+  auto-revert discipline. On an EMPTY LEGAL SET (thin catalog / request pressure) the rail
+  gracefully RELAXES to a bounded, LOGGED shared-track exception rather than stall the queue,
+  mirroring OPS-004 REQ-OA-003b (continuity wins, REQ-OA-008) — so enforceability is conditional
+  on catalog depth and the relaxation is a REQUIRED part of the design. Exclusion operates on
+  TRACK IDs only, NEVER on taste FEATURE sets, so REQ-PL-004's "STILL SEPARABLE under REQ-PR-004"
+  invariant continues to hold (the second show still draws taste-matching tracks, just not the
+  identical ones already adopted elsewhere). News anchor is excluded by construction (REQ-PI-005)
+  — it has no rotation and no anti-convergence slot. References (not re-owned): ORCH-005 REQ-RW-006
+  unified dedup view + REQ-RW-007 special-event exception, OPS-004 REQ-OA-003a/003b + REQ-OA-010
+  + REQ-OB-006, ANALYSIS-006 REQ-AD-001/AD-003, and PROGRAMMING-007 REQ-PL-002/PL-004/PR-004.
+  Net: +1 REQ (PR-009), 0 new NFR; REQ-PR-004 refined in place (behavior unchanged). Total:
+  66 REQ + 9 NFR = 75, 1:1 REQ↔AC preserved.
+- 2026-06-22 (v0.7.0): DATED / TRY-HARD-SLANG ban added to the Group PV banter register, from owner
+  LIVE feedback that the host used "swagger" and "hip" — cringe, dated, try-hard ("a boomer trying
+  to sound young"). Added REQ-PV-017 [HARD, Unwanted] as a SIBLING banned class to REQ-PV-006, on a
+  DISTINCT axis — the CURRENCY / AUTHENTICITY of register — separate from the music-slop + cliché-
+  filler ban (REQ-PV-006/REQ-PG-004, which bans press-release vocabulary) and from the blunt-praise
+  license (REQ-PV-012/016, which licenses owned + specific praise). The key insight: a line can be
+  slop-free AND owned/specific yet still FAIL here because the WORDS are stale or try-hard ("this
+  track's got real swagger" is owned but reaches for faux-cool dated slang). BANNED: dated/try-hard
+  slang — "hip", "swagger", "groovy", "rad", "far out", "with it", "fly" (as a compliment), "the
+  kids", and the whole "how do you do, fellow kids" register (a bot reaching for cool/young-sounding
+  words). POSITIVE RULE: contemporary, natural, REGISTER-TRUE vocabulary — the host talks like a
+  real person NOW in its OWN authentic voice per its voice card (REQ-PV-009 register / REQ-PI-001
+  anchor temperament), never borrowing faux-cool/dated slang to sound young or to dress up a track.
+  It COMPOSES with the blunt-praise license (blunt praise must be owned+specific REQ-PV-012 AND
+  register-true REQ-PV-017). Enforced as a checkable Tier-1 lint TERM-CLASS on the REQ-PG-005
+  deterministic gate (riding the REQ-PV-010/REQ-PV-016 lint machinery + regenerate-once-then-skip),
+  so it is enforceable not advisory. The banned-term list is TUNABLE (slang dates — refined via the
+  OPS-004 self-learning loop REQ-PV-011); each persona's register-true vocabulary is its OWN (per
+  voice card, disjoint REQ-PV-009/010). News anchor is unaffected (excluded by construction,
+  REQ-PI-005 — the banter register never reaches it). Net: +1 REQ (PV-017), 0 new NFR. Total:
+  67 REQ + 9 NFR = 76, 1:1 REQ↔AC preserved.
+- 2026-06-23 (v0.7.1): Audit convergence fixes. Section 14 Traceability Index EARS-type relabel
+  only (no requirement text, scope, or REQ↔AC change): PC-004, PG-002, PG-004, PT-005, PV-006,
+  PV-017 relabeled "Unwanted" → "Ubiquitous" — each is an unconditional "The system shall NOT ..."
+  prohibition with no If/then trigger, which is the Ubiquitous-prohibition form. PV-008 kept as
+  "Event" (it correctly carries a When trigger). 1:1 REQ↔AC parity preserved.
 
 ---
 
@@ -191,6 +388,40 @@ more requirements:
    OPS-004 REQ-OF-005); a two-tier QUALITY GATE (deterministic lint incl. a forbidden-fact
    scan + an adversarial LLM self-check; regenerate once → else skip; refines REQ-OF-006);
    and a per-persona VOICE CARD injected every call (Group PG).
+7. **Host-voice persona-awareness, delivery craft & continual improvement [HARD]** (added
+   v0.4.0) — the CALIBRATION that turns delivery warmth/energy/intimacy UP to the user's
+   intensity without reintroducing any banned cliché/slop/hype and without touching grounding,
+   under one governing principle: WARMTH AND ENERGY IN DELIVERY, RESTRAINT IN CONTENT. It
+   frames every persona as a LIVE HUMAN RADIO HOST (a positive-identity HOST_PERSONA replacing
+   the negation-based one; "live human host" is a DELIVERY stance, NEVER a claim the host
+   states, and never breaks the fourth wall); carries the calibrated delivery DO-set (pacing
+   punctuation, contractions, one vivid grounded detail, one-to-one "you", daypart-calibrated
+   GENUINE energy as a WRITING property, Hook→Body→Exit ≤30s); carries the ear-writing rails
+   IN the live talk prompt (preserving the REQ-PS-004 ↔ VOICE-002 chunk-pacing contract);
+   extends the BANNED list (every existing ban PLUS filler-as-crutch and no-shared-cross-
+   persona-filler-set); makes the frontsell a tease-by-FEELING (never the next track's name,
+   never "coming up"); fixes the live "Coming up next" frontsell REGRESSION in code; extends
+   the per-persona VOICE CARD with an energy band, pacing signature, register, and a DISJOINT
+   verbal-tic bank; extends the quality gate with distinctness + crutch lints; and adds a
+   BOUNDED continual-improvement loop (a MEASURED self-refinement of prompts/rules/voice-cards
+   in the OPS-004 store — observation→heuristic→rule→graduated — NOT model fine-tuning, with no
+   self-imitation, NO engagement target, and a FROZEN invariant set the loop may never evolve)
+   (Group PV).
+8. **Banter authenticity + persona identity [HARD]** (added v0.5.0) — two compose-designed
+   refinements landed as ONE update. (a) A BANTER-AUTHENTICITY recalibration of Group PV that
+   flips the live STERILITY (a structural code gap: the v0.4.0 positive identity was authored but
+   never wired into `brain/llm.py`, leaving an under-specified voice + a ban-list) by ADDING the
+   missing POSITIVE layer — a named music-journalist register lineage (6 Music / NTS / KEXP) + a
+   "text one smart, slightly-impatient friend" addressee frame, a deterministic BLUNT-PRAISE
+   LICENSE (owned + specific praise PASSES; borrowed PR vocabulary floating free FAILS), a
+   per-persona/daypart PROFANITY + HUMOUR policy, fenced persona SELF-DISCLOSURE, and the
+   ban→positive-twin prompt pairing — all on the DELIVERY axis, no ban weakened. (b) A new Group
+   PI persona-IDENTITY model: a per-persona FROZEN-ANCHOR identity contract (≥2 permanent anchor
+   focuses + core temperament + voice signature, never loop-writable) over an EVOLVABLE layer, a
+   per-persona frozen guard + distinctness canary, and the NEWS ANCHOR EXCLUDED BY CONSTRUCTION
+   (no charter/POV/taste/firewall-slot — wholly frozen, owned by OPS-004 OG + ORCH-005 RN — with
+   one frozen carve-out: bounded impartial implication-analysis). PV recalibrates DELIVERY on the
+   evolvable layer; PI freezes WHO the persona is — they compose on REQ-PV-005 (Group PV + PI).
 
 ### 1.3 The Creative Autonomy Principle (inherited, cross-cutting)
 
@@ -254,6 +485,65 @@ These are the ONLY things this SPEC fixes; everything else creative is the AI's 
   listener-signal/contact-form input and the human's manual drops are human-curatorial
   CONTEXT the station MAY use, NEVER an engagement/appeal/popularity target; the seed
   enrichment is reference, never a constraint (REQ-PL-004/005/006/007, NFR-P-7).
+- **Warmth in delivery, restraint in content.** [HARD] (added v0.4.0) The governing principle
+  for all host talk: delivery warmth/energy/intimacy may be turned UP (rhythm, timing, leaning
+  in), but content stays RESTRAINED (no extra claims, no adjective piles, no hype). Turning
+  delivery up never grants new claim-making latitude (REQ-PV-005).
+- **Live-human host is a stance, never a claim.** [HARD] (added v0.4.0) Every persona is
+  framed as a live human radio host through HOW it talks (present tense, second person,
+  one-to-one intimacy), but the host NEVER states it is live, real, an AI, a script, or
+  reads stage directions — no fourth-wall break (REQ-PV-001).
+- **Tease the next track by FEELING, never by name.** [HARD] (added v0.4.0) A frontsell hints
+  the next track's mood/energy shift only; it never names the artist/title and never uses the
+  banned "coming up / up next / stay tuned"; the name is saved for the following break's
+  backsell (REQ-PV-007). The current `_build_talk_prompt` "Coming up next" block + the
+  next_artist/next_title name-passing are a live banned-phrase REGRESSION and MUST be replaced
+  with a mood-hint frontsell (REQ-PV-008).
+- **Disjoint per-persona verbal-tic banks.** [HARD] (added v0.4.0) Each persona's 3-5
+  signature warmth-transitions are DISJOINT from every other persona's; no global shared
+  filler set exists; a tic is used sparingly (≤1 per break, never the same one two breaks
+  running) (REQ-PV-006/009/010, anti-convergence REQ-PR-004).
+- **Continual improvement is bounded refinement, not fine-tuning.** [HARD] (added v0.4.0) The
+  station may MEASUREDLY refine its prompts/rules/voice-cards in the OPS-004 playbook store
+  (observation→heuristic→rule→graduated) under the REQ-OD-006 rate-limit/canary/contradiction
+  rails, never feeding its own recent scripts back as exemplars (REQ-OC-006), never optimizing
+  any engagement/appeal metric (curation bright line), and never evolving the FROZEN invariant
+  set; it is iterative refinement, NOT model fine-tuning (no training path exists)
+  (REQ-PV-011, NFR-P-9).
+- **Blunt praise is licensed in DELIVERY; the slop firewall is unchanged.** [HARD] (added v0.5.0)
+  A praise/reaction line PASSES only if it is BOTH first-person/OWNED AND SPECIFIC (points at one
+  concrete audible element, a grounded fact, or a true persona self-reaction); it FAILS if it uses
+  borrowed critic/PR vocabulary floating free. Heat/bluntness/profanity ride the DELIVERY axis;
+  they may NEVER dress up an ungrounded fact or a banned cliché. Every existing slop/LLM-tell/
+  fusion-comparison ban is preserved verbatim (REQ-PV-012/016, REQ-PG-004, REQ-PV-006).
+- **Profanity + humour are per-persona delivery colour, ceiling-capped by daypart.** [HARD]
+  (added v0.5.0) `profanity_tier` {none|mild|salty} and `humour_mode` {dry|warm|deadpan|none} are
+  per-persona voice-card fields (so personas DIVERGE); the card tier is a CEILING the daypart only
+  lowers (morning none → overnight freest, grounded in Ofcom/watershed); no quota, never aimed at
+  a person, explicit SLUR ban at Tier-1 (coordinated with CALLIN-003); humour is a grounded aside
+  about the audible/the live moment, never an invented anecdote-as-fact (REQ-PV-013).
+- **Persona/opinion/self-disclosure are FREE; music-facts stay GROUNDED.** [HARD] (added v0.5.0)
+  Every clause is one of three classes — MUSIC-FACT (routed to the unchanged fact contract,
+  REQ-PG-001/002), AUDIBLE-OPINION (licensed, ungated for grounding, uncapped in intensity), or
+  PERSONA-SELF-DISCLOSURE (licensed as FENCED FICTION inheriting REQ-PT-005). A self-disclosure or
+  opinion clause that smuggles a music-fact token (a year/label/personnel name) is RECLASSIFIED to
+  music-fact and gated. The host may invent/voice its OWN fictional life and strong subjective
+  TAKES (opinion ≠ fact); FACTUAL claims about music/artists stay grounded (REQ-PV-014).
+- **Per-persona anchors are FROZEN; identity never drifts.** [HARD] (added v0.5.0) Each curator
+  persona has a FROZEN CORE — ≥2 permanent anchor focuses (primary genre territory = the
+  REQ-PR-004 firewall key + ≥1 charter pillar) + core temperament + voice signature — that no
+  self-improvement loop may ever write; only the EVOLVABLE layer (secondary interests, taste
+  state, tic/register/energy wording, tunable targets) is loop-writable, and only SLOWLY under the
+  measured-self-change rails (REQ-PI-001/002/003/004, REQ-OD-006). A graduation proposal targeting
+  an anchor is blocked at intake before canary, logged, never churned.
+- **The news anchor is NOT a curator persona — excluded by construction.** [HARD] (added v0.5.0)
+  It has no charter, POV, evolving taste, anti-convergence slot, or evolvable card; it is wholly
+  frozen (factual/sourced/attributed/apolitical), OWNED by OPS-004 Group OG + ORCH-005 Group RN.
+  Its ONE frozen carve-out — bounded impartial IMPLICATION-ANALYSIS — is permitted ONLY when an
+  implication is ATTRIBUTED to a source OR a logically NECESSARY consequence of cited facts,
+  grounded+attributed exactly like a fact, and is DROPPED if ungroundable; it never expresses
+  opinion, advocacy, viewpoint, or normative judgment. It TIGHTENS, never relaxes, OPS-004
+  REQ-OF-004. PROGRAMMING-007 references this; OPS-004/ORCH-005 own it (REQ-PI-005).
 
 ### 1.7 Code-audit ground truth — Group PL is a GREENFIELD capability (added v0.2.0)
 
@@ -372,6 +662,20 @@ Consumed OPS-004 concepts (by number, deliberately):
 - **REQ-OC-005** (grounded, never fabricated) + **REQ-OF-004 / NFR-O-7** (apolitical /
   anti-appeal). The Group PG grounding rule (REQ-PG-002) is the host-voice expression of
   REQ-OC-005; it references, does not restate, the rail.
+- **Group OG (newscasting) + REQ-OF-004 (apolitical rail)** (added v0.5.0, by concept). The news
+  anchor is OWNED by OPS-004 Group OG (factual/sourced/attributed/never-fabricated newscasting);
+  PROGRAMMING-007 REQ-PI-005 only STATES that the news anchor is excluded-by-construction from the
+  Group-PR persona model and references the bounded implication-analysis carve-out as a frozen
+  TIGHTENING of REQ-OF-004 — the carve-out, the gate firewall, and the rubric are owned by OPS-004,
+  not authored here.
+- **The design-system FROZEN/EVOLVABLE split + 5 safety layers + learnings pipeline** (added
+  v0.5.0, by concept — `.claude/rules/moai/design/constitution.md` Sections 2, 5, 6-7). The Group
+  PI per-persona anchor contract LIFTS the station-wide FROZEN/EVOLVABLE pattern (already proven
+  station-wide by REQ-PV-011's FROZEN invariant set) down to PERSONA granularity; the per-persona
+  Frozen Guard (REQ-PI-003) models constitution Layer 1, the distinctness canary (REQ-PI-004)
+  models constitution Layer 2, and the observation→heuristic→rule→graduated flow is the
+  constitution learnings pipeline. PROGRAMMING-007 reuses these patterns; it does not re-own the
+  constitution or the safety architecture.
 
 Consumed ANALYSIS-006 concepts (by number, deliberately):
 - **REQ-AD-003** (the data model enables per-persona/per-show DISTINCT taste profiles —
@@ -423,7 +727,9 @@ Consumed KNOWLEDGE-008 concepts (added v0.3.0, by concept — sibling SPEC):
   parallel) drives WHEN a persona presents, WHEN a show runs, and WHEN the director
   decides to refine the playbook. PROGRAMMING supplies the WHO/HOW/WHAT content the
   director schedules and voices; ORCH owns the loop and scheduling. Neither redefines the
-  other.
+  other. (Added v0.5.0:) ORCH-005 Group RN (news ledger / dedup / news-cycle) co-owns the news
+  anchor with OPS-004 Group OG; REQ-PI-005 references this exclusion and does not re-own the news
+  subsystem or author its implication-analysis carve-out (that is an OPS-004/ORCH-005 amendment).
 - **SPEC-RADIO-CALLIN-003** (live listener call-in) — a future format that would attach
   callers to a persona within the host caps PROGRAMMING defines; the live-caller behavior
   is CALLIN-003's, the persona + show format is PROGRAMMING's.
@@ -438,7 +744,7 @@ Consumed KNOWLEDGE-008 concepts (added v0.3.0, by concept — sibling SPEC):
 | **Two-level identity** | The station's editorial voice has two layers: the STATION-LEVEL "house" editorial identity (the overall sound + values shared across all output, e.g. station IDs and the apolitical/curatorial ethos) and the PER-SHOW PERSONA identity (the individual host presenting a given show). House is the parent; persona is the child (REQ-PR-001). |
 | **Roster** | The set of personas. Two SEPARATE rosters: the English roster (~5 at launch, Kokoro/Piper voices) and the Faroese roster (exactly 2: Hanna ♀, Hanus ♂). No persona is bilingual (REQ-PR-001, REQ-PR-007). |
 | **Taste charter** | A per-persona declaration of editorial taste: IN-bounds and OUT-of-bounds genres, eras, and moods, plus signature artists/labels. Hand-authored or runtime-authored, persisted, system-owned and runtime-extensible. Expressed in terms of the ANALYSIS-006 feature dimensions so it is queryable and separable (REQ-PR-006). |
-| **Anti-convergence firewall** | The HARD curation-time check that no two personas share a PRIMARY genre territory and that rotation overlap between any two personas stays under a cap, proven against the ANALYSIS-006 taste dimensions (REQ-PR-004). Prevents the autonomous-curation drift to a shared average ("AI slop wearing five name tags"). |
+| **Anti-convergence firewall** | A TWO-LAYER HARD anti-convergence policy. LAYER 1 (REQ-PR-004): the curation-time check that no two personas share a PRIMARY genre territory and that rotation overlap between any two personas stays under a cap, proven against the ANALYSIS-006 taste FEATURE dimensions — bounds but PERMITS thematic/genre adjacency ("slight crossover OK"). LAYER 2 (REQ-PR-009): per-TRACK cross-show rotation EXCLUSIVITY over concrete TRACK IDs — no individual track is in two shows' regular rotation ("never the same music across two shows"), with a director-declared time-boxed crossover exception and a graceful empty-legal-set relaxation. The two layers measure different things (feature pools vs track IDs) so they are non-contradictory. Together they prevent the autonomous-curation drift to a shared average ("AI slop wearing five name tags"). |
 | **Persistent POV** | A persona's stable point of view and presentation signature: its own intros, sign-offs, recurring bits, and pacing — consistent across appearances so the persona feels like a real, returning person (REQ-PR-005). |
 | **Growth gate** | The HARD test that a NEW persona is added ONLY for a documented editorial GAP (a taste territory no current persona covers), never for appeal/reach, and must pass a both-axes distinctness test (a free voice AND a distinct taste territory) before air (REQ-PR-008). |
 | **Radio-craft playbook (content)** | The editorial KNOWLEDGE of how to do radio well — talk-break anatomy, hit-the-post, what to say/not say, energy arcs, theme generators. PROGRAMMING owns the CONTENT/RULES (Group PC); OPS-004 owns the persistent STORE that holds and self-refines it (REQ-OD-001/003). |
@@ -472,7 +778,28 @@ Consumed KNOWLEDGE-008 concepts (added v0.3.0, by concept — sibling SPEC):
 | **Anti-slop register** | The [HARD] banned-phrase + banned-construction list (music-slop like "sonic journey", "lush soundscapes", "effortlessly blends", "a testament to", "needs no introduction"; LLM tells like "delve/leverage/elevate", negative-parallelism, rule-of-three adjective piles) PLUS the positive rules (specificity over adjectives, genuine POV, show-don't-tell, one idea/break, plain words, OK to say little). Extends OPS-004 REQ-OF-005 (REQ-PG-004). |
 | **Quality gate (two-tier)** | The [HARD] check on every generated break: Tier-1 DETERMINISTIC lint (banned-register + banned-construction scan + FORBIDDEN-FACT scan — every year/label/producer/personnel token must appear in context; a year not in context = FAIL — + comparison-grounding check) and Tier-2 ADVERSARIAL LLM self-check ("list every factual claim; output any NOT supported by context" → unsupported = FAIL). On FAIL: regenerate ONCE; a second FAIL SKIPS the break. Never ships a FAIL. Refines OPS-004 REQ-OF-006 (REQ-PG-005). |
 | **Forbidden-fact scan** | The Tier-1 deterministic check that every factual token in a script (year, label, producer, personnel name) appears in the supplied fact contract; a token absent from context — especially a year that disagrees with context — is a FAIL. The mechanical guard against confident wrong facts (REQ-PG-005). |
-| **Persona voice card** | The [HARD] per-persona instruction card injected into EVERY talk-generation call (knowledgeable, dry, understated, mild opinions, restraint, no gushing, talks like a person), identical each call for consistency, with a HARD length cap (over-explaining is itself slop) and opinion only about the AUDIBLE. Traits are tunable config; coordinates with the Group PR persona model + Group PC craft (REQ-PG-006). |
+| **Persona voice card** | The [HARD] per-persona instruction card injected into EVERY talk-generation call (knowledgeable, dry, understated, mild opinions, restraint, no gushing, talks like a person), identical each call for consistency, with a HARD length cap (over-explaining is itself slop) and opinion only about the AUDIBLE. Traits are tunable config; coordinates with the Group PR persona model + Group PC craft (REQ-PG-006). Extended in v0.4.0 with an energy band, pacing signature, register, and a disjoint verbal-tic bank (REQ-PV-009). |
+| **Live-human host stance** | (v0.4.0) The framing that a persona is a real, live human on one mic talking to one listener — expressed through DELIVERY (present tense, second person, intimacy, rhythm, leaning in), NEVER stated as a CLAIM. The host never says "I'm live / I'm real / as an AI / this script" and never breaks the fourth wall. A positive-identity HOST_PERSONA replaces the negation-based "not a corporate announcer / not a chirpy AI" form (REQ-PV-001). |
+| **Warmth-in-delivery / restraint-in-content** | (v0.4.0) The governing principle resolving the warmth-vs-anti-slop tensions: the warmth/energy/intimacy axis (DELIVERY) may be turned up while the claim-making/adjective-density/hype axis (CONTENT) stays restrained. Turning delivery up never grants new claim-making latitude (REQ-PV-005). |
+| **Delivery energy (vs hype)** | (v0.4.0) GENUINE energy expressed as a WRITING property — rhythm, specificity, short punchy blocks, daypart-calibrated band — NOT as exclamation marks, manufactured excitement, or hype words. Energy is calibrated per daypart (morning bright → overnight intimate) and per persona via the voice card's energy band (REQ-PV-003). |
+| **Tease-by-feeling frontsell** | (v0.4.0, sharpens the Frontsell glossary entry) A frontsell that hints ONLY the next track's mood/energy shift ("the next one sits lower, slower"), NEVER its artist/title name and NEVER the banned "coming up / up next / stay tuned"; the name is reserved for the following break's backsell. The next track is supplied to the prompt as a MOOD hint, not a name (REQ-PV-007, REQ-PV-008; consumes the TrackContext "next = MOOD hint, not a name", REQ-PG-001). |
+| **Verbal-tic bank** | (v0.4.0) A persona's 3-5 SIGNATURE warmth-transition habits (e.g. "Funny thing is", "What gets me"), unique to that persona and DISJOINT from every other persona's bank (no shared cross-persona filler set). Stored on the voice card, used SPARINGLY (≤1 per break, never the same tic two breaks running), and a top anti-convergence lever (REQ-PV-006/009/010, anti-convergence REQ-PR-004). |
+| **Filler-as-crutch** | (v0.4.0) The banned failure mode of over-using a warmth-transition — exceeding the frequency cap (≤1 per break) or repeating the same tic two breaks running. Caught by the Tier-1 distinctness/crutch lint (REQ-PV-006/010). |
+| **Continual-improvement loop** | (v0.4.0) A BOUNDED, MEASURED self-refinement of the station's PROMPTS / RULES / per-persona VOICE CARDS / craft playbook in the OPS-004 store (observation→heuristic→rule→graduated), driven by the per-break quality-gate signal and the cross-session ledger/diary. It is iterative refinement, NOT model fine-tuning (no training path). Bounded by the OPS-004 measured-self-change rails (rate limit + canary + contradiction detection, REQ-OD-006); never self-imitates (REQ-OC-006); never optimizes appeal; never evolves the FROZEN invariant set (REQ-PV-011, NFR-P-9). |
+| **FROZEN invariant set** | (v0.4.0; extended v0.5.0) The rules the continual-improvement loop may NEVER evolve away: never-ship-a-FAIL (REQ-PG-005), grounding / fact-contract (REQ-PG-001/002 + KNOWLEDGE-008), anti-convergence firewall (REQ-PR-004), banned-phrase firewall (REQ-PC-004/REQ-PV-006), fictional-persona ethics + disclaimers (REQ-PT-005/006), no-self-imitation (REQ-OC-006), the host caps (REQ-PR-002), and (added v0.5.0) the per-persona ANCHOR BLOCK (REQ-PI-001/002). The EVOLVABLE counterpart is voice-card tic banks (within distinctness rails), energy-band phrasings, register colour (incl. bluntness/humour/self-disclosure tone), profanity/humour/self-disclosure card fields (within disjointness rails), surface tastes, tunable word/length targets, the say-category rotation set, and daypart preset wording (REQ-PV-011, REQ-PI-001). |
+| **Blunt-praise license** | (v0.5.0) The deterministic positive complement to the slop firewall: a praise/reaction line PASSES only if it is BOTH (a) FIRST-PERSON/OWNED (a real host reaction — "I", "that", "this one" — not a disembodied verdict) AND (b) SPECIFIC (points at one concrete locatable thing — an audible element, a grounded fact, or a true persona self-reaction). It FAILS if it uses borrowed critic/PR vocabulary floating free of any locatable thing. "This fucking rules — wait for the drum fill at 90 seconds" PASSES; "a captivating sonic journey" FAILS. Heat/bluntness/profanity are licensed in DELIVERY, never as a fact. Enforced by a Tier-1 lint check (REQ-PV-012/016). |
+| **profanity_tier** | (v0.5.0) A per-persona voice-card field {none|mild|salty} (mild ≈ damn/bloody/crap/hell; salty ≈ includes shit/fuck as genuine emphasis, Ofcom severity model). The card tier is a CEILING the DAYPART gradient only lowers (morning none → midday mild ceiling → afternoon/evening card tier → overnight freest). Per-persona so personas DIVERGE; no quota; never aimed at a person; slur-banned at Tier-1. Profanity is delivery colour on an owned+specific reaction, never on an ungrounded fact or a banned cliché (REQ-PV-013). |
+| **humour_mode** | (v0.5.0) A per-persona voice-card field {dry|warm|deadpan|none}. Humour is DELIVERY — timing, understatement, a dry aside about the AUDIBLE track or the live moment — never a joke-of-the-day quota and never an invented anecdote-as-fact (preserves REQ-PG-002). Forced/jokey enthusiasm stays banned (REQ-PV-006). Disjoint enough across personas to distinguish (REQ-PV-013). |
+| **self_disclosure** | (v0.5.0) A per-persona voice-card field {frequency: rare/occasional, register-slice: which slice of the persona's OWN invented life it draws on}. Licensed as FENCED FICTION (a short, owned, lived-in reaction in the persona's invented world — "this one got me through a rough week") inheriting the Solstice-Hour guardrail (REQ-PT-005): no real-person claim, apolitical, no fourth-wall break, no embedded music-fact token (else reclassified + gated). Disjoint across personas; frequency-capped so it does not become a new crutch (REQ-PV-014, REQ-PV-001). |
+| **Three-class content taxonomy** | (v0.5.0) The routing rule that every clause in a break is exactly one of: (a) MUSIC-FACT (any checkable claim about artist/track/history/culture → the unchanged closed-world fact contract REQ-PG-001/002 + forbidden-fact scan); (b) AUDIBLE-OPINION (taste/feel about the sound → LICENSED, ungated for grounding, uncapped in intensity — the blunt-praise license); (c) PERSONA-SELF-DISCLOSURE (the host's own fictional life/feeling → LICENSED as fenced fiction). The grounding contract governs ONLY class (a). A class-(b)/(c) clause embedding a music-fact token is RECLASSIFIED to class (a) and gated (REQ-PV-014). |
+| **Music-journalist register** | (v0.5.0) The positive register target that replaces the vague "warm radio host": a BBC 6 Music / NTS / KEXP presenter — a working music head who genuinely loves the stuff, knowledgeable, dry, and funny, who says plainly when something rules and plainly when it doesn't, addressed as if texting one smart, slightly-impatient friend. A DELIVERY stance only (REQ-PV-001) — the host never SAYS it is a journalist and never breaks the fourth wall (REQ-PV-001/015). |
+| **Persona identity contract** | (v0.5.0) The per-persona two-block voice-card structure (Group PI): a FROZEN CORE (≥2 permanent ANCHOR FOCUSES + core TEMPERAMENT + VOICE SIGNATURE — never loop-writable) over an EVOLVABLE LAYER (secondary interests, taste-profile state, tic/register/energy/self-disclosure wording, tunable targets — the only loop-writable surface). Built by lifting the design-system station-wide FROZEN/EVOLVABLE split down to persona granularity (REQ-PI-001). |
+| **Anchor focus / frozen core** | (v0.5.0) A persona's ≥2 PERMANENT focuses: the PRIMARY genre territory (the literal REQ-PR-004 anti-convergence firewall key — no two personas may share it) PLUS ≥1 further charter pillar (an era band, a mood/sensibility lane, a thematic throughline, or a sub-genre). Together with the CORE TEMPERAMENT (the stable trait profile, REQ-PG-006) and the VOICE SIGNATURE (the 1:1 voice REQ-PR-003 + pacing + POV structure REQ-PR-005) they form the FROZEN CORE — immutable, never written by any loop (REQ-PI-001/002). |
+| **Evolvable layer** | (v0.5.0) The only loop-writable surface of a persona: secondary (non-anchor) charter territories, taste-profile state (REQ-PL-004), running-bit/segment WORDING (the structure is anchored), verbal-tic-bank wording (within the REQ-PV-006 disjointness rail), energy-band/register colour (incl. bluntness/humour/self-disclosure tone), and tunable word/length targets. The loop may change WORDING / SURFACE TASTE / SECONDARY INTERESTS / DELIVERY REGISTER; it may NEVER change WHO the persona is (REQ-PI-001). |
+| **Per-persona frozen guard** | (v0.5.0) The intake check (modeling design-constitution Layer 1) that classifies every self-improvement/graduation proposal by target zone at the FRONT of the protocol; an anchor-targeting proposal is BLOCKED before canary, logged, and never churned. The literal encoding of "no drastic changes, keep it human/keep it sane" (REQ-PI-003). |
+| **Distinctness canary** | (v0.5.0) The shadow-evaluation (modeling design-constitution Layer 2) run before applying ANY evolvable-layer change: the change is checked against the anti-convergence firewall (REQ-PR-004) + the cross-persona tic/field-collision lint (REQ-PV-010); a change that would push a persona toward another's primary territory or collide a shared field is REJECTED — so develop-plus-shared-craft provably cannot homogenize the roster (REQ-PI-004). |
+| **News anchor (excluded by construction)** | (v0.5.0) NOT a Group-PR curator persona: no taste charter (REQ-PR-006), no POV (REQ-PR-005), no evolving taste profile (REQ-PL-004), no anti-convergence slot (REQ-PR-004), no anchor/evolvable two-zone contract, no evolvable voice card. Owned by OPS-004 Group OG + ORCH-005 Group RN; wholly frozen (factual/sourced/attributed/never-fabricated/apolitical). The persona-evolution machinery structurally does not reach it. Voicing is a TTS route, not a persona (REQ-PI-005). |
+| **Implication-analysis line** | (v0.5.0) The ONE frozen carve-out on the news anchor: it MAY state an IMPLICATION of a news item ONLY when the implication is EITHER (a) ATTRIBUTED — a source itself made the consequential claim ("X, according to <source>, is expected to lead to Y") — OR (b) NECESSARY — a logically necessary consequence derivable from cited facts with NO normative load and NO unattributed forecast; it is grounded+attributed exactly like a fact and DROPPED if ungroundable. Anything that asserts a should/ought, ranks an outcome good/bad, forecasts without attribution, or advocates is OPINION and FORBIDDEN. TIGHTENS, never relaxes, the apolitical rail (OPS-004 REQ-OF-004). Owned by OPS-004/ORCH-005; referenced by REQ-PI-005 (R-P-20 records the contested checkability). |
 
 ---
 
@@ -519,6 +846,47 @@ Consumed KNOWLEDGE-008 concepts (added v0.3.0, by concept — sibling SPEC):
   extending OPS-004 REQ-OF-005); the two-tier quality gate (deterministic lint incl. a
   forbidden-fact scan + an adversarial LLM self-check; regenerate once → else skip; refines
   REQ-OF-006); and the per-persona voice card injected every call.
+- **Group PV — Host-Voice Persona-Awareness, Delivery Craft & Continual Improvement** (added
+  v0.4.0). The live-human persona-awareness framing (a positive-identity HOST_PERSONA; "live
+  human host" as a DELIVERY stance, never a claim, never a fourth-wall break); the calibrated
+  delivery DO-set (pacing punctuation, contractions, theater-of-the-mind one grounded detail,
+  one-to-one "you", Hook→Body→Exit ≤30s); the daypart-calibrated delivery-energy-vs-hype
+  split (energy as a WRITING property); the ear-writing rails carried IN the live talk prompt
+  (preserving the REQ-PS-004 ↔ VOICE-002 chunk-pacing contract); the unifying principle
+  (warmth in delivery, restraint in content); the extended banned list (existing bans PLUS
+  filler-as-crutch + no-shared-cross-persona-filler-set); the tease-by-feeling frontsell; the
+  MANDATORY frontsell code-fix (the live "Coming up next" regression); the extended voice card
+  (energy band + pacing signature + register + disjoint verbal-tic bank); the distinctness +
+  crutch lints on the quality gate; and the bounded continual-improvement loop (measured
+  self-refinement, not fine-tuning). CALIBRATES/EXTENDS the PR/PC/PS/PG groups and references
+  — never re-owns — OPS-004, ANALYSIS-006, KNOWLEDGE-008, and the VOICE-002 chunk contract.
+  (Added v0.5.0 — banter-authenticity recalibration:) the music-journalist register lineage
+  (6 Music / NTS / KEXP) + the "text one smart, slightly-impatient friend" addressee frame
+  (REQ-PV-001); the LEAD-with-one-owned-reaction shape (REQ-PV-002); the banter band on the
+  warmth/restraint spine (REQ-PV-005); the ban→positive-twin prompt pairing (REQ-PV-006); four new
+  voice-card fields — profanity_tier, humour_mode, self_disclosure, blunt-praise starter set, all
+  disjoint (REQ-PV-009); the extended collision lint over the new fields (REQ-PV-010); the
+  deterministic BLUNT-PRAISE LICENSE (REQ-PV-012); the per-persona/daypart PROFANITY + HUMOUR
+  policy (REQ-PV-013); the THREE-CLASS CONTENT TAXONOMY + fenced self-disclosure (REQ-PV-014); the
+  positive-register WIRING + live-regression fix (REQ-PV-015); and the SPECIFICITY+OWNERSHIP praise
+  lint (REQ-PV-016). (Added v0.7.0:) the DATED / TRY-HARD-SLANG ban (REQ-PV-017) — a distinct
+  register-currency/authenticity axis (banning "hip / swagger / groovy / the kids / fellow-kids"
+  faux-cool slang) requiring contemporary, register-true vocabulary, enforced as a Tier-1 lint
+  term-class, composing with the blunt-praise license.
+- **Group PI — Persona Identity (anchors)** (added v0.5.0). The per-persona FROZEN-ANCHOR identity
+  contract (a two-block voice card: a FROZEN CORE = ≥2 permanent anchor focuses + core temperament
+  + voice signature, over an EVOLVABLE layer that is the only loop-writable surface, REQ-PI-001);
+  anchors are FROZEN — added to the FROZEN invariant set, never loop-evolved (REQ-PI-002); a
+  per-persona FROZEN GUARD that blocks an anchor-targeting graduation proposal at intake before
+  canary (REQ-PI-003); a DISTINCTNESS CANARY that rejects any evolvable change drifting toward
+  another persona's primary territory or colliding a shared field (REQ-PI-004); and the NEWS ANCHOR
+  EXCLUDED BY CONSTRUCTION — not a Group-PR curator persona, wholly frozen, owned by OPS-004 OG +
+  ORCH-005 RN, with one frozen bounded-implication-analysis carve-out referenced not re-owned
+  (REQ-PI-005). Additive on Groups PR + PV; composes with the banter recalibration on REQ-PV-005
+  (PV tunes DELIVERY on the evolvable layer; PI freezes WHO the persona is). References — never
+  re-owns — the design-system FROZEN/EVOLVABLE split + safety layers, OPS-004 OD-006 / OG /
+  REQ-OF-004, ORCH-005 RN, the anti-convergence firewall (REQ-PR-004), and the quality gate
+  (REQ-PG-005).
 - Plus **NFRs** (Section 11) and **Risks** (Section 12).
 
 ### 4.2 Out of scope (explicitly deferred / owned elsewhere)
@@ -559,6 +927,56 @@ Consumed KNOWLEDGE-008 concepts (added v0.3.0, by concept — sibling SPEC):
 - **Treating the personal seed as a constraint** (added v0.2.0) — the Spotify/YouTube seed
   enrichment (REQ-PL-007) is a one-time non-binding REFERENCE; it does not pin, gate, or
   constrain any persona's ongoing taste.
+- **(Group PV, added v0.4.0) Model fine-tuning / training a model** — the continual-
+  improvement loop (REQ-PV-011) refines PROMPTS / RULES / VOICE CARDS in the OPS-004 store; it
+  is iterative refinement, NOT model fine-tuning or weight training. No training path exists
+  (the stack is claude-agent-sdk on the subscription).
+- **(Group PV) Any engagement/appeal/popularity target on craft** — the loop tunes craft
+  QUALITY only; a quality score is NEVER turned into an engagement/appeal/popularity
+  maximization target (the curation bright line).
+- **(Group PV) The host stating it is live/real/an AI/a script** — "live human host" is a
+  DELIVERY stance, never a spoken claim; no fourth-wall break, no self-reference (REQ-PV-001).
+- **(Group PV) A shared cross-persona filler / verbal-tic set** — each persona's verbal-tic
+  bank is DISJOINT; a global shared "You know / Here's the thing" set is explicitly barred
+  (REQ-PV-006, anti-convergence REQ-PR-004).
+- **(Group PV) Re-owning grounding, the base anti-slop register, or the playbook store** —
+  KNOWLEDGE-008 grounding is UNTOUCHED, OPS-004 owns the store + measured-change rails, and the
+  base anti-slop register (OPS-004 REQ-OF-005) + the PG fact contract/gate are consumed and
+  extended, never forked.
+- **(Group PV, added v0.5.0) Profanity/heat dressing up an ungrounded fact or a banned cliché** —
+  the blunt-praise license + profanity tiers act ONLY on owned+specific DELIVERY; the lazy "banger"
+  used as a floating PR label stays banned even sworn at (REQ-PV-012/013/016).
+- **(Group PV, added v0.5.0) A fixed profanity/joke QUOTA, or profanity aimed at a person, or
+  slurs** — no quota (a fixed swear count is manufactured enthusiasm, already banned), never aimed
+  at a person/artist/group, slurs banned at Tier-1 (a moderation matter, coordinated with
+  CALLIN-003) (REQ-PV-013).
+- **(Group PV, added v0.5.0) Self-disclosure that asserts a checkable real-world claim, breaks the
+  fourth wall, carries politics, or embeds a music-fact token** — self-disclosure is FENCED FICTION
+  in the persona's OWN invented world; a music-fact token reclassifies it to music-fact and gates
+  it; the apolitical rail does NOT open up (REQ-PV-014, REQ-PT-005, REQ-OF-004).
+- **(Group PV, added v0.5.0) A shared cross-persona profanity/humour/self-disclosure/praise-starter
+  combination** — these new card fields are DISJOINT across personas exactly as the verbal-tic bank
+  is; a homogenized "sweary AI" roster is barred (REQ-PV-009/010/013, anti-convergence REQ-PR-004).
+- **(Group PV, added v0.5.0) Feeding the station's own recent scripts back as exemplars** — the
+  few-shot register exemplars are HAND-AUTHORED generic-track anchors labelled form-not-content,
+  never fed-back station scripts; no-self-imitation (REQ-OC-006) is FROZEN (REQ-PV-015).
+- **(Group PI, added v0.5.0) A self-improvement/taste loop writing a persona's ANCHOR block** — the
+  ≥2 anchor focuses + core temperament + voice signature are FROZEN; only the evolvable layer is
+  loop-writable; an anchor change is human-only and out-of-band (REQ-PI-001/002/003).
+- **(Group PI, added v0.5.0) Evolvable change that erodes pairwise distinctness** — the distinctness
+  canary rejects any evolvable change drifting a persona toward another's primary territory or
+  colliding a shared field; refinement never homogenizes the roster (REQ-PI-004, REQ-PR-004).
+- **(Group PI, added v0.5.0) Treating the news anchor as a curator persona, or re-owning the news
+  subsystem / its implication-analysis carve-out / gate rubric** — the news anchor is excluded by
+  construction and owned by OPS-004 Group OG + ORCH-005 Group RN; PROGRAMMING-007 only STATES the
+  exclusion and references the frozen carve-out; the OG REQ + the REQ-OF-004 carve-out + the
+  forbidden-normative-token lint + the implications-vs-opinion rubric are OPS-004/ORCH-005
+  amendments, not authored here (REQ-PI-005).
+- **(Group PI, added v0.5.0) The news anchor expressing opinion, advocacy, viewpoint, or normative
+  judgment** — its one carve-out (implication-analysis) is bounded to attributed-OR-necessary,
+  grounded+attributed, dropped-if-ungroundable; it TIGHTENS, never relaxes, the apolitical rail
+  (REQ-PI-005, OPS-004 REQ-OF-004). The banter recalibration (bluntness/humour/self-disclosure)
+  applies ONLY to curator personas; the news anchor is firewalled out of it.
 
 ---
 
@@ -618,6 +1036,66 @@ Consumed KNOWLEDGE-008 concepts (added v0.3.0, by concept — sibling SPEC):
 - [HARD] **Persona voice card every call** (added v0.3.0). A per-persona, length-capped voice
   card is injected on every talk-generation call for consistency; opinion only about the
   audible (REQ-PG-006).
+- [HARD] **Warmth in delivery, restraint in content** (added v0.4.0). The governing principle:
+  delivery warmth/energy/intimacy may be turned up; content stays restrained; delivery energy
+  never grants new claim-making latitude (REQ-PV-005).
+- [HARD] **Live-human persona-awareness is a stance, never a claim** (added v0.4.0). The
+  positive-identity HOST_PERSONA frames the host as a live human radio host through HOW it
+  talks; the host NEVER states it is live/real/an AI/a script and never breaks the fourth
+  wall (REQ-PV-001). Grounding (KNOWLEDGE-008) is UNTOUCHED — self-awareness adds warmth of
+  delivery, not new claim-making latitude.
+- [HARD] **Tease by feeling; the live frontsell regression is fixed** (added v0.4.0). A
+  frontsell hints the next track's mood/energy only, never its name and never "coming up";
+  the name is saved for the backsell (REQ-PV-007). The current `_build_talk_prompt` "Coming
+  up next" block + the next_artist/next_title name-passing MUST be removed and replaced with a
+  mood-hint frontsell (REQ-PV-008) — a currently-airing banned-phrase regression.
+- [HARD] **Disjoint per-persona verbal-tic banks, used sparingly** (added v0.4.0). Each
+  persona's 3-5 signature warmth-transitions are DISJOINT from every other persona's; no
+  shared cross-persona filler set exists; a tic is used ≤1 per break and never the same one
+  two breaks running (REQ-PV-006/009/010, anti-convergence REQ-PR-004).
+- [HARD] **Continual improvement is bounded refinement, not fine-tuning** (added v0.4.0). The
+  station MEASUREDLY refines prompts/rules/voice-cards in the OPS-004 store
+  (observation→heuristic→rule→graduated) under REQ-OD-006 rails, never self-imitates
+  (REQ-OC-006), never optimizes an engagement/appeal metric, and never evolves the FROZEN
+  invariant set (never-ship-a-FAIL, grounding/fact-contract, anti-convergence firewall,
+  banned-phrase firewall, fictional-persona ethics, no-self-imitation, host caps). It is
+  iterative refinement, NOT model fine-tuning (REQ-PV-011, NFR-P-9).
+- [HARD] **Blunt praise is licensed in DELIVERY; the slop firewall is unchanged** (added v0.5.0).
+  A praise/reaction line PASSES only if it is BOTH first-person/OWNED AND SPECIFIC (an audible
+  element, a grounded fact, or a true persona self-reaction); borrowed PR vocabulary floating free
+  FAILS. Heat/bluntness/profanity ride DELIVERY, never dressing up an ungrounded fact or a banned
+  cliché; every existing slop/LLM-tell/fusion ban is preserved (REQ-PV-012/016, REQ-PG-004,
+  REQ-PV-006).
+- [HARD] **No dated / try-hard slang; the register must be current + authentic** (added v0.7.0).
+  Dated/try-hard slang ("hip", "swagger", "groovy", "rad", "with it", "the kids", the "how do you
+  do, fellow kids" register) is BANNED as a distinct register-currency/authenticity axis (separate
+  from the music-slop ban REQ-PV-006 and the blunt-praise license REQ-PV-012/016); the host uses
+  CONTEMPORARY, register-TRUE vocabulary in its OWN voice per its voice card (REQ-PV-009 /
+  REQ-PI-001), never reaching for faux-cool words to sound young. Enforced as a Tier-1 lint
+  term-class (REQ-PV-017). A line can be owned+specific yet still FAIL this rule if the words are
+  stale ("real swagger" is owned but dated).
+- [HARD] **Per-persona/daypart profanity + humour** (added v0.5.0). `profanity_tier`
+  {none|mild|salty} + `humour_mode` {dry|warm|deadpan|none} are per-persona card fields (personas
+  DIVERGE); the card tier is a CEILING the daypart only lowers (morning none → overnight freest);
+  no quota, never aimed at a person, slurs banned at Tier-1; humour is a grounded aside, never an
+  invented anecdote-as-fact (REQ-PV-013).
+- [HARD] **Three-class content taxonomy** (added v0.5.0). Every clause is music-fact (→ unchanged
+  fact contract), audible-opinion (licensed, ungated for grounding), or persona-self-disclosure
+  (fenced fiction, REQ-PT-005); a class-b/c clause embedding a music-fact token is RECLASSIFIED to
+  music-fact and gated. Persona/opinion/self-disclosure are FREE; music-facts stay GROUNDED
+  (REQ-PV-014).
+- [HARD] **Per-persona anchors are FROZEN** (added v0.5.0). Each curator persona's FROZEN CORE
+  (≥2 permanent anchor focuses incl. the REQ-PR-004 primary territory + core temperament + voice
+  signature) is never loop-writable; only the EVOLVABLE layer is, and only SLOWLY under the
+  measured-self-change rails (REQ-OD-006). A graduation proposal targeting an anchor is blocked at
+  intake before canary, logged, never churned; an evolvable change drifting toward another persona
+  is rejected by the distinctness canary (REQ-PI-001/002/003/004).
+- [HARD] **The news anchor is excluded by construction** (added v0.5.0). It is NOT a Group-PR
+  curator persona (no charter/POV/taste/firewall-slot/evolvable-card/anchor contract); it is wholly
+  frozen (factual/sourced/attributed/apolitical), owned by OPS-004 Group OG + ORCH-005 Group RN.
+  Its ONE frozen carve-out — bounded impartial implication-analysis (attributed-OR-necessary,
+  grounded+attributed, dropped-if-ungroundable, never opinion/advocacy/normative) — TIGHTENS, never
+  relaxes, OPS-004 REQ-OF-004; PROGRAMMING-007 references it, OPS-004/ORCH-005 own it (REQ-PI-005).
 
 ---
 
@@ -676,7 +1154,63 @@ not a soft preference, because autonomous curation otherwise drifts toward a sha
 at curation time is fixed. ANALYSIS-006 owns the dimensions; this requirement owns the
 firewall POLICY.
 
+[LAYER 1 of the anti-convergence policy.] This requirement is the POOL-overlap layer: it
+operates over FEATURE pools (the ANALYSIS-006 taste dimensions) and so it bounds — but
+deliberately PERMITS — adjacent/thematic overlap (the owner's "slight thematic crossover
+OK"). It does NOT by itself forbid the SAME individual track from appearing in two shows,
+because REQ-PL-002 makes the catalog a SHARED pool (a track is curatable by whichever
+persona's taste it fits). Per-TRACK / rotation EXCLUSIVITY — "never the same individual
+track across two shows' regular rotation" — is the COMPLEMENTARY Layer 2, owned by
+REQ-PR-009 and measured over concrete TRACK IDs (not feature pools), so the two layers are
+non-contradictory. REQ-PR-004's pool-firewall behavior here is otherwise UNCHANGED.
+
 **Acceptance criteria:** see acceptance.md AC-PR-004.
+
+### REQ-PR-009 — Track-level anti-convergence: per-track cross-show rotation exclusivity (State-driven) [HARD]
+
+While selecting tracks for any show's REGULAR ROTATION, the system shall enforce PER-TRACK
+CROSS-SHOW EXCLUSIVITY as a HARD selection-time predicate (Layer 2 of the anti-convergence
+policy, on top of the REQ-PR-004 pool-overlap cap): an individual track adopted into one
+show's regular rotation shall NOT also be selected into a DIFFERENT show's regular rotation.
+The exclusivity is measured over concrete TRACK IDs — not over the ANALYSIS-006 feature
+pools REQ-PR-004 measures — so allowing thematic/genre adjacency (Layer 1) and forbidding
+identical-track airplay (Layer 2) are non-contradictory; this realizes the owner's rule
+"never the SAME music across two shows, slight thematic crossover OK."
+
+[HARD] The check is enforced at selection time against the per-persona taste (REQ-PL-004 +
+ANALYSIS-006 REQ-AD-003) alongside the OPS-004 REQ-OA-003a sole-hard-rotation rail, keyed on
+the OPS-004 REQ-OB-006 per-air play-history (`show_or_episode_id`) plus a per-track
+`adopted_by_show` field that EXTENDS the ANALYSIS-006 `Track` record (REQ-AD-001) IN PLACE
+(defaulting empty so pre-adoption tracks stay valid — the same in-place extension pattern as
+REQ-PL-001; no new store). A second show's selector MUST exclude tracks whose play-history /
+`adopted_by_show` shows them adopted or aired by a DIFFERENT show.
+
+This requirement OWNS the per-track exclusivity RULE; the RUNTIME MECHANISM is REFERENCED, not
+re-owned — it is the ORCH-005 UNIFIED DEDUP VIEW (REQ-RW-006) `any_persona` TRACK-surface
+scope, which already dispatches the track surface to OPS-004 REQ-OA-010 (`normalize_key`) +
+REQ-OB-006 (play-history rotation window) "with PROGRAMMING-007 REQ-PR-004's rotation cap."
+PROGRAMMING-007 states WHAT (the rule); ORCH-005 REQ-RW-006 performs the cross-persona check
+at runtime.
+
+[HARD] BOUNDED THEMATIC-CROSSOVER EXCEPTION: a director-DECLARED, TIME-BOXED program/theme MAY
+reference a specific track cross-show; this is NEVER a shared REGULAR rotation. The exception
+inherits the ORCH-005 REQ-RW-007 special-event override-and-restore + auto-revert discipline
+(named theme + personas in scope, recorded to the ledger, reverts at window end). Outside such
+a declared, time-boxed window, the per-track rotation slot is exclusive.
+
+[HARD] GRACEFUL RELAXATION (REQUIRED, not optional): on an EMPTY LEGAL SET (thin catalog /
+request pressure) the rail shall RELAX to a bounded, LOGGED shared-track exception rather than
+stall the queue — continuity wins — mirroring the OPS-004 REQ-OA-003b empty-legal-set pattern
+(REQ-OA-008). Enforceability is therefore CONDITIONAL on catalog depth; the relaxation also
+realizes the "slight crossover OK" allowance under degradation.
+
+[HARD] Exclusion operates on TRACK IDs ONLY, NEVER on taste FEATURE sets (REQ-PL-004
+include/exclude features): the second show still draws taste-matching tracks, just not the
+identical ones already adopted elsewhere — so REQ-PL-004's "STILL SEPARABLE under REQ-PR-004"
+invariant continues to hold. The news anchor is excluded by construction (REQ-PI-005): it has
+no rotation and no anti-convergence slot.
+
+**Acceptance criteria:** see acceptance.md AC-PR-009.
 
 ### REQ-PR-005 — Persona persistent point of view (Ubiquitous) [HARD]
 
@@ -1265,6 +1799,486 @@ consistent, length-capped card is injected every call is the fixed rail.
 
 ---
 
+## 9c. Requirement Group PV — Host-Voice Persona-Awareness, Delivery Craft & Continual Improvement
+
+Priority: High. (Added v0.4.0.) This group is a CALIBRATION layer that turns the station's
+delivery warmth/energy/intimacy UP to the user's intensity WITHOUT reintroducing any banned
+cliché/slop/forced-enthusiasm and WITHOUT touching grounding. Its spine is the unifying
+principle WARMTH AND ENERGY IN DELIVERY, RESTRAINT IN CONTENT (REQ-PV-005). It CALIBRATES and
+EXTENDS the existing groups — the ear-writing rails (Group PS), the talk-craft + anti-cheese +
+daypart rules (Group PC), the voice card + quality gate (Group PG), and the persistent POV +
+anti-convergence firewall (Group PR) — and REFERENCES, never restates or forks, OPS-004 (the
+playbook STORE REQ-OD-001, the refinement loop REQ-OD-003, the measured-self-change rails
+REQ-OD-006, the no-self-imitation rule REQ-OC-006), ANALYSIS-006 (the energy/bpm/mood features
+that derive a next-track MOOD hint, REQ-AD-003/REQ-AE-006), KNOWLEDGE-008 (the grounding feed,
+UNTOUCHED), and the VOICE-002 blank-line-block ↔ synthesis chunk-silence pacing contract
+(REQ-PS-004, preserved as a HARD coordination). It owns the CONTENT/RULES of the calibration;
+the engines own the mechanisms.
+
+### REQ-PV-001 — Live-human host persona-awareness via a positive-identity HOST_PERSONA (Ubiquitous) [HARD]
+
+The system's talk-script generator shall frame every persona as a LIVE HUMAN RADIO HOST —
+one person, one microphone, talking to one listener — through a POSITIVE-IDENTITY shared
+HOST_PERSONA that REPLACES the current negation-based form ("not a corporate announcer and not
+a chirpy AI assistant"). [HARD] "Live human host" is a DELIVERY stance expressed through HOW
+the host talks (present tense, second person, one-to-one intimacy, warmth carried in rhythm and
+timing); it shall NEVER be stated as a CLAIM — the host shall NOT say it is live, real, an AI,
+a script, or read stage directions/punctuation aloud, and shall NEVER break the fourth wall.
+This is the station-house parent identity (REQ-PR-001 two-level identity) onto which the
+per-persona voice card (REQ-PV-009) is layered. Grounding (KNOWLEDGE-008 / REQ-PG-002) is
+UNTOUCHED: a live human host still speaks ONLY from verified facts — self-awareness adds warmth
+of delivery, not new claim-making latitude. The HOST_PERSONA wording is TUNABLE; that it is a
+positive live-human identity expressed as a stance (never a claim) is the fixed rail.
+(Amended v0.5.0:) The positive identity SHALL carry a concrete MUSIC-JOURNALIST register lineage —
+"you sound like a BBC 6 Music / NTS / KEXP presenter: a working music head who genuinely loves this
+stuff, knowledgeable, dry, and funny, who says plainly when something rules and plainly when it
+doesn't" — and a one-to-one ADDRESSEE FRAME ("talk like you're texting one smart, slightly-impatient
+friend about this song"), because a named credible lineage steers the model away from the
+flowery-press-release default (the diagnosed sterility cause). The host may voice fenced SELF-
+DISCLOSURE (REQ-PV-014) drawn ONLY from its OWN frozen fictional life/temperament (REQ-PI-001),
+never a shared cross-persona template and never a fourth-wall / "I'm an AI" claim. The lineage is a
+DELIVERY stance only — the host never SAYS it is a journalist. Lineage/addressee wording is TUNABLE;
+that the positive identity carries a concrete register (not just a negation) is the fixed rail.
+
+**Acceptance criteria:** see acceptance.md AC-PV-001.
+
+### REQ-PV-002 — Calibrated delivery DO-set on every break (State-driven) [HARD]
+
+While shaping a talk break, the system shall apply the calibrated delivery DO-set: (a) pacing
+PUNCTUATION for breath — commas for short pauses, an em-dash for a beat, an ellipsis for a
+longer pause — with varied sentence length (REQ-PS-003); (b) ALWAYS contractions and one
+thought per sentence ≤~20 words (REQ-PS-001/002); (c) THEATER-OF-THE-MIND — ONE vivid,
+concrete, GROUNDED detail (sit-across-the-table), never adjective piles, drawn only from the
+fact contract / sonic-character profile (REQ-PG-002); (d) one-to-one SINGULAR "you", never a
+crowd (REQ-PC-004/REQ-PS-002); (e) the Hook→Body→Exit shape at ≤30s (REQ-PC-001/REQ-PC-002).
+[HARD] These are the positive craft rails carried IN the live prompt; the actual copy is
+AI-authored. The DO-set REFERENCES the PS/PC/PG requirements it calibrates and does not
+restate or fork them; the word/length/timing targets are TUNABLE guidance.
+(Amended v0.5.0:) the DO-set SHALL ALSO carry the positive SHAPE "LEAD with one plain, OWNED
+reaction, THEN one concrete grounded/audible detail" (subject-verb-early, a flat true sentence
+beats an impressive one) — the positive complement to the diagnosed pink-elephant retreat, and a
+reinforcement of the ≤20-word ear-writing rail (REQ-PS-001) against the already-banned rule-of-three
+feeling-pile (REQ-PG-004/REQ-PV-006).
+
+**Acceptance criteria:** see acceptance.md AC-PV-002.
+
+### REQ-PV-003 — Delivery-energy vs hype split; daypart-calibrated genuine energy as a WRITING property (State-driven) [HARD]
+
+While shaping a break, the system shall express ENERGY through rhythm, specificity, and block
+length calibrated to the persona's daypart ENERGY BAND (REQ-PC-005 daypart presets, REQ-PV-009
+voice card: morning bright → midday steady → afternoon peak → evening deeper → overnight
+intimate), and shall NOT express energy through exclamation marks, manufactured excitement, or
+hype words. [HARD] Energy is a WRITING property, not a vocal one (flat local TTS carries only
+~75-85% of emotional range, R-P-2) — it is carried by short punchy blocks + specificity at peak
+dayparts + the ducked bed, never by exclamation/hype (REQ-PC-004 ban preserved). This resolves
+the high-energy-vs-no-forced-enthusiasm tension by splitting delivery-energy (UP) from
+hype-language (banned). The band wording is TUNABLE; that energy is genuine, daypart-calibrated,
+and non-hype is the fixed rail.
+
+**Acceptance criteria:** see acceptance.md AC-PV-003.
+
+### REQ-PV-004 — Ear-writing rails carried IN the live talk prompt (Ubiquitous) [HARD]
+
+The system's live talk-generation prompt shall EXPLICITLY carry the ear-writing rails
+(REQ-PS-001..005): always contractions, one thought ≤~20 words, punctuate for breath, vary
+sentence length, structure the script as 1-2-sentence BLANK-LINE BLOCKS, and spell numbers/
+dates as spoken. [HARD] The blank-line block instruction is the REQ-PS-004 coordination
+contract — VOICE-002 chunks the script at these blank lines and inserts inter-chunk silence;
+this rail MUST NOT be removed or broken. This requirement closes the audited gap that NONE of
+these rails are currently present in `_build_talk_prompt`; it OWNS carrying the rails in the
+prompt, while Group PS owns the rules themselves and VOICE-002 owns the chunk+silence render.
+
+**Acceptance criteria:** see acceptance.md AC-PV-004.
+
+### REQ-PV-005 — The unifying principle: warmth in delivery, restraint in content (Ubiquitous) [HARD]
+
+The system shall govern all host talk by the principle WARMTH AND ENERGY IN DELIVERY,
+RESTRAINT IN CONTENT: the warmth/energy/intimacy/persona-color axis (DELIVERY) may be turned
+UP to the user's intensity, while the claim-making/adjective-density/hype axis (CONTENT) stays
+RESTRAINED. [HARD] Turning delivery up shall NEVER grant new claim-making latitude — it does
+not relax the grounding rule (REQ-PG-002), the anti-slop register (REQ-PG-004/REQ-PV-006), or
+the comparison discipline (REQ-PG-003). This is the spine that reconciles the user's
+warmth/energy/teasing wishlist with every existing ban; it is the governing rule the other PV
+requirements specialize.
+(Amended v0.5.0:) The warmth/energy/persona-color (DELIVERY) axis EXPLICITLY INCLUDES the
+banter-recalibration band — blunt phrasing, dry humour, profanity (per the per-persona policy),
+and grounded persona self-disclosure — provided each stays on the DELIVERY axis and NEVER relaxes a
+CONTENT ban (grounding REQ-PG-002, anti-slop REQ-PG-004/REQ-PV-006, comparison REQ-PG-003,
+fact-contract REQ-PG-001). Both the banter recalibration (Group PV v0.5.0) and the per-persona
+identity model (Group PI) compose on THIS spine: PV turns the DELIVERY/persona-content axes up on
+the EVOLVABLE layer; PI freezes WHO the persona is. Turning delivery up grants NO new claim-making
+latitude — the spine is preserved verbatim.
+
+**Acceptance criteria:** see acceptance.md AC-PV-005.
+
+### REQ-PV-006 — Extended banned list: existing bans + filler-as-crutch + no shared cross-persona filler set (Unwanted) [HARD]
+
+The system shall NOT produce any banned-register talk, PRESERVING every existing ban
+verbatim — cliché filler ("stay tuned", "coming up", "up next", "don't go anywhere",
+"back-to-back", "all your favourites"), forced/manufactured enthusiasm, the music-slop +
+LLM-tell register, fusion-comparison formulas, ungrounded facts, and emoji/markdown/stage-
+directions/fourth-wall breaks (REQ-PC-004, REQ-PG-002/003/004) — PLUS two new bans: [HARD]
+(a) FILLER-AS-CRUTCH — over-using any warmth-transition (frequency cap: ≤1 per break, and
+never the same tic two breaks running); and (b) NO SHARED CROSS-PERSONA FILLER SET — a global
+shared "You know / Here's the thing" set is barred; each persona's verbal-tic bank MUST be
+DISJOINT from every other persona's (REQ-PV-009), because a shared set would homogenize the
+roster and violate the anti-convergence firewall (REQ-PR-004) and persistent POV (REQ-PR-005).
+The bans extend, and reference — do not restate or fork — the existing PC/PG bans; the
+frequency cap and bank size are TUNABLE; that the extended register is rejected is the rail.
+(Amended v0.5.0:) Every ban SHALL be PAIRED IN THE PROMPT with a positive "say this instead" TWIN —
+the bans remain the FIREWALL (enforced by the Tier-1 lint), and the twins are carried in the talk
+PROMPT to fill the vacuum the bans leave (e.g. "when you'd reach for 'transports you', say what the
+song actually does to you in plain words; when you'd reach for 'an infectious banger', just say it
+goes, or it rules, or it kicks"). This is the positive complement that prevents the diagnosed
+pink-elephant retreat; the twins steer FORM only — the closed-world fact contract (REQ-PG-001) still
+supplies all CONTENT, so a warm prompt cannot reopen the slop the gate (REQ-PG-005) catches.
+(Amended v0.7.0:) the dated / try-hard-slang class is a SIBLING banned class owned by REQ-PV-017 (a
+DISTINCT register-currency/authenticity axis, not music-slop); it is referenced here so the banned
+register is complete, but REQ-PV-017 owns its term-class + lint.
+
+**Acceptance criteria:** see acceptance.md AC-PV-006.
+
+### REQ-PV-007 — Tease-by-feeling frontsell: hint mood, never the name (Event-driven) [HARD]
+
+When the system teases the NEXT track, it shall tease ONLY its FEELING — the mood or energy
+shift ("the next one sits lower, slower") — and shall NOT name the artist or title, and shall
+NOT use the banned filler ("coming up / up next / stay tuned", REQ-PC-004/REQ-PV-006). [HARD]
+The next track is supplied to the talk LLM as a MOOD hint, never as a name (honoring the
+TrackContext "next = MOOD hint, not a name", REQ-PG-001); the artist+title NAME is reserved for
+the FOLLOWING break's BACKSELL (REQ-PC-001). This is the calibrated, ban-clearing form of the
+frontsell; the mood-hint phrasing is the AI's, that the next track is teased by feeling and
+never named is the fixed rail.
+
+**Acceptance criteria:** see acceptance.md AC-PV-007.
+
+### REQ-PV-008 — Mandatory frontsell code-fix: remove the live "Coming up next" regression (Event-driven) [HARD]
+
+When the talk context for a break is assembled, the system shall NOT pass the next track's
+artist/title NAME into the talk prompt, and the talk prompt shall NOT contain the banned
+`Coming up next: "{title}" by {artist}` block or any instruction to "name the artist and title"
+of the upcoming track. [HARD] The current implementation is a CURRENTLY-AIRING banned-phrase
+REGRESSION: `brain/talk.py` `_build_context` passes `context["next_artist"]` /
+`context["next_title"]` (the names), and `brain/llm.py` `_build_talk_prompt` emits the literal
+"Coming up next: ..." block + "Intro it naturally - name the artist and title". These MUST be
+REMOVED and REPLACED with a tease-by-feeling frontsell (REQ-PV-007): the context shall instead
+carry a `next_mood` / energy hint DERIVED from the ANALYSIS-006 features (energy/bpm/mood) —
+never the name — and the prompt shall offer an OPTIONAL feeling-tease that forbids naming and
+forbids the banned filler. This requirement codifies the single most important live fix in this
+extension; it consumes ANALYSIS-006 features to derive the hint and clears REQ-PC-004 /
+REQ-PV-006 on the live path.
+
+**Acceptance criteria:** see acceptance.md AC-PV-008.
+
+### REQ-PV-009 — Extended per-persona voice card: energy band, pacing signature, register, disjoint verbal-tic bank (Ubiquitous) [HARD]
+
+The system shall EXTEND the per-persona VOICE CARD (REQ-PG-006, injected on EVERY talk call,
+identical each call for consistency) with: (a) a per-daypart ENERGY BAND (delivery energy as a
+WRITING property, REQ-PV-003); (b) a PACING SIGNATURE (characteristic rhythm — clipped lines
+vs longer flowing sentences, REQ-PR-005); (c) a REGISTER (vocabulary + tone profile); and
+(d) a 3-5-entry VERBAL-TIC BANK of signature warmth-transitions that is DISJOINT across
+personas (REQ-PR-004) and used SPARINGLY (≤1 per break, never the same tic two breaks running,
+REQ-PC-007/REQ-PV-006). [HARD] The card is the persisted, EVOLVABLE top consistency lever; its
+EVOLVABLE fields self-refine under the REQ-PV-011 loop while the disjointness + frequency rails
+hold; it threads into the HOST_PERSONA (REQ-PV-001) + `_build_talk_prompt` WITHOUT breaking
+grounding (the card supplies delivery shape + opinion-about-the-audible only, never facts). The
+card field VALUES are AI-authored/tunable; that every persona has a persisted card with these
+fields, injected every call, is the fixed rail.
+(Amended v0.5.0:) The card SHALL ALSO carry four new EVOLVABLE delivery fields — `profanity_tier`
+{none|mild|salty}, `humour_mode` {dry|warm|deadpan|none}, `self_disclosure` {frequency,
+register-slice}, and a 2-3-entry BLUNT-PRAISE STARTER set — and these, like the verbal-tic bank,
+SHALL be DISJOINT across personas (no two personas share the {profanity_tier + humour_mode +
+self-disclosure slice + praise-starter} combination, REQ-PV-010), so the recalibration keeps the
+roster DISTINCT rather than a homogenized sweary AI. [HARD] The card's fields SHALL be split
+explicitly into a FROZEN CORE — the anchor focuses, core temperament, voice signature, and pacing
+signature (the REQ-PI-001 anchor block, never loop-writable) — versus an EVOLVABLE LAYER — the
+tic-bank wording, energy-band phrasing, register colour (incl. the new bluntness/humour/
+self-disclosure tone), surface tastes, and the new card fields (self-refine under REQ-PV-011 within
+the disjointness rails). The EVOLVABLE fields are the loop's only write-set; the FROZEN fields are
+the anchor block of REQ-PI-001.
+
+**Acceptance criteria:** see acceptance.md AC-PV-009.
+
+### REQ-PV-010 — Quality-gate distinctness + crutch lints (Event-driven) [HARD]
+
+When a talk script is generated, the system shall EXTEND the REQ-PG-005 Tier-1 deterministic
+lint with two distinctness checks: (a) a WARMTH-TRANSITION OVER-USE check that FAILS a script
+exceeding the frequency cap (≤1 warmth-transition per break) or repeating the same tic the
+persona used in its previous break; and (b) a CROSS-PERSONA TIC-COLLISION check that flags when
+any two personas' verbal-tic banks share a tic (enforcing the disjointness rail REQ-PV-006/009
+and the anti-convergence firewall REQ-PR-004 at the talk layer). [HARD] These lints ride the
+existing two-tier gate (REQ-PG-005) and its regenerate-once-then-skip behavior; without the
+collision check the shared-filler-set failure mode could silently reopen as the playbook
+self-refines (REQ-PV-011). The cap value is TUNABLE; that the gate enforces crutch + collision
+is the fixed rail. PROGRAMMING owns these checks; OPS-004 owns the base gate engine.
+(Amended v0.5.0:) The cross-persona collision check SHALL ALSO cover the new REQ-PV-009 card fields
+— no two personas may share the same {profanity_tier + humour_mode + self-disclosure register-slice
++ blunt-praise starter set} combination — enforcing distinctness on the new banter axes exactly as
+on the verbal-tic bank (anti-convergence REQ-PR-004); this is the same machinery the REQ-PI-004
+distinctness canary uses when an evolvable change is shadow-evaluated.
+
+**Acceptance criteria:** see acceptance.md AC-PV-010.
+
+### REQ-PV-011 — Bounded continual-improvement loop over prompts/rules/voice-cards (State-driven) [HARD]
+
+While the station runs, the system MAY refine its host-craft — the prompts, the rules, the
+per-persona VOICE CARDS (REQ-PV-009), and the radio-craft playbook content (REQ-PC-008) — via a
+BOUNDED, MEASURED self-improvement loop in the OPS-004 playbook STORE (REQ-OD-001), driven by
+the per-break quality-gate signal (REQ-PG-005/REQ-PV-010) and the cross-session ledger/diary
+(REQ-OD-007/008), promoting learnings observation→heuristic→rule→graduated and applying them via
+the OPS-004 runtime refinement loop (REQ-OD-003). [HARD] The loop is iterative REFINEMENT, NOT
+model fine-tuning — there is no training path (the stack is claude-agent-sdk on the
+subscription, max_turns=1). It is bounded by the OPS-004 measured-self-change rails (REQ-OD-006:
+rate limiter + canary against recent programming + contradiction detection); it shall NEVER feed
+the station's own recent scripts back as in-context style exemplars (no-self-imitation,
+REQ-OC-006 — recent scripts are an avoid-list only); it shall NEVER make any engagement/appeal/
+popularity metric an optimization target (the curation bright line — it tunes craft QUALITY,
+not whether listeners "like" it); and it shall NEVER evolve the FROZEN invariant set
+(never-ship-a-FAIL REQ-PG-005, grounding/fact-contract REQ-PG-001/002 + KNOWLEDGE-008,
+anti-convergence firewall REQ-PR-004, banned-phrase firewall REQ-PC-004/REQ-PV-006,
+fictional-persona ethics REQ-PT-005/006, no-self-imitation REQ-OC-006, host caps REQ-PR-002).
+The human is OUT of the run loop (the rails are self-imposed stability, not a per-evolution human
+gate; MAJOR/irreversible changes MAY be surfaced as an opt-in notification). The rate/cooldown
+values are TUNABLE; the boundedness, no-self-imitation, no-appeal, and frozen-invariant rails are
+the fixed constraints.
+
+**Acceptance criteria:** see acceptance.md AC-PV-011.
+
+### REQ-PV-012 — Blunt-praise license: owned + specific praise is first-class delivery (Ubiquitous) [HARD]
+
+The system shall LICENSE blunt, plain, OWNED praise and genuine opinion as a first-class DELIVERY
+directive — if it rules, say it rules; a flat true sentence beats an impressive one — WHILE a
+praise/reaction line is VALID only if it is BOTH (a) FIRST-PERSON/OWNED (a real host reaction —
+"I", "that", "this one" — not a disembodied authoritative verdict) AND (b) SPECIFIC (it points at
+ONE concrete locatable thing: an audible element, a grounded fact from the fact contract, or a true
+persona self-reaction). [HARD] A praise line that uses borrowed critic/PR vocabulary floating free
+of any locatable thing FAILS ("This fucking rules — wait for the drum fill at 90 seconds" PASSES;
+"a captivating sonic journey" FAILS). This is the deterministic POSITIVE COMPLEMENT to the unchanged
+slop firewall (REQ-PG-004/REQ-PV-006) — it flips the diagnosed sterility (the pink-elephant retreat
+to contorted opinion-free praise) WITHOUT reopening slop, because the slop/blunt-praise line is
+SPECIFICITY + OWNERSHIP, not heat. It rides the warmth/restraint spine (REQ-PV-005) and relaxes
+NOTHING on the CONTENT axis (REQ-PG-002 grounding unchanged); it is enforced as a Tier-1 lint check
+(REQ-PV-016). The phrasing is the AI's; the owned+specific validity test is the fixed rail.
+
+**Acceptance criteria:** see acceptance.md AC-PV-012.
+
+### REQ-PV-013 — Per-persona/daypart profanity + humour policy (State-driven) [HARD]
+
+While shaping a talk break, the system shall govern PROFANITY by the persona's `profanity_tier`
+{none|mild|salty} (REQ-PV-009) CAPPED DOWN by a DAYPART gradient (none in morning/family-likely
+dayparts → mild ceiling midday → card tier afternoon/evening → freest overnight; the card tier is a
+CEILING the daypart can only lower, bound to the REQ-PV-003 energy band / REQ-PC-005 daypart presets
+at Faroe-local time), and shall govern HUMOUR by `humour_mode` {dry|warm|deadpan|none}. [HARD]
+Profanity is DELIVERY colour — authentic emphasis on an OWNED+SPECIFIC reaction (REQ-PV-012); it
+shall NEVER dress up an ungrounded fact or a banned cliché (the lazy "banger" stays banned even
+sworn at), there is NO QUOTA (a fixed swear count is manufactured/forced enthusiasm, already banned
+REQ-PV-006), it is NEVER aimed at a person/artist/group, and explicit SLURS are banned at Tier-1 (a
+moderation matter coordinated with CALLIN-003). Humour shall be GROUNDED — an aside about the
+AUDIBLE track or the live moment, never an invented anecdote-as-fact (preserves REQ-PG-002); forced/
+jokey enthusiasm stays banned. These fields make personas DIVERGE (one never swears, one is
+dry-salty) and are DISJOINT across personas (REQ-PV-009/010). The tier/mode VALUES + the daypart
+gradient thresholds are TUNABLE; the ceiling-capped, no-quota, not-at-a-person, slur-banned,
+grounded-humour rules are the fixed rails.
+
+**Acceptance criteria:** see acceptance.md AC-PV-013.
+
+### REQ-PV-014 — Three-class content taxonomy + fenced self-disclosure (Ubiquitous) [HARD]
+
+The system shall classify EVERY clause in a talk break as exactly ONE of three content classes and
+route it accordingly: (a) MUSIC-FACT — any checkable claim about the artist/track/history/culture
+(year, label, producer, members, chart, award, location, dated event) — routed to the UNCHANGED
+closed-world fact contract (REQ-PG-001), gated by the grounding rule (REQ-PG-002) and the Tier-1
+forbidden-fact scan (REQ-PG-005); (b) AUDIBLE-OPINION — taste/feel about the sound ("this rules",
+"too polished for me", "that bassline kills me") — LICENSED, UNGATED for grounding, uncapped in
+intensity (the blunt-praise license REQ-PV-012); and (c) PERSONA-SELF-DISCLOSURE — the host's own
+fictional life/feeling/mundane aside — LICENSED as FENCED FICTION. [HARD] A self-disclosure clause
+shall be FENCED inheriting the Solstice-Hour guardrail (REQ-PT-005): it shall NOT (i) make a
+real-world factual claim about a real identifiable person, (ii) state/imply it is autobiographically
+true or break the fourth wall ("as an AI", "I'm a script", REQ-PV-001), (iii) carry political
+content (the apolitical rail REQ-OF-004 is the one opinion class that does NOT open up), or (iv)
+embed a MUSIC-FACT token (a year/label/personnel/chart/date) — a class-(b)/(c) clause that embeds a
+music-fact token shall be RECLASSIFIED to class (a) and gated. [HARD] An exception that STAYS gated:
+a negative claim implying a CHECKABLE fact ("this flopped", "nobody bought it") is class (a). The
+grounding contract governs ONLY class (a); classes (b)/(c) make no checkable real-world music claim,
+so they add nothing to the FACT axis — "warmth/persona/opinion UP, claim-making restrained"
+(REQ-PV-005) is preserved verbatim. KNOWLEDGE-008 / REQ-PG-001/002 are referenced and UNTOUCHED.
+
+**Acceptance criteria:** see acceptance.md AC-PV-014.
+
+### REQ-PV-015 — Positive-register wiring + the live-regression fix (Event-driven) [HARD]
+
+When the system assembles the live talk prompt, it shall INJECT (a) the positive-identity
+HOST_PERSONA with the music-journalist register lineage + addressee frame (REQ-PV-001), (b) the
+ban→positive-twin pairings (REQ-PV-006), and (c) 2-4 ROTATED GOOD-vs-BAD exemplar pairs using
+GENERIC/placeholder tracks (never the real upcoming track), explicitly labelled "these show the
+VOICE to hit, NOT lines to reuse". [HARD] This closes the diagnosed WIRING GAP between the authored
+v0.4.0 PV spec and the deployed code: the current `brain/llm.py` HOST_PERSONA (L261-269) is still
+the OLD negation-based form with zero concrete positive register, which (combined with the ban-list)
+is the textbook sterility cause. The exemplars are SAFE for no-self-imitation (REQ-OC-006) because
+they are HAND-AUTHORED anchors, not fed-back station scripts, and the fact contract (REQ-PG-001)
+supplies CONTENT while the exemplars steer FORM. [HARD] This requirement also RE-AFFIRMS the
+REQ-PV-008 live-regression fix that is STILL in the running code: the prompt shall NOT pass the next
+track's NAME nor emit the "Coming up next: {title} by {artist}" block or the "name the artist and
+title" upcoming-track instruction (`brain/llm.py` L300-303, `brain/talk.py` `_build_context`
+L135-138) — replaced with the tease-by-feeling frontsell (REQ-PV-007). The exemplar count + rotation
+are TUNABLE; that the positive register, the twins, the form-not-content exemplars, and the
+regression removal are wired into the live prompt is the fixed rail.
+
+**Acceptance criteria:** see acceptance.md AC-PV-015.
+
+### REQ-PV-016 — Specificity + ownership praise lint (Event-driven) [HARD]
+
+When a talk script is generated, the system shall EXTEND the REQ-PG-005 Tier-1 deterministic lint
+with a PRAISE-VALIDITY check: a praise/reaction clause FAILS if it uses borrowed critic/PR
+vocabulary that points at NO locatable thing (the blunt-praise validity test, REQ-PV-012), and the
+lazy USE of a hype noun as a floating verdict ("an infectious banger", "this anthemic journey")
+FAILS while the same word used as owned DELIVERY emphasis ("this one just goes") PASSES. [HARD] The
+Tier-2 adversarial self-check (REQ-PG-005) shall ALSO scan AUDIBLE-OPINION and PERSONA-SELF-
+DISCLOSURE clauses for SMUGGLED MUSIC-FACT TOKENS (a self-disclosure carrying "back when they were
+on Sub Pop" = a label token; "I saw them in '98" = a date token) — a smuggled token reclassifies the
+clause to music-fact and gates it (REQ-PV-014), and an unsupported token is a FAIL. These checks
+ride the existing two-tier gate and its regenerate-once-then-skip behavior (REQ-PG-005); without
+them the blunt-praise license could quietly readmit floating PR vocabulary, and self-disclosure
+could quietly smuggle an ungrounded fact. PROGRAMMING owns these checks; OPS-004 owns the base gate
+engine. The borrowed-vocabulary list is TUNABLE; that the gate enforces praise-validity + smuggled-
+token detection is the fixed rail.
+
+**Acceptance criteria:** see acceptance.md AC-PV-016.
+
+### REQ-PV-017 — Dated / try-hard-slang ban: register currency + authenticity (Unwanted) [HARD]
+
+The system shall NOT produce DATED or TRY-HARD slang in host copy — the "how do you do, fellow
+kids" register of a bot reaching for faux-cool or young-sounding words. [HARD] It shall reject a
+banned DATED/TRY-HARD-SLANG class — e.g. "hip", "swagger", "groovy", "rad", "far out", "with it",
+"fly" (as a compliment), "the kids", "totally tubular", "the bee's knees", and any contorted reach
+for a "cool"/youthful adjective to dress up a track — and shall instead follow the POSITIVE RULE:
+CONTEMPORARY, NATURAL, REGISTER-TRUE vocabulary — the host talks like a real person NOW, in its OWN
+authentic voice per its voice card (REQ-PV-009 register / REQ-PI-001 anchor temperament), and NEVER
+borrows faux-cool or dated slang to sound young, hip, or to inflate a track. [HARD] This is a
+DISTINCT axis — the CURRENCY / AUTHENTICITY of register — from the music-slop + cliché-filler ban
+(REQ-PV-006/REQ-PG-004, which bans press-release vocabulary) and from the blunt-praise license
+(REQ-PV-012/016, which licenses owned + specific praise): a dated-slang line can be both
+slop-free AND owned/specific yet still FAIL here because the WORDS are stale or try-hard. It
+COMPOSES with the blunt-praise license: blunt praise must be both owned+specific (REQ-PV-012) AND
+register-true (this rule) — "this one just rules" PASSES both; "this track's got real swagger"
+FAILS this rule even though it is owned. [HARD] It SHALL be enforced as a checkable Tier-1 lint
+term-class on the REQ-PG-005 deterministic gate (riding the REQ-PV-010 / REQ-PV-016 lint machinery,
+regenerate-once-then-skip), so it is enforceable, not advisory. The banned-term list is TUNABLE
+config (it will drift as slang dates — refined via the OPS-004 self-learning loop REQ-PV-011) and
+each persona's register-true vocabulary is its OWN (per voice card, disjoint REQ-PV-009/010); that
+the dated/try-hard-slang class is rejected and a contemporary register-true voice is required is the
+fixed rail.
+
+**Acceptance criteria:** see acceptance.md AC-PV-017.
+
+---
+
+## 9d. Requirement Group PI — Persona Identity (Anchors)
+
+Priority: High. (Added v0.5.0.) This group is the PERSONA-IDENTITY model: it gives each CURATOR
+persona a per-persona FROZEN-ANCHOR identity contract (a two-block voice card) so a persona stays
+recognizably ITSELF while still evolving SLOWLY on its evolvable layer — the literal encoding of
+"we do not make drastic changes in our personalities; keep it human, keep it sane." It is built by
+LIFTING the design-system station-wide FROZEN/EVOLVABLE split (constitution Section 2) + its safety
+layers (Layer 1 Frozen Guard, Layer 2 Canary) + its learnings pipeline (Sections 6-7) DOWN to
+PERSONA granularity — the pattern PROGRAMMING-007 already proved station-wide via REQ-PV-011's FROZEN
+invariant set. It is ADDITIVE on Groups PR + PV and composes with the banter recalibration on the
+REQ-PV-005 spine (PV tunes DELIVERY on the EVOLVABLE layer; PI freezes WHO the persona is). It
+OWNS the per-persona anchor/evolvable contract + guard + canary; it REFERENCES — never re-owns —
+the design-system safety architecture, OPS-004 OD-006 measured-change + OG newscasting + REQ-OF-004
+apolitical, ORCH-005 Group RN, the anti-convergence firewall (REQ-PR-004), the persistent POV
+(REQ-PR-005), the voice card (REQ-PG-006/REQ-PV-009), and the bounded-improvement loop (REQ-PV-011 /
+taste loop REQ-PL-006).
+
+### REQ-PI-001 — Per-persona frozen-anchor identity contract (Ubiquitous) [HARD]
+
+The system shall give each CURATOR persona a PERSONA IDENTITY CONTRACT expressed as a two-block
+voice-card structure (extending REQ-PG-006/REQ-PV-009): (1) a FROZEN CORE (an immutable ANCHOR
+BLOCK) comprising (a) ≥2 permanent ANCHOR FOCUSES — at minimum the persona's PRIMARY genre territory
+(the literal REQ-PR-004 anti-convergence firewall key) PLUS ≥1 further charter pillar (REQ-PR-006:
+an era band, a mood/sensibility lane, a thematic throughline, or a sub-genre), (b) the CORE
+TEMPERAMENT (the stable trait profile, REQ-PG-006: knowledgeable / dry / understated /
+restraint-as-signature / opinion-only-about-the-audible), and (c) the VOICE SIGNATURE (the 1:1 voice
+binding REQ-PR-003 + the pacing signature + the persistent-POV STRUCTURE — that it HAS its own
+intro/sign-off/recurring-bit shape, REQ-PR-005); and (2) an EVOLVABLE LAYER — secondary (non-anchor)
+charter territories, taste-profile state (REQ-PL-004), running-bit/segment WORDING, verbal-tic-bank
+wording, energy-band/register colour (incl. the banter bluntness/humour/self-disclosure tone), and
+tunable word/length targets — which is the ONLY loop-writable surface. [HARD] The anchor block is
+assembled entirely from existing HARD rails (nothing re-derived). The per-persona FOCUS TABLE
+(5 EN + 2 FO, anchors marked, all primary territories pairwise-distinct) is illustrative SEED content
+the AI/user authors and persists per REQ-PR-006; the STRUCTURE (≥2 anchors + temperament + voice +
+distinct secondaries) is the fixed rail.
+
+**Acceptance criteria:** see acceptance.md AC-PI-001.
+
+### REQ-PI-002 — Anchors are frozen: never loop-evolved (Ubiquitous) [HARD]
+
+The system shall NEVER let the continual-improvement loop (REQ-PV-011) or the taste-evolution loop
+(REQ-PL-006) write any field of a persona's ANCHOR BLOCK (REQ-PI-001: the ≥2 anchor focuses, the
+core temperament, the voice signature). [HARD] The per-persona anchor block is ADDED to the FROZEN
+invariant set (previously station-wide only, REQ-PV-011); a change to an anchor is human-only and
+out-of-band. The loop may change WORDING, SURFACE TASTE, SECONDARY INTERESTS, and DELIVERY REGISTER
+(how the persona SOUNDS and what it surfaces this season); it may NEVER change WHO the persona is.
+This is the encoded form of "no drastic changes; keep it human, keep it sane."
+
+**Acceptance criteria:** see acceptance.md AC-PI-002.
+
+### REQ-PI-003 — Per-persona frozen guard: block anchor-targeting proposals at intake (Event-driven) [HARD]
+
+When a self-improvement / graduation proposal is generated (REQ-PV-011 / REQ-PL-006), the system
+shall CLASSIFY its target zone at the FRONT of the protocol (before canary), and IF the target is a
+persona ANCHOR field it shall BLOCK the proposal, log the attempt, and never apply it (modeling the
+design-constitution Layer 1 Frozen Guard: "block the write, log the attempt, notify"). [HARD] Only
+EVOLVABLE-layer targets (secondary tastes, tic-bank wording, register, energy/bluntness/humour/
+self-disclosure phrasing, word targets) proceed down observation→heuristic→rule→graduated. The
+zone-classification at intake is the fixed rail; the human is OUT of the run loop (the guard is the
+AI's self-imposed stability, not a per-proposal human gate).
+
+**Acceptance criteria:** see acceptance.md AC-PI-003.
+
+### REQ-PI-004 — Distinctness canary on every evolvable change (State-driven) [HARD]
+
+While applying an EVOLVABLE-layer change (REQ-PI-001) to a persona, the system shall SHADOW-EVALUATE
+the change against the anti-convergence firewall (REQ-PR-004) AND the cross-persona collision lint
+(REQ-PV-010 — verbal-tic bank + the new profanity/humour/self-disclosure/praise-starter fields), and
+shall REJECT any change that would (a) reduce the pairwise candidate-pool separability below the cap,
+push the persona toward another persona's PRIMARY territory, or (b) collide a verbal-tic or banter
+field with another persona's. [HARD] This models the design-constitution Layer 2 Canary and makes
+the existing AC-PL-004(d) ("an EVOLVED profile still passes the firewall against every other
+persona") + NFR-P-9(b) ("personas stay DISTINCT after shared craft is applied") testable at
+evolution time, so develop-plus-shared-craft provably cannot homogenize the 5+2 roster. No persona's
+evolvable secondaries may grow into another's PRIMARY anchor. The canary is the fixed rail; the
+separability cap value is TUNABLE.
+
+**Acceptance criteria:** see acceptance.md AC-PI-004.
+
+### REQ-PI-005 — News anchor excluded by construction; bounded implication-analysis carve-out (Ubiquitous) [HARD]
+
+The system shall treat the NEWS ANCHOR as EXCLUDED BY CONSTRUCTION from the Group-PR persona model:
+it is NOT a curator persona — it has NO taste charter (REQ-PR-006), NO persistent POV (REQ-PR-005),
+NO evolving taste profile (REQ-PL-004), NO anti-convergence firewall slot (REQ-PR-004), NO evolvable
+voice card, and NO anchor/evolvable two-zone contract (REQ-PI-001) — so the persona-evolution
+machinery (REQ-PV-011 / REQ-PL-006 / REQ-PI-002/003/004) structurally does not reach it. [HARD] The
+news anchor is WHOLLY FROZEN (factual / sourced / attributed / never-fabricated / apolitical) and is
+OWNED by OPS-004 Group OG (newscast production) + ORCH-005 Group RN (news ledger / dedup /
+news-cycle); its voicing is a TTS ROUTE, not a persona. PROGRAMMING-007 STATES this exclusion and
+does NOT re-own the news subsystem. The news anchor has ONE frozen carve-out — bounded impartial
+IMPLICATION-ANALYSIS — which is permitted ONLY when an implication is EITHER (a) ATTRIBUTED (a source
+itself made the consequential claim, voiced "X, according to <source>, is expected to lead to Y") OR
+(b) NECESSARY (a logically necessary consequence of cited facts, no normative load, no unattributed
+forecast); it is grounded+attributed exactly like a fact and DROPPED if ungroundable, and it shall
+NEVER express opinion, advocacy, viewpoint, or normative judgment. [HARD] The carve-out TIGHTENS,
+never relaxes, the apolitical rail (OPS-004 REQ-OF-004); the banter recalibration (bluntness /
+humour / self-disclosure, Group PV) applies ONLY to curator personas and the news anchor is
+firewalled out of it. The implication-analysis carve-out, its forbidden-normative-token lint, and
+its rubric are authored as OPS-004/ORCH-005 amendments (new OPS-004 OG requirement + a REQ-OF-004
+news-anchor-only carve-out + gate extensions), REFERENCED here, NOT re-owned. (Honesty note: the
+research verdict on this carve-out's checkability was contested — the concrete attributed-OR-necessary
++ drop-on-ungroundable + forbidden-token discipline is what makes it defensible; recorded as R-P-20.)
+
+**Acceptance criteria:** see acceptance.md AC-PI-005.
+
+---
+
 ## 10. Exclusions (What NOT to Build)
 
 [HARD] This SPEC explicitly excludes the following:
@@ -1321,6 +2335,63 @@ consistent, length-capped card is injected every call is the fixed rail.
   grounding-specific checks; it does not re-own or fork the base discipline/gate.
 - **(Group PG) Shipping a FAIL** — a script that fails the gate twice is SKIPPED, never
   aired; "talks less" beats "wrong facts". No path emits an ungated or failed break.
+- **(Group PV, added v0.4.0) Model fine-tuning / training a model** — the continual-
+  improvement loop (REQ-PV-011) refines PROMPTS / RULES / VOICE CARDS in the OPS-004 store; it
+  is iterative refinement, NOT model fine-tuning or weight training. No training path exists.
+- **(Group PV) Any engagement/appeal/popularity target on craft** — the loop tunes craft
+  QUALITY only; a quality score is NEVER turned into an engagement/appeal/popularity target
+  (the curation bright line). It never measures or optimizes whether listeners "like" a break.
+- **(Group PV) The host stating it is live/real/an AI/a script** — "live human host" is a
+  DELIVERY stance (REQ-PV-001), never a spoken claim; no fourth-wall break, no self-reference.
+- **(Group PV) A shared cross-persona filler / verbal-tic set** — each persona's verbal-tic
+  bank is DISJOINT (REQ-PV-006/009); a global shared "You know / Here's the thing" set is
+  barred (anti-convergence REQ-PR-004).
+- **(Group PV) Feeding the station's own recent scripts back as in-context exemplars** — recent
+  scripts are an AVOID-LIST only; no-self-imitation (REQ-OC-006) is FROZEN and the loop never
+  trains on its own output.
+- **(Group PV) Re-owning grounding, the base anti-slop register, the playbook store, or the
+  VOICE-002 chunk render** — KNOWLEDGE-008 grounding is UNTOUCHED; OPS-004 owns the store +
+  measured-change rails; OPS-004 REQ-OF-005 + the PG fact contract/gate are extended, not
+  forked; VOICE-002 owns the chunk+silence synthesis (the REQ-PS-004 blank-line contract is
+  preserved, not redefined).
+- **(Group PV) Naming the next track in a frontsell** — a frontsell teases the next track's
+  FEELING only (REQ-PV-007); the name is reserved for the following break's backsell.
+- **(Group PV, added v0.5.0) Profanity/heat dressing up an ungrounded fact or a banned cliché** —
+  the blunt-praise license + profanity tiers act ONLY on owned+specific DELIVERY; the lazy "banger"
+  as a floating PR label stays banned even sworn at (REQ-PV-012/013/016).
+- **(Group PV, added v0.5.0) A fixed profanity/joke quota, profanity aimed at a person, or slurs** —
+  no quota, never aimed at a person/artist/group, slurs Tier-1-banned (coordinated with CALLIN-003)
+  (REQ-PV-013).
+- **(Group PV, added v0.5.0) Self-disclosure that asserts a checkable real-world claim, breaks the
+  fourth wall, carries politics, or embeds a music-fact token** — self-disclosure is FENCED FICTION
+  in the persona's own invented world; a music-fact token reclassifies + gates it; the apolitical
+  rail does not open up (REQ-PV-014, REQ-PT-005, REQ-OF-004).
+- **(Group PV, added v0.5.0) A shared cross-persona profanity/humour/self-disclosure/praise-starter
+  combination** — the new card fields are DISJOINT across personas; a homogenized "sweary AI" roster
+  is barred (REQ-PV-009/010/013, REQ-PR-004).
+- **(Group PV, added v0.5.0) Few-shot exemplars fed back from the station's own recent scripts** —
+  the GOOD-vs-BAD exemplars are HAND-AUTHORED generic-track anchors labelled form-not-content;
+  no-self-imitation (REQ-OC-006) is FROZEN (REQ-PV-015).
+- **(Group PV, added v0.7.0) Dated / try-hard / faux-cool slang to sound young** — the host never
+  reaches for "hip / swagger / groovy / rad / the kids" or the "how do you do, fellow kids" register;
+  the vocabulary is contemporary + register-true in the persona's OWN voice, even when praising a
+  track (REQ-PV-017). This is a distinct axis from the music-slop ban and the blunt-praise license.
+- **(Group PI, added v0.5.0) A self-improvement/taste loop writing a persona's ANCHOR block** — the
+  ≥2 anchor focuses + core temperament + voice signature are FROZEN; only the evolvable layer is
+  loop-writable; an anchor change is human-only and out-of-band (REQ-PI-001/002/003).
+- **(Group PI, added v0.5.0) Evolvable change that erodes pairwise distinctness** — the distinctness
+  canary rejects drift toward another persona's primary territory or a shared-field collision
+  (REQ-PI-004, REQ-PR-004).
+- **(Group PI, added v0.5.0) Treating the news anchor as a curator persona, or re-owning the news
+  subsystem / its implication-analysis carve-out / its gate rubric** — the news anchor is excluded by
+  construction and owned by OPS-004 Group OG + ORCH-005 Group RN; PROGRAMMING-007 only STATES the
+  exclusion + references the frozen carve-out; the OG REQ, the REQ-OF-004 carve-out, the
+  forbidden-normative-token lint, and the implications-vs-opinion rubric are OPS-004/ORCH-005
+  amendments, not authored here (REQ-PI-005).
+- **(Group PI, added v0.5.0) The news anchor expressing opinion, advocacy, viewpoint, or normative
+  judgment** — its one carve-out (implication-analysis) is bounded to attributed-OR-necessary,
+  grounded+attributed, dropped-if-ungroundable; it TIGHTENS, never relaxes, the apolitical rail; the
+  banter recalibration never reaches the news anchor (REQ-PI-005, REQ-OF-004).
 
 ### NFR-P-1 — Roster plurality is measurable, not cosmetic (Ubiquitous) — Priority High
 The roster's distinctness shall be MEASURABLE: any two personas' taste charters
@@ -1384,6 +2455,30 @@ is the acceptable degradation and it preserves never-stops (a skipped break keep
 playing, inherited continuous operation). Generated scripts + their gate verdicts are logged
 so a grounding violation is detectable after the fact (inherits OPS-004 NFR-O-7). See
 acceptance.md AC-NFR-P-8.
+
+### NFR-P-9 — Delivery-vs-content integrity: warmth UP never relaxes the bans; the loop stays bounded (Ubiquitous) — Priority High
+The v0.4.0 delivery calibration shall be MEASURABLY safe on three axes: (a) turning delivery
+warmth/energy UP shall NEVER reintroduce a banned phrase/construction — the extended banned
+list (REQ-PV-006), the grounding rule (REQ-PG-002), and the anti-slop register (REQ-PG-004)
+still pass on every break, and the live frontsell regression (REQ-PV-008) is removed so no
+aired break emits "coming up / up next"; (b) the personas stay DISTINCT after shared craft is
+applied — every persona's verbal-tic bank is disjoint (REQ-PV-006/009) and the cross-persona
+tic-collision lint (REQ-PV-010) passes, so the shared craft on the DELIVERY axis never
+collapses the per-persona DELIVERY or TASTE distinctness (REQ-PR-004/005); and (c) the
+continual-improvement loop (REQ-PV-011) stays bounded — the applied change rate honors the
+OPS-004 rate-limit/cooldown (REQ-OD-006), no path optimizes an engagement/appeal metric, the
+loop never self-imitates (REQ-OC-006), and the FROZEN invariant set is never evolved. These
+three guarantees are the encoded form of the dossier's three non-refuted verdicts. (Amended
+v0.5.0 — axis (d):) the per-persona ANCHOR BLOCK is never evolved (REQ-PI-002/003 — a loop
+attempt is blocked at intake before canary and logged), and the banter recalibration (the
+blunt-praise license REQ-PV-012, the per-persona/daypart profanity+humour policy REQ-PV-013, and
+the fenced three-class taxonomy REQ-PV-014) lands ENTIRELY on the EVOLVABLE DELIVERY axis under
+REQ-PV-005 — it never drifts a FROZEN temperament anchor and never collapses pairwise distinctness
+(REQ-PI-004; each persona's profanity/humour/self-disclosure/praise fields are disjoint REQ-PV-009/
+010, and the blunt-praise license never reintroduces a banned phrase REQ-PV-012/016). This axis
+encodes the two non-refuted v0.5.0 verdicts (blunt/profane/self-disclosure recalibration kills
+sterility without reopening slop or breaking grounding; develop-plus-shared-craft keeps the 5+2
+roster distinct). See acceptance.md AC-NFR-P-9.
 
 ---
 
@@ -1489,6 +2584,68 @@ acceptance.md AC-NFR-P-8.
   subtractive, and by regenerate-once so a false positive costs a regeneration, not a wrong
   fact. The list will be refined via the OPS-004 self-learning loop over time (Group PC/PL
   store), like the rest of the craft.
+- **R-P-15 — Energy-band perceptibility on flat TTS (Medium, honest, v0.4.0).** The
+  per-daypart energy bands ("bright but never shouty", "intimate, near-whisper close",
+  REQ-PV-003/009) are delivery instructions to a flat local TTS that carries only ~75-85% of
+  emotional range (R-P-2). The band may be more a WRITING instruction (block-length, micro-
+  speed, specificity, ducked bed) than a vocal one — Kokoro may not shift perceptibly on
+  every cue. Mitigated by treating energy as a WRITING property (REQ-PV-003: rhythm + specifics
+  + block length carry it), so the calibration degrades to a writing effect even where the
+  voice does not move. Open question recorded for build-time confirmation.
+- **R-P-16 — next_mood derivation choice (Low, v0.4.0).** REQ-PV-008 requires a next-track
+  MOOD hint derived from ANALYSIS-006 energy/bpm/mood features. Open implementation choice: a
+  TEMPLATED string from the feature fields (cheap, no extra LLM round-trip on the talk path) vs
+  a short LLM call (richer, but a second round-trip). A templated string is preferred for the
+  sub-1s talk path; recorded for build-time confirmation. Either way the hint NEVER carries the
+  name (REQ-PV-007).
+- **R-P-17 — Continual-improvement loop convergence / runaway (Medium, v0.4.0).** The loop
+  (REQ-PV-011) refining shared craft could, if it over-refines, pull all personas' delivery
+  toward one learned style, or churn unstably. Mitigated by the OPS-004 measured-self-change
+  rails (REQ-OD-006: rate-limit + canary + contradiction detection), the per-persona POV
+  (REQ-PR-005) + disjoint tic banks (REQ-PV-006/009) + the cross-persona collision lint
+  (REQ-PV-010), the no-self-imitation rule (REQ-OC-006 — never trains on its own output), and
+  the FROZEN invariant set (NFR-P-9). The bright-line residual: a quality score must never
+  silently become an appeal target — enforced as a [HARD] non-goal, must hold in
+  implementation.
+- **R-P-18 — Cross-persona tic-collision lint needs the full roster loaded (Low, v0.4.0).**
+  The collision check (REQ-PV-010b) needs every persona's verbal-tic bank available at gate
+  time to detect a shared tic. Open question: enforce as a HARD curation-time block on
+  collision (safer for anti-convergence) or a soft warning surfaced to the diary. Hard is
+  preferred but needs the roster's banks loaded; the frequency-cap state ("never the same tic
+  two breaks running") also needs last-tic-per-persona persisted (StationState / playbook
+  ledger). Recorded for build-time confirmation.
+- **R-P-19 — Anchor genre granularity vs separability (Medium, v0.5.0).** A persona's FROZEN
+  PRIMARY anchor focus (REQ-PI-001) IS the REQ-PR-004 firewall key; if ANALYSIS-006's derived genre
+  is too coarse (inherits R-P-1), two personas' anchors could still overlap above the cap even
+  though they are FROZEN. Mitigated by expressing each anchor over the FULL dimension set
+  (sub_genre + mood + tags + era, REQ-AD-003) so the frozen anchor itself is provably separable, and
+  by the per-persona FOCUS TABLE being authored with pairwise-disjoint primaries verified by the
+  NFR-P-1 overlap test before air. Open question: fix exactly 2 anchors for all personas or allow 3
+  for a strong thematic throughline (more anchors = more frozen identity, less room to evolve).
+- **R-P-20 — Implication-analysis checkability is contested (Medium/High, ethics, v0.5.0).** The
+  research verdict on "the news anchor can analyze implications while never expressing opinion — the
+  line is concrete and checkable, not hand-wavy" was REFUTED on the naive claim: the line is NOT
+  trivially checkable. The carve-out (REQ-PI-005) is therefore encoded WITH the dossier's own
+  enforcement discipline — an implication is permitted ONLY if ATTRIBUTED-to-a-source OR a logically
+  NECESSARY consequence of cited facts, grounded+attributed exactly like a fact, DROPPED if
+  ungroundable — plus a deterministic forbidden-normative-token lint (should/ought/deserve/
+  outrageous/welcome/rightly/wrongly/advocacy verbs) + a scored rubric. The residual risk: an LLM
+  could still emit a borderline forecast that reads as analysis but smuggles a stance. Mitigated by
+  drop-on-ungroundable + the forbidden-token firewall + graceful-skip on FAIL, and by these rails
+  sitting in the FROZEN zone (never loosened by the loop). NOTE: this carve-out + its lint + its
+  rubric are owned by OPS-004/ORCH-005 (REQ-PI-005 references, does not author them); the contested
+  checkability is the open concern recorded here.
+- **R-P-21 — Profanity ceiling per temperament + Faroese register (Medium, v0.5.0).** Two coupled
+  concerns: (a) some FROZEN temperaments break character with profanity (a hushed late-night ambient
+  persona swearing is off-register), so the per-persona `profanity_tier` ceiling may need to be
+  treated as part of the FROZEN temperament anchor, not a freely-evolvable field; and (b) the
+  Ofcom-style English severity tier map (mild/salty) does not cleanly map to FAROESE register, so
+  each FO persona may need its own swear-tier vocabulary list (shared with CALLIN-003 moderation).
+  Mitigated by `profanity_tier` being a CEILING the daypart only lowers (REQ-PV-013) and by the
+  distinctness/collision lint (REQ-PV-010), but the per-temperament ceiling binding + the Faroese
+  scale are open questions for build-time confirmation. Also open: whether to ship salty-tier
+  personas immediately or stage them (positive-register + blunt-license first, then enable profanity
+  tiers after one observation cycle) — affects whether REQ-PV-013 lands now or a v0.5.1 follow-up.
 
 ---
 
@@ -1528,10 +2685,11 @@ Section B).
 | REQ-PR-006 | Roster & Persona Model | High | Ubiquitous | AC-PR-006 |
 | REQ-PR-007 | Roster & Persona Model | High | Ubiquitous | AC-PR-007 |
 | REQ-PR-008 | Roster & Persona Model | High | Event | AC-PR-008 |
+| REQ-PR-009 | Roster & Persona Model | High | State | AC-PR-009 |
 | REQ-PC-001 | Radio-Craft Playbook & Talk Rules | High | Event | AC-PC-001 |
 | REQ-PC-002 | Radio-Craft Playbook & Talk Rules | High | State | AC-PC-002 |
 | REQ-PC-003 | Radio-Craft Playbook & Talk Rules | High | Event | AC-PC-003 |
-| REQ-PC-004 | Radio-Craft Playbook & Talk Rules | High | Unwanted | AC-PC-004 |
+| REQ-PC-004 | Radio-Craft Playbook & Talk Rules | High | Ubiquitous | AC-PC-004 |
 | REQ-PC-005 | Radio-Craft Playbook & Talk Rules | High | State | AC-PC-005 |
 | REQ-PC-006 | Radio-Craft Playbook & Talk Rules | Medium | Event | AC-PC-006 |
 | REQ-PC-007 | Radio-Craft Playbook & Talk Rules | Medium | State | AC-PC-007 |
@@ -1547,7 +2705,7 @@ Section B).
 | REQ-PT-002 | Show Formats incl. Solstice Hour | Medium | Event | AC-PT-002 |
 | REQ-PT-003 | Show Formats incl. Solstice Hour | Medium | Event | AC-PT-003 |
 | REQ-PT-004 | Show Formats incl. Solstice Hour | High | Event | AC-PT-004 |
-| REQ-PT-005 | Show Formats incl. Solstice Hour | High | Unwanted | AC-PT-005 |
+| REQ-PT-005 | Show Formats incl. Solstice Hour | High | Ubiquitous | AC-PT-005 |
 | REQ-PT-006 | Show Formats incl. Solstice Hour | High | Event | AC-PT-006 |
 | REQ-PT-007 | Show Formats incl. Solstice Hour | High | Event | AC-PT-007 |
 | REQ-PT-008 | Show Formats incl. Solstice Hour | Medium | Optional | AC-PT-008 |
@@ -1559,11 +2717,33 @@ Section B).
 | REQ-PL-006 | Taste Self-Learning, Provenance & Feedback | High | State | AC-PL-006 |
 | REQ-PL-007 | Taste Self-Learning, Provenance & Feedback | Medium | Event | AC-PL-007 |
 | REQ-PG-001 | Grounded Host Voice & Quality Gate | High | Event | AC-PG-001 |
-| REQ-PG-002 | Grounded Host Voice & Quality Gate | High | Unwanted | AC-PG-002 |
+| REQ-PG-002 | Grounded Host Voice & Quality Gate | High | Ubiquitous | AC-PG-002 |
 | REQ-PG-003 | Grounded Host Voice & Quality Gate | High | State | AC-PG-003 |
-| REQ-PG-004 | Grounded Host Voice & Quality Gate | High | Unwanted | AC-PG-004 |
+| REQ-PG-004 | Grounded Host Voice & Quality Gate | High | Ubiquitous | AC-PG-004 |
 | REQ-PG-005 | Grounded Host Voice & Quality Gate | High | Event | AC-PG-005 |
 | REQ-PG-006 | Grounded Host Voice & Quality Gate | High | Ubiquitous | AC-PG-006 |
+| REQ-PV-001 | Host-Voice Persona-Awareness, Delivery Craft & Continual Improvement | High | Ubiquitous | AC-PV-001 |
+| REQ-PV-002 | Host-Voice Persona-Awareness, Delivery Craft & Continual Improvement | High | State | AC-PV-002 |
+| REQ-PV-003 | Host-Voice Persona-Awareness, Delivery Craft & Continual Improvement | High | State | AC-PV-003 |
+| REQ-PV-004 | Host-Voice Persona-Awareness, Delivery Craft & Continual Improvement | High | Ubiquitous | AC-PV-004 |
+| REQ-PV-005 | Host-Voice Persona-Awareness, Delivery Craft & Continual Improvement | High | Ubiquitous | AC-PV-005 |
+| REQ-PV-006 | Host-Voice Persona-Awareness, Delivery Craft & Continual Improvement | High | Ubiquitous | AC-PV-006 |
+| REQ-PV-007 | Host-Voice Persona-Awareness, Delivery Craft & Continual Improvement | High | Event | AC-PV-007 |
+| REQ-PV-008 | Host-Voice Persona-Awareness, Delivery Craft & Continual Improvement | High | Event | AC-PV-008 |
+| REQ-PV-009 | Host-Voice Persona-Awareness, Delivery Craft & Continual Improvement | High | Ubiquitous | AC-PV-009 |
+| REQ-PV-010 | Host-Voice Persona-Awareness, Delivery Craft & Continual Improvement | High | Event | AC-PV-010 |
+| REQ-PV-011 | Host-Voice Persona-Awareness, Delivery Craft & Continual Improvement | High | State | AC-PV-011 |
+| REQ-PV-012 | Host-Voice Persona-Awareness, Delivery Craft & Continual Improvement | High | Ubiquitous | AC-PV-012 |
+| REQ-PV-013 | Host-Voice Persona-Awareness, Delivery Craft & Continual Improvement | High | State | AC-PV-013 |
+| REQ-PV-014 | Host-Voice Persona-Awareness, Delivery Craft & Continual Improvement | High | Ubiquitous | AC-PV-014 |
+| REQ-PV-015 | Host-Voice Persona-Awareness, Delivery Craft & Continual Improvement | High | Event | AC-PV-015 |
+| REQ-PV-016 | Host-Voice Persona-Awareness, Delivery Craft & Continual Improvement | High | Event | AC-PV-016 |
+| REQ-PV-017 | Host-Voice Persona-Awareness, Delivery Craft & Continual Improvement | High | Ubiquitous | AC-PV-017 |
+| REQ-PI-001 | Persona Identity (Anchors) | High | Ubiquitous | AC-PI-001 |
+| REQ-PI-002 | Persona Identity (Anchors) | High | Ubiquitous | AC-PI-002 |
+| REQ-PI-003 | Persona Identity (Anchors) | High | Event | AC-PI-003 |
+| REQ-PI-004 | Persona Identity (Anchors) | High | State | AC-PI-004 |
+| REQ-PI-005 | Persona Identity (Anchors) | High | Ubiquitous | AC-PI-005 |
 | NFR-P-1 | Non-Functional | High | Ubiquitous | AC-NFR-P-1 |
 | NFR-P-2 | Non-Functional | High | Ubiquitous | AC-NFR-P-2 |
 | NFR-P-3 | Non-Functional | High | Ubiquitous | AC-NFR-P-3 |
@@ -1572,10 +2752,11 @@ Section B).
 | NFR-P-6 | Non-Functional | Medium | Ubiquitous | AC-NFR-P-6 |
 | NFR-P-7 | Non-Functional | High | Ubiquitous | AC-NFR-P-7 |
 | NFR-P-8 | Non-Functional | High | Ubiquitous | AC-NFR-P-8 |
+| NFR-P-9 | Non-Functional | High | Ubiquitous | AC-NFR-P-9 |
 
 ---
 
-Version: 0.3.0
+Version: 0.7.0
 Status: draft
 Last Updated: 2026-06-22
-Total: 44 REQ + 8 NFR = 52, 1:1 REQ↔AC.
+Total: 67 REQ + 9 NFR = 76, 1:1 REQ↔AC.

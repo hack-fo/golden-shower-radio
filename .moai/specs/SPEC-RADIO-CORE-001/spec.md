@@ -1,9 +1,9 @@
 ---
 id: SPEC-RADIO-CORE-001
-version: 0.3.0
+version: 0.4.1
 status: draft
 created: 2026-06-22
-updated: 2026-06-22
+updated: 2026-06-23
 author: charlie
 priority: High
 issue_number: null
@@ -78,6 +78,39 @@ issue_number: null
   replaced with "YouTube liked videos." Risk R3 changed open -> RESOLVED. Net: +2
   requirements (REQ-A-004a, REQ-A-004b). Seed remains NON-BINDING; constraints
   unchanged.
+- 2026-06-22 (v0.4.0): Added REQ-B-012 — a first-class ASSIGN / REASSIGN-persona-to-slot
+  PRIMITIVE in Group B, closing a verified gap (the station-management dossier). Group B
+  already had schedule-grid CRUD at the SHOW level (REQ-B-003 insert/replace/move-show,
+  runtime, no human approval) and runtime persona CREATION (REQ-B-009) + persistence
+  (REQ-B-010), but there was NO first-class operation to BIND or RE-BIND an existing host
+  persona to a show/slot — it was only ever implied. REQ-B-012 is that primitive: a runtime,
+  no-human-approval operation on the system-owned schedule/roster store (REQ-B-001), persisted
+  across restarts (REQ-B-010), that assigns or reassigns a host persona to a show/slot. It
+  upholds the ≤2-hosts-per-show cap (REQ-B-011 — a binding that would push a show past 2 hosts
+  is rejected) and, like REQ-B-003, takes effect for FUTURE blocks without interrupting the
+  current stream. SCOPE / OWNERSHIP (no re-own): REQ-B-012 provides only the assign/reassign
+  PRIMITIVE; it does NOT own the cross-slot atomic "always-staffed" guarantee that a scheduled
+  block is never left hostless ACROSS a departure/retirement — that atomic TRANSACTION is owned
+  by OPS-004 REQ-OB-014 (the always-staffed invariant), which COMPOSES this primitive. The
+  primitive itself simply cannot produce a hostless slot (an assign binds a present persona; a
+  reassign re-binds before/as it releases). Consumers (referenced, not re-owned): OPS-004 Group
+  OB lifecycle reassignment (REQ-OB-014), OPS-004 Group OA schedule-grid CRUD (REQ-OA-015, which
+  already names "ASSIGN / REASSIGN-persona-to-slot ... mutates the CORE-001 REQ-B-003 store" —
+  REQ-B-012 is the missing CORE-001 primitive that operation targets), and the ORCH-005 Group RA
+  lifecycle-action dispatch seam (REQ-RA-001(g) -> REQ-RA-002, recorded to REQ-RA-003). Net: +1
+  requirement (REQ-B-012); the OPS-004/ORCH-005 transaction + dispatch layers are unchanged and
+  remain the owners of atomicity and dispatch. No store fork, no Liquidsoap change.
+- 2026-06-23 (v0.4.1): Audit convergence fixes (no requirement changes; REQ↔AC parity
+  preserved). (1) Section 12 Exclusions: removed the stale "concrete Spotify/YouTube
+  OAuth+API wishlist ingestion" exclusion (that work is now v1 scope — REQ-A-004a/b,
+  REQ-A-011, REQ-F-008) and narrowed it to exclude ONLY YouTube WATCH HISTORY
+  (genuinely unavailable via Data API v3), matching Section 3.2. (2) Section 14
+  Roadmap: narrowed the stale SPEC-RADIO-INGEST line (concrete ingestion already
+  delivered in v1) to "future expansion of ingestion sources beyond Spotify saved +
+  YouTube liked." (3) Sections 4 + 1.4: reconciled the runtime to the actually-live
+  PYTHON brain daemon (`brain/`, `Dockerfile.brain`, `radio.liq` → `brain:8080/api/next`)
+  and noted the `internal/` + `cmd/radiod/` Go tree as deprecated/superseded; removed
+  the [HARD] Go language mandate (implementation language is no longer a HARD constraint).
 
 ---
 
@@ -275,14 +308,17 @@ Net: full ownership and agency, AND zero commercial/appeal-optimization motive.
 
 The v1 system is composed of two cooperating processes plus supporting daemons:
 
-- **Go daemon (the brain)** — long-lived process that owns the music library,
+- **Brain daemon (the brain)** — long-lived process that owns the music library,
   drives autonomous acquisition via slskd, runs the 24/7 scheduler, hosts the
   LLM program-director curation loop, and generates/serves the self-controlled
-  website.
-- **Liquidsoap (the playout)** — receives next-track decisions from the Go
+  website. The live implementation is a **Python** daemon under `brain/` (built by
+  `Dockerfile.brain`, reached by Liquidsoap at `http://brain:8080/api/next`). An
+  earlier Go tree under `internal/` + `cmd/radiod/` is DEPRECATED/SUPERSEDED and
+  not wired into the live config.
+- **Liquidsoap (the playout)** — receives next-track decisions from the brain
   daemon and streams the queue continuously to Icecast.
 - **Icecast** — public streaming endpoint listeners connect to.
-- **slskd** — headless Soulseek daemon driven by the Go daemon's REST calls for
+- **slskd** — headless Soulseek daemon driven by the brain daemon's REST calls for
   autonomous music acquisition.
 
 ---
@@ -321,7 +357,7 @@ The v1 system is composed of two cooperating processes plus supporting daemons:
    schedule build/edit, segment planning, persona-aware rotation, and keeping
    the queue full around the clock. (Requirement group B)
 3. **Playout (Continuous)** — Liquidsoap + Icecast topology with continuous
-   queue playback, a Go↔Liquidsoap control interface, and crash/restart resume.
+   queue playback, a brain↔Liquidsoap control interface, and crash/restart resume.
    (Requirement group C)
 4. **LLM Program-Director Loop** — persona configuration and the LLM curation /
    next-track / segment-planning decision loop. NO TTS / spoken voice.
@@ -332,7 +368,7 @@ Plus:
 5. **Self-Controlled Website** — runtime self-generation/editing of HTML/CSS
    with publish guardrails; serves now-playing, schedule, and a stream player.
    (Requirement group E)
-6. **Runtime / Deployment & Configuration** — Go daemon lifecycle, cloud
+6. **Runtime / Deployment & Configuration** — brain daemon lifecycle, cloud
    deployment, configuration schema, process supervision, health/status.
    (Requirement group F)
 
@@ -364,13 +400,19 @@ part of SPEC-RADIO-CORE-001:
 
 ## 4. Constraints (confirmed, fixed)
 
-- [HARD] Language/runtime: **Go**, implemented as a long-lived daemon.
+- [HARD] Runtime: a **long-lived daemon (the brain)**, implemented in **Python**
+  (the live implementation under `brain/` — `Dockerfile.brain` builds it and
+  `radio.liq` calls `http://brain:8080/api/next`). NOTE: an earlier Go tree under
+  `internal/` + `cmd/radiod/` is DEPRECATED/SUPERSEDED — it is not wired into the
+  live `deploy/config/radio.liq` and is retained only as historical scaffolding.
+  The choice of implementation language is NOT a [HARD] constraint; the live
+  runtime is the Python brain daemon.
 - [HARD] Deployment target: a **cloud server** (systemd or Docker), exposing a
   public Icecast stream.
 - [HARD] Audio playout: **Liquidsoap + Icecast**. Liquidsoap continuously plays
-  the queue; the Go daemon supplies next-track decisions. Continuous operation is
+  the queue; the brain daemon supplies next-track decisions. Continuous operation is
   the operating identity (Section 1.2), not a zero-gap guarantee.
-- [HARD] Music acquisition: **slskd** running headless. The Go daemon drives
+- [HARD] Music acquisition: **slskd** running headless. The brain daemon drives
   slskd's REST API (`/api/v0/`) to search and download tracks. slskd auth via
   `X-API-Key` header (JWT also supported). Downloads directory is a REQUIRED
   config value (`directories.downloads` / `SLSKD_DOWNLOADS_DIR`) supplied by the
@@ -399,7 +441,7 @@ system shall not perform any Soulseek search or download operation.
 **Acceptance criteria:**
 - With `acquisition.enabled = false` (default), no request is ever sent to slskd
   search or transfer/download endpoints (verifiable from slskd request logs and
-  Go daemon logs).
+  brain daemon logs).
 - A startup log line records the acquisition gate state.
 
 ### REQ-A-001b — Acquisition enabled scope (State-driven)
@@ -415,7 +457,7 @@ slskd endpoint, credentials).
 
 ### REQ-A-002 — slskd connectivity & authentication (Event-driven)
 
-When the Go daemon starts with acquisition enabled, the system shall authenticate
+When the brain daemon starts with acquisition enabled, the system shall authenticate
 to the configured slskd instance using the configured `X-API-Key` header (or
 configured JWT) and verify reachability of the slskd `/api/v0/` API before
 issuing any search.
@@ -784,6 +826,44 @@ different shows remains system-managed, but no single show may exceed 2 hosts.)
   or seeded config REQ-B-001).
 - The cap is per-show; two different shows may each independently have 2 hosts.
 
+### REQ-B-012 — Autonomous runtime assign/reassign of a persona to a show/slot (Event-driven)
+
+When the program director autonomously decides at runtime to ASSIGN or REASSIGN a host
+persona to a show/slot, the system shall bind (or re-bind) that persona on the system-owned
+schedule/roster store (REQ-B-001) without any human approval step, persisting the change so
+it survives restarts (REQ-B-010), and applying it to FUTURE blocks without interrupting the
+current stream (as REQ-B-003). This is a FIRST-CLASS primitive distinct from the
+insert/replace/move-SHOW edits of REQ-B-003: it changes WHO hosts a slot, not the slot's
+existence or time.
+
+[HARD] The operation shall uphold the ≤2-hosts-per-show cap (REQ-B-011): an assignment that
+would give a show a 3rd host is rejected and logged, leaving the show at its prior host set.
+
+[HARD] The assign/reassign primitive shall not produce a hostless scheduled block: an assign
+binds a present persona, and a reassign re-binds before/as it releases the prior host.
+
+SCOPE / OWNERSHIP (this requirement provides the PRIMITIVE only — it does not re-own the
+composing layers): the cross-slot ATOMIC "always-staffed" guarantee — that no scheduled block
+is ever left hostless ACROSS a persona departure/retirement, committed as a single atomic swap
+or rejected with the persona kept on air — is OWNED by OPS-004 REQ-OB-014 (the always-staffed
+invariant), which COMPOSES this primitive within its transaction. The enumerated grid-operation
+surface that exposes ASSIGN / REASSIGN-persona-to-slot as a PD capability is OPS-004 REQ-OA-015
+(it already dispatches that operation into this CORE-001 store), and the dispatch seam is
+ORCH-005 REQ-RA-001(g) -> REQ-RA-002 (recorded to REQ-RA-003). CORE-001 owns the store mutation
+primitive; OPS-004/ORCH-005 own the transaction, the operation surface, and the dispatch.
+
+**Acceptance criteria:**
+- A program-director-initiated assign of a persona to a show with 0 or 1 hosts succeeds at
+  runtime with no human approval, is reflected in the queryable schedule (REQ-B-002), and
+  survives a daemon restart (REQ-B-010).
+- A reassign that moves an existing persona from one slot to another re-binds the persona
+  on the store; the change applies to future blocks without interrupting the current stream.
+- [HARD] An assign that would push a show past 2 hosts is rejected, the show retains its
+  prior host set, and the rejection is logged (REQ-B-011, enforced regardless of path).
+- No assign/reassign performed by this primitive leaves any scheduled block hostless.
+- The cross-slot atomic always-staffed guarantee across a departure/retirement is verified
+  against OPS-004 REQ-OB-014, NOT here — this primitive provides only the store-level bind.
+
 ---
 
 ## 7. Requirement Group C — Playout (Continuous)
@@ -797,8 +877,8 @@ brief interruption on restart/crash is acceptable.
 ### REQ-C-001 — Liquidsoap + Icecast continuous playback (Ubiquitous)
 
 The system shall stream audio continuously to a public Icecast endpoint via
-Liquidsoap, playing the Go-fed queue (`request.queue` via the control interface,
-or `request.dynamic.list` backed by the Go daemon). An `input.harbor` source is
+Liquidsoap, playing the brain-fed queue (`request.queue` via the control interface,
+or `request.dynamic.list` backed by the brain daemon). An `input.harbor` source is
 reserved for future live injection (defined, unused for audio in v1).
 
 **Acceptance criteria:**
@@ -809,42 +889,42 @@ reserved for future live injection (defined, unused for audio in v1).
   good practice to avoid trivial silence; this is recommended practice, NOT a
   guaranteed-never-silent contract, and is not a must-pass criterion.
 
-### REQ-C-002 — Go↔Liquidsoap control interface (Event-driven)
+### REQ-C-002 — brain↔Liquidsoap control interface (Event-driven)
 
 When the scheduler has a next track for playout, the system shall deliver it to
 Liquidsoap through a defined control interface — either Liquidsoap's command
 server (`settings.server.telnet := true`) feeding `request.queue`, or an external
-process backing `request.dynamic.list` that the Go daemon serves.
+process backing `request.dynamic.list` that the brain daemon serves.
 
 **Acceptance criteria:**
 - The chosen control mechanism is documented and configurable.
-- A next-track decision from the Go daemon results in that track being played by
+- A next-track decision from the brain daemon results in that track being played by
   Liquidsoap within the queue-depth budget.
 - The control interface failing does not crash Liquidsoap.
 
 ### REQ-C-003 — Continuous playback and crash/restart resume (State-driven)
 
-While the Go daemon is available, the system shall keep supplying tracks so
-playback is continuous. If the Go daemon crashes or is restarted, then it shall
+While the brain daemon is available, the system shall keep supplying tracks so
+playback is continuous. If the brain daemon crashes or is restarted, then it shall
 resume supplying tracks on recovery without requiring a Liquidsoap restart. A
 brief audio interruption during the crash/restart window is acceptable.
 
 **Acceptance criteria:**
 - Under normal operation, tracks play continuously from the kept-full queue
   (REQ-B-005).
-- After the Go daemon is killed and restarted, it reconnects to the control
+- After the brain daemon is killed and restarted, it reconnects to the control
   interface and resumes supplying tracks automatically (a brief interruption
   during the restart window is acceptable; no manual Liquidsoap restart needed).
 
 ### REQ-C-004 — Process independence (Ubiquitous)
 
-The system shall ensure the Liquidsoap process and the Go daemon process are
+The system shall ensure the Liquidsoap process and the brain daemon process are
 independently supervised, such that restarting one does not require restarting
 the other.
 
 **Acceptance criteria:**
-- The Go daemon can be restarted while Liquidsoap continues running.
-- Liquidsoap can be restarted (planned) and the Go daemon reconnects its control
+- The brain daemon can be restarted while Liquidsoap continues running.
+- Liquidsoap can be restarted (planned) and the brain daemon reconnects its control
   interface automatically.
 
 ---
@@ -1068,9 +1148,9 @@ The system shall serve the self-controlled website from the station itself
 
 Priority: High.
 
-### REQ-F-001 — Go daemon lifecycle (Ubiquitous)
+### REQ-F-001 — brain daemon lifecycle (Ubiquitous)
 
-The system shall run as a long-lived Go daemon with clean startup and graceful
+The system shall run as a long-lived brain daemon with clean startup and graceful
 shutdown, releasing resources and connections on shutdown.
 
 **Acceptance criteria:**
@@ -1080,7 +1160,7 @@ shutdown, releasing resources and connections on shutdown.
 ### REQ-F-002 — Cloud deployment & process supervision (Ubiquitous)
 
 The system shall be deployable to a cloud server via systemd or Docker, with
-Icecast, Liquidsoap, slskd, and the Go daemon supervised so that a crash of any
+Icecast, Liquidsoap, slskd, and the brain daemon supervised so that a crash of any
 single process is automatically restarted.
 
 **Acceptance criteria:**
@@ -1235,8 +1315,13 @@ and zero-gap failover MUST NOT be over-engineered.
 - Listener analytics product (beyond operational health/logging).
 - Web search / news ingestion (Faroe Islands, Sweden, international) and
   breaking-news interrupts.
-- Concrete Spotify/YouTube OAuth+API wishlist ingestion (v1 consumes an abstract
-  provided wishlist source; the concrete integration is a future SPEC).
+- YouTube WATCH HISTORY ingestion — NOT available via the YouTube Data API v3 (no
+  watch-history endpoint exists), so the YouTube seed is LIKED VIDEOS
+  (`myRating=like`), not history (REQ-A-004b; risk R3). NOTE: concrete Spotify +
+  YouTube seed ingestion via OAuth IS in v1 scope (REQ-A-004a Spotify
+  `GET /v1/me/tracks`, REQ-A-004b YouTube `myRating=like`, REQ-A-011, REQ-F-008,
+  matching Section 3.2); only watch history is excluded, because it is impossible
+  via the API.
 - Multi-region / horizontally scaled playout (single cloud server in v1).
 - Listener authentication, comments, or any interactive web feature beyond
   now-playing, schedule, and the stream player.
@@ -1309,7 +1394,9 @@ Deferred subsystems, each a candidate future SPEC:
   Faroese-language host speech and Faroese news readouts (kvf.fo/dimma.fo); API
   endpoint TBD from the player's network calls / Acapela when this SPEC is taken
   up. No v1 requirement.
-- SPEC-RADIO-INGEST — concrete Spotify/YouTube wishlist ingestion.
+- SPEC-RADIO-INGEST — future expansion of ingestion sources beyond Spotify saved +
+  YouTube liked (the concrete Spotify saved/top + YouTube liked ingestion itself
+  is already delivered in v1: REQ-A-004a/b, REQ-A-011, REQ-F-008).
 - SPEC-RADIO-NEWS — web search + news (Faroe Islands / Sweden / international)
   and breaking-news interrupts from trusted sources.
 - SPEC-RADIO-CALLIN — phone call-in handling.
@@ -1354,6 +1441,7 @@ Deferred subsystems, each a candidate future SPEC:
 | REQ-B-009 | Scheduler & Programming | High | Event | AC-B-009 |
 | REQ-B-010 | Scheduler & Programming | High | Ubiquitous | AC-B-010 |
 | REQ-B-011 | Scheduler & Programming | High | Unwanted | AC-B-011 |
+| REQ-B-012 | Scheduler & Programming | High | Event | AC-B-012 |
 | REQ-C-001 | Playout (Continuous) | High | Ubiquitous | AC-C-001 |
 | REQ-C-002 | Playout (Continuous) | High | Event | AC-C-002 |
 | REQ-C-003 | Playout (Continuous) | High | State | AC-C-003 |

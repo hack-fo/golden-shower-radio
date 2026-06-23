@@ -1,10 +1,10 @@
 ---
 id: SPEC-RADIO-CORE-001
 artifact: acceptance
-version: 0.3.0
+version: 0.4.1
 status: draft
 created: 2026-06-22
-updated: 2026-06-22
+updated: 2026-06-23
 author: charlie
 ---
 
@@ -13,6 +13,15 @@ author: charlie
 Given-When-Then scenarios per requirement group, edge cases, quality gates, and
 the Definition of Done. Each AC-* maps to a REQ-* in `spec.md` (Section 15
 traceability index).
+
+## Changelog
+
+- 2026-06-23 (v0.4.1): Version sync to spec.md + audit convergence fixes. Brought
+  frontmatter from 0.3.0 to 0.4.1: the file already carried AC-B-012 (the
+  assign/reassign-persona-to-slot primitive added with REQ-B-012 at the
+  spec.md v0.4.0 level), so this bump records that v0.4.0-level content under a
+  matching version and aligns with spec.md v0.4.1. No AC content changed; REQ↔AC
+  1:1 parity preserved (AC-B-012 stays in lockstep with REQ-B-012).
 
 ## A. Library & Acquisition
 
@@ -205,6 +214,25 @@ traceability index).
 - Given two different shows, When each is assigned 2 hosts, Then both succeed (the
   cap is per-show, not global).
 
+### AC-B-012 — Autonomous runtime assign/reassign of a persona to a show/slot
+- Given a show with 0 or 1 hosts, When the program director assigns a persona to it at
+  runtime, Then the binding is applied on the system-owned store with no human approval,
+  is reflected in the queryable schedule (AC-B-002), and survives a daemon restart
+  (AC-B-010).
+- Given an existing persona on slot X, When the program director reassigns it to slot Y,
+  Then the persona is re-bound on the store and the change applies to future blocks
+  without interrupting the current stream (as AC-B-003).
+- Given a show that already has 2 hosts, When an assign would add a 3rd, Then it is
+  rejected, the show retains its prior host set, and the rejection is logged (AC-B-011,
+  enforced regardless of path).
+- Given any assign/reassign performed by this primitive, When it is applied, Then no
+  scheduled block is left hostless.
+- This AC covers ONLY the store-level assign/reassign primitive. The cross-slot ATOMIC
+  always-staffed guarantee across a persona departure/retirement (no hostless block ever
+  observable, single atomic swap or reject-and-keep-on-air) is verified against OPS-004
+  REQ-OB-014, NOT here; the grid-operation surface is OPS-004 REQ-OA-015 and the dispatch
+  seam is ORCH-005 REQ-RA-001(g)/REQ-RA-002 — referenced, not re-owned.
+
 ## C. Playout (Continuous)
 
 ### AC-C-001 — Liquidsoap + Icecast continuous playback
@@ -215,8 +243,8 @@ traceability index).
 - The output MAY be `mksafe`-wrapped as ordinary good practice to avoid trivial
   silence; this is recommended, not a must-pass never-silent contract.
 
-### AC-C-002 — Go↔Liquidsoap control interface
-- Given a next-track decision from the Go daemon, When delivered via the chosen
+### AC-C-002 — brain↔Liquidsoap control interface
+- Given a next-track decision from the brain daemon, When delivered via the chosen
   control mechanism, Then Liquidsoap plays it within the queue-depth budget.
 - Given the control interface fails, When it degrades, Then it does not crash
   Liquidsoap.
@@ -225,15 +253,15 @@ traceability index).
 ### AC-C-003 — Continuous playback and crash/restart resume
 - Given normal operation, When tracks are consumed, Then playback is continuous
   from the kept-full queue (AC-B-005).
-- Given the Go daemon is killed and restarted, When it recovers, Then it reconnects
+- Given the brain daemon is killed and restarted, When it recovers, Then it reconnects
   to the control interface and resumes supplying tracks automatically; a brief
   interruption during the restart window is acceptable and no manual Liquidsoap
   restart is required.
 
 ### AC-C-004 — Process independence
-- Given a running stream, When the Go daemon is restarted, Then Liquidsoap
+- Given a running stream, When the brain daemon is restarted, Then Liquidsoap
   continues running.
-- Given a planned Liquidsoap restart, When it completes, Then the Go daemon
+- Given a planned Liquidsoap restart, When it completes, Then the brain daemon
   reconnects its control interface automatically.
 
 ## D. LLM Program-Director Loop (NO TTS)
@@ -333,7 +361,7 @@ traceability index).
 
 ### AC-F-002 — Deployment & supervision
 - Given the deployment, When inspected, Then systemd units or Docker/compose exist
-  for Icecast, Liquidsoap, slskd, and the Go daemon.
+  for Icecast, Liquidsoap, slskd, and the brain daemon.
 - Given any single supervised process is killed, When supervision reacts, Then it
   is auto-restarted.
 - After a restart, the system resumes continuous operation (AC-C-003); a brief
@@ -385,7 +413,7 @@ traceability index).
 
 ## Edge Cases (cross-cutting)
 
-- Go daemon crashes mid-track → on restart it resumes supplying tracks; a brief
+- brain daemon crashes mid-track → on restart it resumes supplying tracks; a brief
   interruption during the restart window is acceptable (AC-C-003, Section 1.2).
 - Library empty at first boot → queue filler logs the empty condition and does not
   crash playout; acquisition (if enabled) backfills without touching the stream;
@@ -413,7 +441,7 @@ traceability index).
 - All HIGH-priority requirements (Groups A, B, C, D core + F core) have passing
   acceptance scenarios.
 - Continuous operation verified: under normal operation the queue plays
-  continuously; after a Go daemon restart the system resumes supplying tracks (a
+  continuously; after a brain daemon restart the system resumes supplying tracks (a
   brief interruption during the restart window is acceptable).
 - Acquisition negative test: with the gate off, zero slskd calls are observed.
 - Host-cap negative test: a 3rd host on a 2-host show is rejected via every
@@ -432,7 +460,7 @@ traceability index).
 - [ ] Milestones M1–M7 (plan.md) complete; each milestone exit condition met.
 - [ ] Every REQ-* in spec.md has a corresponding passing AC-* scenario.
 - [ ] Continuous operation demonstrated: queue plays continuously under normal
-      operation, and the system resumes after a Go daemon / process restart (a
+      operation, and the system resumes after a brain daemon / process restart (a
       brief interruption during the restart window is acceptable — no zero-gap
       requirement).
 - [ ] Acquisition is config-gated and default-off; ToS/legal risk documented

@@ -1,9 +1,9 @@
 ---
 id: SPEC-RADIO-OPS-004
-version: 0.4.0
+version: 0.9.1
 status: draft
 created: 2026-06-22
-updated: 2026-06-22
+updated: 2026-06-23
 author: charlie
 priority: High
 issue_number: null
@@ -43,7 +43,7 @@ issue_number: null
   KEXP + P3 Dans + P3 Mix (REQ-OB-002/OD-002); (E) explicit no-repeat /
   least-recently-played rotation (REQ-OA-003a); (F) rich library metadata enrichment
   — tag correction + genre/mood/BPM/key/energy/year + a queryable catalog
-  (REQ-OA-010/011/012, which also closes the former BPM/key analysis gap); (G)
+  (REQ-OA-010/011/012, consuming ANALYSIS-006's produced audio-analysis features); (G)
   self-reasoning autonomy reaffirmed (Section 1.3); (H) Group OH — Library Management
   & Acquisition Policy: play-from-library balance (REQ-OH-001), slskd-first/yt-dlp-last
   quality preference (REQ-OH-002), organized library folder structure (REQ-OH-003),
@@ -107,6 +107,200 @@ issue_number: null
   subscription (structured, same no-billing spirit). Net: +10 REQ (OA-003c, OA-013,
   OA-014, OC-006, OD-007, OD-008, OE-012, OF-005, OF-006, OH-006) and +2 NFR (NFR-O-10,
   NFR-O-11). Total: 73 REQ + 11 NFR = 84, 1:1 REQ↔AC preserved.
+- 2026-06-22 (v0.5.0): Gap-fill extension from a verified gap-analysis of the
+  autonomous-operator pillars (inventory / topic-banks / listener-responses / editorial
+  continuity). The analysis confirmed the operator contract is ~85% already covered and
+  identified a TOPIC-BANK as the single largest true gap: REQ-OC-002 invents themes
+  ephemerally each planning cycle with no persisted record of what aired, when, in which
+  generator-category, or how recently — so anti-repetition (REQ-OC-006) and
+  freshness/rotation had no durable inventory to draw on. NEW Group OX — Topic-Bank
+  Inventory (REQ-OX-001..005): a persisted, queryable TOPIC-BANK of editorial
+  theme/segment instances, recording per topic a normalized topic identity,
+  generator-category (PROGRAMMING-007 REQ-PC-006), aired_at, use-count,
+  freshness/recency, rotation state, discovery source, and editorial tags. [HARD] It is
+  implemented as a topic-specific VIEW over the existing REQ-OD-007 append-only ledger
+  (new idempotent event types `topic_discovered` / `topic_aired` / `topic_refreshed` /
+  `topic_skipped`) — NOT a forked datastore — mirroring exactly how ORCH-005 Group RN
+  (news ledger) and PROGRAMMING-007 REQ-PL-003 (acquisition diary) are VIEWs over that
+  same substrate. The bank is an INVENTORY peer to the music library (Group OH) and
+  imaging (Group OE). REQ-OX-002 makes theme invention (REQ-OC-002) persist to the bank
+  and consult it as an anti-repetition AVOID-LIST (extends REQ-OC-006 no-self-imitation),
+  with a lightweight topic-suitability checklist lint (relevance / respect /
+  ethos-alignment) folded in rather than a standalone REQ. REQ-OX-003 [HARD] applies a
+  freshness/rotation policy mirroring ORCH-005 REQ-RN-003/RN-004. REQ-OX-004 replenishes
+  the bank from calendar/anniversary/seasonal opportunities and KNOWLEDGE-008
+  artist/release facts on a bounded self-scheduled cadence, referencing KNOWLEDGE-008
+  Group KR (research) + Group KF (freshness) — not re-owning research. REQ-OX-005 makes
+  the bank queryable by category/recency/locale, available to the PD + show-prep (extends
+  REQ-OD-004), with events surfaced through the existing NFR-O-6 structured logs /
+  CORE-001 health surface (no new observability subsystem). REFERENCE-not-re-own
+  throughout: KNOWLEDGE-008 owns artist facts (≠ topics), PROGRAMMING-007 REQ-PC-006 owns
+  theme-generator CATEGORIES (the bank stores INSTANCES), and the anti-appeal rails
+  (REQ-OF-004 / NFR-O-7) + the measured-change bounds (REQ-OD-006) are inherited, never
+  re-owned. Coordination: ORCH-005 REQ-RW-002 adds a thin topic-freshness SENSOR slice
+  (ORCH owns the sensor add; OPS-004 owns this store). No new datastore, no Liquidsoap
+  change, brain-only. Net: +5 REQ (OX-001..005), +0 NFR. Total: 78 REQ + 11 NFR = 89,
+  1:1 REQ↔AC preserved.
+- 2026-06-22 (v0.6.0): Two owner-plan refinements relayed during authoring (confirm with
+  user — R-O-27/R-O-28). (1) PER-PERSONA/PER-SHOW TOPIC-BANK SCOPING. The topic-bank
+  (Group OX) is no longer only station-global: each SHOW and its HOST persona self-manages
+  its OWN persona-scoped slice of the bank. NEW REQ-OX-006: topic entries carry a
+  persona/show key, theme invention (REQ-OC-002) applies that host's persona + show
+  identity to generate topics into that slice, and the anti-repetition avoid-list
+  (REQ-OX-002 / REQ-OC-006) operates PER-PERSONA (a topic fresh for one host may be fresh
+  for another). REQ-OX-001 amended (topic record carries the persona/show key, 'station'
+  for global), REQ-OX-002 amended (avoid-list is per-persona scope), REQ-OX-003 amended
+  (freshness/rotation within the persona/show scope). It remains a VIEW over the one
+  REQ-OD-007 ledger (the persona/show key is a field on the topic events, not a new store);
+  persona definitions are owned by PROGRAMMING-007 (referenced, not re-owned). This serves
+  the confirmed per-persona distinct-taste / no-two-hosts-converge curation direction. (2)
+  HARD DATA-vs-CODE EDITORIAL-WRITE-ONLY RAIL. NEW REQ-OD-009 [HARD] (Unwanted): the
+  autonomous operator's editorial self-expansion — topic banks (Group OX), the
+  ledger/diary threads (REQ-OD-007/008), intent cards, the voice-card EVOLVABLE layer,
+  taste/persona profiles — writes ONLY to persisted DATA stores; it MUST NOT edit source
+  code or critical runtime config during normal operation. This is the FROZEN-zone
+  discipline (design-system constitution Section 2 + Frozen Guard Layer 1) applied to the
+  running station: the brain evolves its editorial surface, never the machinery that keeps
+  it on air. It REFERENCES the design-system FROZEN zone + the per-persona Frozen Guard
+  (PROGRAMMING-007 Group PI, being added in parallel) — does not re-own them — and ties to
+  the measured-change rails REQ-OD-006 (OD-006 bounds HOW FAST editorial DATA changes;
+  OD-009 bounds WHAT it may write to — data only, never code). ORCH-005 restates this as an
+  action-surface constraint (REQ-RA-004, not a fork). No new datastore, no Liquidsoap
+  change, brain-only. Net: +2 REQ (OX-006, OD-009), +0 NFR. Total: 80 REQ + 11 NFR = 91,
+  1:1 REQ↔AC preserved.
+- 2026-06-22 (v0.7.0): One consolidated pass adding TWO independent capabilities from two
+  verified design dossiers — the station-management layer the autonomous program director
+  was missing. (1) NEW Group OY — Segment-Type Registry & Per-Segment Production Pipeline
+  (REQ-OY-001..007). The structural TWIN of Group OX: where OX persists WHAT to talk about
+  (theme/segment INSTANCES), the registry persists HOW the talk is structured (segment-TYPE
+  DEFINITIONS). It is the durable inventory that REQ-OB-004's ephemeral segment-roster
+  authority was missing — implemented [HARD] as a segment-type-specific VIEW over the EXISTING
+  REQ-OD-007 append-only ledger (event types `segment_type_created` / `_extended` /
+  `_rewritten` / `_retired` / `_aired`, idempotent IDs), NOT a forked store, exactly mirroring
+  REQ-OX-001. Per-type definition record: normalized type identity, kind discriminator
+  (TALK-LONG vs SHORT-FORM pointer to IMAGING-010/OE furniture), daypart/persona fit, and
+  RECIPE POINTERS (research→KNOWLEDGE-008 KR + OPS-004 OC; write→PROGRAMMING-007 PC/PS/PV;
+  fact-check-LEVEL; assemble→VOICE-002 / IMAGING-010 IP/IH; schedule→ORCH-005 RA / OPS-004 OA).
+  Five starter formats seed it (deep_dive, news_analysis, story, listener_mailbag,
+  music_essay). The brain may add/extend/rewrite/retire types bounded by REQ-OD-006
+  measured-change (extending OD-006's named "recurring-segment roster" coverage) and the
+  FROZEN/EVOLVABLE split (REQ-OY-003) that protects the fact contract + never-ship-a-FAIL gate
+  + the news-anchor factual stance. The PER-SEGMENT PRODUCTION PIPELINE (REQ-OY-005) is a
+  first-class flow research→write→FACT-CHECK gate→assemble→schedule, pure composition
+  REFERENCING each owning SPEC (KNOWLEDGE-008 KS-006 consensus + KF-003 freshness +
+  PROGRAMMING-007 PG-005 two-tier gate as the fact-check gate; news_analysis/music_essay =
+  high bar, story/mailbag = persona-truth not fact), off the playout path, never-ship-a-FAIL
+  (REQ-OY-006). (2) EXTEND Group OB + refine Groups OA/OD — Host/Show Lifecycle, Always-Staffed,
+  Schedule-Grid CRUD, and a Rarity Tier. NEW REQ-OB-010..014: a persona/show lifecycle FSM
+  (active→retiring→retired, created→active; show live→discontinued→relaunched) as append-only
+  ledger events with a required documented editorial reason (canary rejects a reasonless
+  transition); charter/PI-card/taste-profile ARCHIVED not deleted (REQ-OD-009 data-only);
+  launch = the PROGRAMMING-007 REQ-PR-008 growth gate + a full REQ-PI-001 identity contract +
+  REQ-PI-004 distinctness canary BEFORE first air within REQ-OB-003 host caps + voice-pool size.
+  [HARD] REQ-OB-013 VOICE-RETIREMENT/QUARANTINE: a retired persona's frozen 1:1 voice
+  (PROGRAMMING-007 REQ-PI-001/PR-003) is QUARANTINED — never re-bound to a DIFFERENT identity;
+  re-issuable only as a brand-new persona after a long Tier-1 rarity cooldown; launch draws a
+  NEW unused voice, and if the pool is exhausted launch is REJECTED (continuity wins, no reuse).
+  [HARD] REQ-OB-014 ALWAYS-STAFFED INVARIANT: a lifecycle transition is an atomic TRANSACTION
+  that MUST NOT COMMIT unless, at commit, every slot the departing persona hosted is already
+  (re)bound to a present eligible successor OR the successor show/host is pre-staged — no
+  intermediate state may reference a departed persona on a scheduled block (models CORE-001
+  REQ-E-003 atomic-publish; generalizes REQ-B-002/003 no-gap from TIME-coverage to
+  HOST-availability). NEW REQ-OA-015 SCHEDULE-GRID CRUD: surfaces the PD grid operations
+  ADD/REMOVE/MOVE slot (mapping to CORE-001 REQ-B-003) PLUS a first-class ASSIGN/REASSIGN-
+  persona-to-slot operation, dispatched through ORCH-005 REQ-RA-001(g) into CORE-001 REQ-B-003
+  (reference, don't fork the schedule store). NEW [HARD] REQ-OD-010 RARITY TIER: partitions
+  REQ-OD-006's single change budget into ordered tiers where identity/existence changes
+  (retire/launch/show-discontinue/voice-swap) are the RAREST tier — tightest cap + longest
+  cooldown, strictly below the evolvable-drift budget — on a "consistency is a listener
+  obligation" rationale; logged + canaried. News anchor EXEMPT (PROGRAMMING-007 REQ-PI-005)
+  from all lifecycle/staffing machinery. Both groups remain ledger VIEWs over REQ-OD-007, NO
+  new store, NO playout/Liquidsoap change. Coordination notes (authored in OTHER passes, NOT
+  here, referenced only): the PROGRAMMING-007 REQ-PR-004 track-level anti-convergence
+  refinement, the ORCH-005 REQ-RA lifecycle-action + unified-dedup clarification, and any
+  CORE-001 assign-op REQ. Net: +14 REQ (OA-015, OB-010..014, OD-010, OY-001..007), +0 NFR.
+  Total: 94 REQ + 11 NFR = 105, 1:1 REQ↔AC preserved.
+- 2026-06-22 (v0.8.0): Dedup-design bug fix in REQ-OX-006 / AC-OX-006 (relayed during the
+  unified-dedup design pass — confirm with user; R-O-31). The v0.6.0 per-persona scoping wording
+  treated a topic aired by host A as simply FRESH for host B ("a topic recently aired by one host
+  may be fresh for another"), which PERMITTED host B re-airing host A's EXACT topic wholesale —
+  cross-host copying, the OPPOSITE of the owner's per-persona distinct-taste intent ("we won't
+  have two different hosts discuss the same topics exactly"). Fix: INVERT the cross-persona
+  default. Per-persona scoping is KEPT (a topic on A's own recent history is on A's own avoid-list
+  by own-history recency), but [HARD] a topic recently aired by a DIFFERENT persona is NOT simply
+  "fresh" for another host — host B may NOT re-air it as a fresh wholesale exact topic; B may only
+  make an ATTRIBUTED, ADDITIVE, own-voice LIGHT reference to it (depth director-gated), which is
+  the cross-surface reference-vs-duplication rule owned by ORCH-005 unified-dedup (REQ-RW-006 +
+  its reference rule, being added in parallel). OX-006 owns the PER-TOPIC cross-persona default in
+  the topic-bank and DEFERS to that ORCH-005 rule as the cross-surface owner (reference, not fork).
+  Amended REQ-OX-006 (third bullet inverted + a new [HARD] cross-persona-default bullet), REQ-OX-002
+  (avoid-list clause: another persona's recent topic is reference-only, not re-airable wholesale),
+  the "Persona/show key" glossary term (cross-persona default added), and AC-OX-006 + Scenario 15
+  to match. No new datastore, no Liquidsoap change, brain-only; it remains a VIEW over the one
+  REQ-OD-007 ledger. Net: +0 REQ, +0 NFR (wording correction only). Total: 94 REQ + 11 NFR = 105,
+  1:1 REQ↔AC preserved.
+- 2026-06-22 (v0.9.0): Off-schedule playout-variety extension from a verified design dossier
+  (confirm with user; R-O-32). One new compound requirement REQ-OA-003d positioned right after
+  REQ-OA-003c, authored as an extension of the explicitly-extensible REQ-OA-003 soft-separation
+  scoring layer (the dossier confirmed OA-003 is the SOFT scoring home and that the new variety
+  layers belong with the OA-003 separation family). It adds three coupled obligations, all SOFT
+  and strictly subordinate to the HARD rails, running ONLY on the already-legal candidate set the
+  hard rails (REQ-OA-003a no-repeat/artist, REQ-OA-003c artist-frequency) produce: (1) GENRE-FAMILY
+  BALANCE [SOFT] - over a rolling window (~30-40 recent aired+committed tracks, reusing the existing
+  recent deque, no new store) it down-weights (NEVER bans) over-represented genre families via a
+  penalty term added to the existing LRP pick score (composite = LRP_rank + penalty_lambda *
+  max(0, window_share(family) - target_ceiling); pick min), deterministic, no RNG; tracks map to
+  coarse GENRE-FAMILIES via a new static `genre_family_map` (the ONLY new artifact - tags are noisy,
+  so families not tags); optional soft floor min_distinct_families_per_window. (2) SMOOTH ADJACENCY
+  [SOFT] - on the same legal set, an energy/harmonic-distance penalty vs the just-aired track
+  (reusing ANALYSIS-006 `library.adjacency()` - BPM+/-tol + Camelot-compatible, which already
+  WITHHOLDS the harmonic filter on low-confidence keys per REQ-AT-007) so jarring jumps (funk to
+  black metal) score worse than gradual flow; a SOFT scoring term NOT a hard rail (REQ-OA-006/OA-014
+  already DELEGATE the segue decision to the AI; library.adjacency is query primitives only).
+  BOUNDARY EXCEPTION: the adjacency penalty is SUSPENDED at a deliberate boundary - daypart boundary
+  (REQ-OA-005), format-clock category-slot change (REQ-OA-002), or top-of-hour - where a reset is
+  intentional. (3) [HARD] SCHEDULED-CURATED-SHOW EXEMPTION - WHEN a scheduled show/episode is active
+  (REQ-OB-006 association show_or_episode_id != 'unscheduled'), NEITHER variety layer applies; a
+  curated show legitimately holds a consistent style up to a deliberate single-genre night. This is
+  MANDATORY, not a convenience: applying any taste/coherence/anti-genre-drift check inside a curated
+  block would VIOLATE CORE-001 REQ-D-002 [HARD] + OPS-004 AC-OA-004. ELEGANCE: the exemption
+  predicate IS the activation predicate - one OB-006 `unscheduled` check turns variety ON
+  off-schedule and OFF for scheduled (one gate, one system). The picker takes an `is_unscheduled`
+  flag (default True) so the guard is wired from day one; until the show-association seam (REQ-OB-006
+  / Group OB lifecycle) is coded, all playout is unscheduled so the rule applies unconditionally
+  (self-correcting). All thresholds (genre_family_map, balance_window, target_ceiling,
+  penalty_lambda, adjacency_lambda, min_distinct_families_per_window) are TUNABLE/AI-evolvable per
+  the REQ-OA-004 config pattern; both soft layers degrade via the REQ-OA-003b empty-legal-set
+  relaxation (play one + LOG, continuity wins REQ-OA-008) and every relaxation is logged (AC-OA-003
+  traceability). Composition is clean by AXIS: track no-repeat (REQ-OA-003a) operates on TRACK
+  IDENTITY (the soft layers run strictly after it, only re-ranking survivors); PROGRAMMING-007
+  track anti-convergence (REQ-PR-004/PR-009) operates on TRACK IDs and is SHOW/persona-scoped while
+  the host-less path has no anti-convergence slot (mutually exclusive by lane); ORCH-005 REQ-RW-006
+  unified-dedup is an OPTIONAL slow-planning-tick read-side consumer, NOT on the <1s hot path; the
+  [[dj-mixing]] crossfade/beatmatch is the downstream TRANSITION/render layer this SELECTION layer
+  feeds; dayparting/format-clock (REQ-OA-005/OA-002) set the vibe envelope first, then the soft
+  layers spread families and order flow WITHIN it. Reference-not-re-own throughout: CORE-001
+  REQ-B-006/REQ-D-002, ANALYSIS-006 library.adjacency/REQ-AT-007 + genre/energy/bpm/camelot features,
+  PROGRAMMING-007 PR-004/PR-009, ORCH-005 RW-006, the [[dj-mixing]] transition layer. No new store,
+  no playout/Liquidsoap change, brain-only (the one new artifact is the `genre_family_map` data
+  table; code lands in the existing pick path). Net: +1 REQ (OA-003d), +0 NFR. Total: 95 REQ +
+  11 NFR = 106, 1:1 REQ↔AC preserved.
+- 2026-06-23 (v0.9.1): Audit convergence fixes (no requirement added/removed; 95 REQ + 11 NFR =
+  106, 1:1 REQ↔AC preserved). Cross-spec ownership: REQ-OA-011(b)/REQ-OA-012 reworded to CONSUME
+  SPEC-RADIO-ANALYSIS-006's produced audio-analysis features (bpm/camelot/key/energy/cues) rather
+  than re-specifying the librosa/aubio/essentia extraction toolchain ANALYSIS-006 [HARD]-OWNS —
+  OPS-004 keeps ownership only of tag-correction/reconciliation + the queryable catalog RECORD;
+  the "closes the former BPM/key analysis gap" phrasing was removed. REQ-OA-010 disambiguated:
+  it corrects the catalog/DB RECORD only — any on-file tag/artwork WRITE is owned by and routed
+  through SPEC-RADIO-TAGSTREAM-009 (Group TW), referenced not forked. Internal consistency: the
+  Group OA / Group OB "Priority: High." header lines softened to "Priority: mostly High; see the
+  Section 18 index for per-REQ" (they over-claimed against the index's per-REQ Medium entries);
+  REQ-OA-003d stays Medium in the index, its [HARD] CORE-protecting exemption clause stands as
+  written (minimal churn). EARS relabels (label-only, requirement text unchanged): bare
+  unconditional "shall not" prohibitions OC-005/OC-006/OE-009/OE-010/OF-002/OF-004/OF-005/OG-005/
+  OB-013/OY-006 relabeled Unwanted→Ubiquitous in the Section 18 index; REQ-OB-014 and REQ-OD-009
+  recast to name "the system" as the subject (OB-014 in explicit If/then Unwanted form), keeping
+  their Unwanted label.
 
 ---
 
@@ -298,7 +492,10 @@ seams/scheduling they will attach to. Full design notes are in the Section 17 ro
 | **Daypart** | A time-of-day block (e.g. Morning Drive / Midday / Afternoon Drive / Evening / Overnight) anchored to LOCAL Faroe time (REQ-OA-009), with its own clock set, persona register, and energy curve that the AI authors. |
 | **Daypart mandate** | The STRUCTURAL rail of a daypart ONLY: that the daypart exists and where its boundary sits on the local clock (REQ-OA-009). It is NOT a fixed energy/tone/creative prescription — the energy curve, persona register, and content within a daypart are entirely the AI's creative call (REQ-OA-005). "Mandate" = the boundary/existence rail, not a content rule. |
 | **Rotation category** | A track's life-cycle class (Power Current / Secondary Current up-or-down / Power Recurrent / Secondary Recurrent / Gold-Stay) governing how heavily it rotates. |
-| **Separation rules** | Anti-repetition constraints: hard same-track no-repeat + artist spacing; soft tempo/energy/vocalist-gender/era/sound-code spacing. |
+| **Separation rules** | Anti-repetition constraints: hard same-track no-repeat + artist spacing; soft tempo/energy/vocalist-gender/era/sound-code spacing; and (off-schedule only) soft genre-family balance + smooth adjacency (REQ-OA-003d). |
+| **Genre-family** | A COARSE umbrella class grouping noisy raw genre/sub-genre tags into a small, stable set (e.g. funk/soul/disco → soul-funk; house/techno/trance → electronic-dance; black/death-metal/hardcore → extreme-metal), defined by the static `genre_family_map`. The UNIT the off-schedule genre-balance dimension (REQ-OA-003d) rotates over — families, not raw tags, because multi-source acquisition tags are unreliable. The map is TUNABLE/AI-evolvable and is the only new data artifact REQ-OA-003d introduces. |
+| **Off-schedule / unscheduled lane** | The host-less playout surface active when no scheduled show/episode is running (REQ-OB-006 association `show_or_episode_id == 'unscheduled'`). This is the persona-less default path that CORE-001 REQ-D-002's no-coherence rule does NOT govern, so the soft playout-variety layers (REQ-OA-003d genre-family balance + smooth adjacency) apply HERE and only here; inside a curated/scheduled block they are exempt. The `is_unscheduled` activation flag (default True) gates them; the exemption predicate is the activation predicate. |
+| **Smooth adjacency** | An off-schedule SOFT scoring term (REQ-OA-003d) penalizing energy/harmonic distance between a candidate and the just-aired track (via ANALYSIS-006 `library.adjacency()`: BPM±tol + Camelot-compatible, withholding the harmonic filter on low-confidence keys per REQ-AT-007) so gradual flow outscores jarring jumps. It biases SELECTION (which track to hand the mixer), distinct from the downstream TRANSITION/render layer ([[dj-mixing]] crossfade/beatmatch + `radio.liq`). Suspended at deliberate boundaries (daypart REQ-OA-005, format-clock slot change REQ-OA-002, top-of-hour). |
 | **Persona register** | A presentation mode the AI switches between by daypart/show: CHR-hype, curatorial-connoisseur, or continuous-mix. |
 | **Show-prep / research** | An occasional richer LLM call WITH web search (Claude Agent SDK web tools) that produces a show plan: tracklist + per-segment talking points / facts / context. |
 | **Quick-curation** | The frequent, cheap LLM call with a minimal prompt and tools OFF that picks the next track(s) or next imaging type. |
@@ -315,11 +512,29 @@ seams/scheduling they will attach to. Full design notes are in the Section 17 ro
 | **`kind`** | The brain's `NextItem` discriminator; CORE-001 ships `music`/`talk`; OPS adds `imaging` and `news`. |
 | **Two LLM modes** | (A) cheap quick-curation, minimal prompt, tools OFF, batched; (B) richer show-prep/research/news, web tools ON, occasional. |
 | **Catalog** | The accurate, queryable library record per track: artist/title/album + genre, mood, BPM, key, energy, year, rotation category, and play history; the foundation the program director curates genre nights and DJ-sets from. |
-| **Enrichment** | Correcting/normalizing tags and adding genre/mood/BPM/key/energy/year via embedded tags, audio analysis, and external metadata or LLM knowledge. |
+| **Enrichment** | Correcting/normalizing tags and adding genre/mood/BPM/key/energy/year via embedded tags, the audio-analysis features PRODUCED BY ANALYSIS-006 (consumed — ANALYSIS-006 owns the bpm/camelot/key/energy extraction; OPS-004 does not re-run it), and external metadata or LLM knowledge. OPS-004 owns the tag-correction/reconciliation + catalog RECORD only. |
 | **Measured self-change** | The discipline that identity-affecting evolution (playbook rules acted on, format defaults, personas, segment roster) is gradual, rate-limited, cooldown-gated, and canary-checked so the station's identity stays consistent while still improving. |
 | **Library housekeeping** | Organizing/sorting imported files into a clean managed folder structure (e.g. by artist/album or genre) instead of slskd's raw download dirs. |
 | **Disk-space management** | Monitoring free disk and never running out — capping library size and/or evicting least-valuable tracks (least-played, lower-quality duplicates) when low. |
 | **Bandcamp hook** | A user-facing "buy this" recommendation channel (notification/webhook/log/push, TBD) that recommends the human PURCHASE music the AI cannot obtain via slskd/yt-dlp; never an autonomous purchase. |
+| **Topic-bank** | The station's persisted, queryable inventory of editorial THEME/SEGMENT INSTANCES it has discovered and aired — the thematic peer to the music library (Group OH) and the imaging clip library (Group OE). It records per topic a normalized identity, generator-category, when it aired, how often, how fresh, its rotation state, where it was discovered, and editorial tags. Implemented as a topic-specific VIEW over the REQ-OD-007 append-only ledger (event types `topic_discovered` / `topic_aired` / `topic_refreshed` / `topic_skipped`), NOT a separate datastore. |
+| **Topic identity** | The normalized key that identifies a topic in the bank (a slug and/or a semantic key), analogous to the music `normalize_key` (REQ-OA-010) and the news `story_id` (ORCH-005 REQ-RN-002), so the same theme phrased two ways (e.g. "1970s Brazil" / "Brazilian 70s") counts once for anti-repetition. The normalization method is TUNABLE; that identity is normalized (not raw free text) is the rail. |
+| **Topic-discovery refresh** | A bounded, self-scheduled job (modeled on the acquisition cadence REQ-OH-006) that replenishes the topic-bank from calendar/anniversary/seasonal opportunities and KNOWLEDGE-008 artist/release facts, so the pool of things-to-talk-about keeps growing without re-owning KNOWLEDGE-008's research (Group KR) or freshness (Group KF). |
+| **Generator-category** | A theme-generator CATEGORY owned by PROGRAMMING-007 REQ-PC-006 (the kinds of theme the AI rotates through). The topic-bank stores theme INSTANCES tagged with their generator-category; it does NOT own the category taxonomy. |
+| **Persona/show key** | The topic-bank field (REQ-OX-006) tagging each topic with the owning show/host persona, or `station` for station-global topics, so each host self-manages its own topical slice (anti-repetition + freshness run per-persona on OWN history). A FIELD on the topic events, not a second store. [HARD] Cross-persona default: a topic recently aired by a DIFFERENT persona is NOT re-airable wholesale by another host — it is reference-only (attributed, additive, own-voice light callback), per the ORCH-005 unified-dedup reference-vs-duplication rule (REQ-RW-006) that OX-006 defers to. Persona definitions are owned by PROGRAMMING-007 (referenced); the cross-surface dedup rule is owned by ORCH-005 (referenced). |
+| **Editorial self-expansion** | The autonomous operator's normal-operation self-writes to its editorial data: topic banks, ledger/diary threads, intent cards, the voice-card EVOLVABLE layer, taste/persona profiles. REQ-OD-009 [HARD] confines these to persisted DATA stores — never source code or critical runtime config (the FROZEN-zone discipline applied to the running station). |
+| **Segment-type registry** | The station's persisted, queryable inventory of editorial segment-TYPE DEFINITIONS (named formats as first-class records the brain may add/extend/rewrite/retire) — the structural TWIN of the topic-bank (Group OX): OX persists WHAT to talk about (theme INSTANCES), the registry persists HOW the talk is structured (segment TYPES). It is the durable inventory that REQ-OB-004's ephemeral segment-roster authority was missing. Implemented as a segment-type-specific VIEW over the REQ-OD-007 append-only ledger (event types `segment_type_created` / `segment_type_extended` / `segment_type_rewritten` / `segment_type_retired` / `segment_type_aired`), NOT a separate datastore. |
+| **Segment type** | A named editorial FORMAT DEFINITION in the registry (e.g. deep_dive, news_analysis, story, listener_mailbag, music_essay), carrying a normalized type identity, a kind discriminator, daypart/persona fit, recipe pointers, rotation/freshness state, and editorial tags. The registry stores the DEFINITION + pointers; the editorial CONTENT behind each pointer is owned by PROGRAMMING-007 (REQ-PC-008 seam). |
+| **Kind discriminator** | The segment type's record field distinguishing TALK-LONG (an editorial talk body over music) from SHORT-FORM (a pointer to existing IMAGING-010 / OPS-004 Group OE audio furniture — station ID, show open/close, idents). Short-form types are stored as POINTERS only; the registry never re-owns the imaging taxonomy. |
+| **Recipe pointer** | A registry field that REFERENCES (never inlines) the owning capability for one production stage of a segment type: research-recipe → KNOWLEDGE-008 Group KR + OPS-004 Group OC; write-recipe → PROGRAMMING-007 Group PC/PS/PV; fact-check-LEVEL → which gate intensity (REQ-PG-005); assemble-recipe → VOICE-002 TTS or IMAGING-010 Group IH/IP; schedule-recipe → ORCH-005 Group RA + OPS-004 Group OA. |
+| **Per-segment production pipeline** | The first-class flow that turns "produce a {type} on X" into a ledger-traceable production: RESEARCH → WRITE → FACT-CHECK (gate) → ASSEMBLE → SCHEDULE, each stage referencing its owning SPEC. Pure composition: adds no new research engine, no new gate, no new playout kind, no new store. Runs off the playout path; the director chooses WHEN to air the ready segment. |
+| **Fact-check gate** | The explicit pre-air production stage (REQ-OY-005 stage c / REQ-OY-006) that runs the PROGRAMMING-007 REQ-PG-005 two-tier gate (deterministic forbidden-fact scan + adversarial self-check) backed by KNOWLEDGE-008 REQ-KS-006 consensus / KF-003 freshness / KI-001 grounding feed. On FAIL → regenerate once → on second FAIL → SKIP the segment (talk less; never ship a wrong fact). Re-owns nothing; invokes the existing gate. |
+| **Fact-check level** | A per-type registry field selecting gate intensity. news_analysis / music_essay / deep_dive = FULL (high factual density, strict consensus + two-tier gate + news-cycle freshness for news_analysis); story / listener_mailbag = persona-truth / quoted-untrusted-input (the host's OWN factual assertions are still fully gated; perceptual/opinion lines and attributed listener text pass through). All levels are never-ship-a-FAIL. |
+| **Persona/show lifecycle** | The first-class existence-state FSM for CURATOR personas and shows (news anchor exempt, REQ-PI-005): persona active→retiring→retired and created→active; show live→discontinued→relaunched. All transitions are append-only REQ-OD-007 ledger events (`persona_retiring` / `persona_retired` / `persona_launched` / `show_discontinued` / `show_relaunched`). Retirement requires a documented editorial reason (canary rejects a reasonless one); archived charter/PI-card/taste-profile are kept, never deleted (REQ-OD-009 data-only). |
+| **Always-staffed invariant** | The [HARD] rail (REQ-OB-014) generalizing CORE-001's no-gap TIME-coverage property to a HOST-availability property that holds atomically across a lifecycle transition: no scheduled block may ever name a retired/absent curator persona, and a transition is a TRANSACTION that does not commit unless every orphaned slot is already (re)bound to a present eligible successor (or the successor is pre-staged). If none can be bound, the transition is REJECTED and the persona stays on air (continuity wins). |
+| **Voice quarantine** | The [HARD] policy (REQ-OB-013) that a retired persona's frozen 1:1 voice (PROGRAMMING-007 REQ-PI-001 / REQ-PR-003) is never re-bound to a DIFFERENT identity; it is re-issuable only as a brand-new persona after the REQ-OD-010 Tier-1 rarity cooldown. A launch always draws a NEW unused voice from the pool; if the pool is exhausted, the launch is rejected (no reuse). Protects the listener voice-recognition contract. |
+| **Rarity tier** | The [HARD] change-tiering (REQ-OD-010) partitioning REQ-OD-006's single measured-change budget into ordered tiers: Tier 1 (RAREST) = identity/existence changes (persona retire/launch, show discontinue/relaunch, voice-bearing swap) with the tightest rate cap + longest cooldown, strictly below; Tier 2 = structural (format-clock defaults, dayparting, segment roster, persona reassign); Tier 3 = evolvable drift (voice-card EVOLVABLE wording, taste-profile, register colour). Rationale: consistency is a listener obligation. |
+| **Schedule-grid CRUD** | The enumerated PD grid operations (REQ-OA-015): ADD slot/show, REMOVE slot/show, MOVE slot (re-time) — mapping to CORE-001 REQ-B-003 insert/replace/move-show — PLUS the first-class ASSIGN / REASSIGN-persona-to-slot operation. Dispatched through ORCH-005 REQ-RA-001(g) into CORE-001 REQ-B-003 (reference, never fork the schedule store); edits take effect for FUTURE blocks without interrupting the current stream and preserve the no-gap + always-staffed invariants. |
 
 ---
 
@@ -329,16 +544,24 @@ seams/scheduling they will attach to. Full design notes are in the Section 17 ro
 
 - **Group OA — Program Director & 24h Scheduling.** Autonomous schedule planning,
   format clock/wheel, rotation categories, separation solver (incl. artist-frequency
-  limits), dayparting, talk↔music balance, imaging cadence direction, editorial run-mode
-  selection, context-aware transition/mixing style, never-single-point-of-silence above
-  the inherited failover.
+  limits AND an off-schedule SOFT genre-family-balance + smooth-adjacency variety layer
+  with a [HARD] scheduled-curated-show exemption, REQ-OA-003d), dayparting, talk↔music
+  balance, imaging cadence direction, editorial run-mode selection, context-aware
+  transition/mixing style, an enumerated SCHEDULE-GRID CRUD set (add/remove/move slot +
+  assign/reassign-persona-to-slot, REQ-OA-015) dispatched through ORCH-005 into the
+  CORE-001 schedule store, never-single-point-of-silence above the inherited failover.
 - **Group OB — Shows & Host Personas.** Themed shows, hosts with character, show
   construction, persona-register switching, named recurring segments, a persisted
   timestamped play-history rendered on the website (per-show tracklists + unscheduled
-  timeline), AI-authored show descriptions on the website schedule, and a listener
-  contact/feedback channel feeding the listener-signals contract. Builds on CORE-001
-  self-staffing + now-playing/play-log + self-served website + listener-signals contract
-  (REQ-D-008), and VOICE-002 personas.
+  timeline), AI-authored show descriptions on the website schedule, a listener
+  contact/feedback channel feeding the listener-signals contract, and a PERSONA/SHOW
+  LIFECYCLE (REQ-OB-010..014): retire/launch personas + discontinue/relaunch shows as
+  append-only ledger events with a documented editorial reason, an [HARD] ALWAYS-STAFFED
+  transaction invariant (no scheduled block ever names a departed persona), and a [HARD]
+  voice-quarantine policy (a retired persona's frozen 1:1 voice is never re-bound to a
+  different identity). Builds on CORE-001 self-staffing + now-playing/play-log + self-served
+  website + listener-signals contract (REQ-D-008), and VOICE-002 personas; news anchor is
+  exempt (PROGRAMMING-007 REQ-PI-005).
 - **Group OC — Research-Driven Show Prep.** Invent themes; two LLM modes; web-research
   into tracklist + banter/facts; musical/cultural/historical depth; anti-hallucination.
 - **Group OC — Research-Driven Show Prep.** (above) plus no-self-imitation (recent
@@ -346,7 +569,9 @@ seams/scheduling they will attach to. Full design notes are in the Section 17 ro
 - **Group OD — Self-Learning Radio-Craft Playbook.** Persistent knowledge base
   (radio craft + music history + cultural/societal context + newscasting craft) backed
   by an append-only event ledger + director diary; plan-time seeding; runtime
-  refinement loop applied to programming.
+  refinement loop applied to programming; plus a [HARD] RARITY TIER (REQ-OD-010)
+  partitioning the measured-change budget so identity/existence changes (persona/show
+  lifecycle) are the rarest change tier.
 - **Group OE — Self-Produced Imaging & Jingles.** The 6-stage pipeline, taxonomy,
   cadence, offline ducking, loudness-matching, anti-overproduction, clip library,
   pull insertion, layered bed sourcing + license gate, and a pre-stocked ready buffer
@@ -362,6 +587,39 @@ seams/scheduling they will attach to. Full design notes are in the Section 17 ro
   structure, disk-space management (never run out), acquisition accounting + bounded
   download queue, Bandcamp purchase-recommendation hook. Extends CORE-001's library &
   acquisition group.
+- **Group OX — Topic-Bank Inventory.** A persisted, queryable TOPIC-BANK of editorial
+  theme/segment instances (normalized topic identity, persona/show key, generator-category,
+  aired_at, use-count, freshness/recency, rotation state, discovery source, editorial tags),
+  implemented as a topic-specific VIEW over the existing append-only ledger (REQ-OD-007)
+  — NOT a forked store — consumed by theme invention (REQ-OC-002) as an anti-repetition
+  avoid-list (extends REQ-OC-006) and as a freshness/rotation source, scoped BOTH
+  station-globally AND per-persona/per-show (REQ-OX-006) so distinct hosts keep distinct
+  topical fingerprints. An INVENTORY peer to the music library (Group OH) and imaging
+  (Group OE). References KNOWLEDGE-008 (facts, not topics) and PROGRAMMING-007 REQ-PC-006
+  (generator categories, not instances) + PROGRAMMING-007 persona definitions; never
+  re-owns them.
+- **Group OY — Segment-Type Registry & Per-Segment Production Pipeline.** A persisted,
+  queryable SEGMENT-TYPE REGISTRY of editorial FORMAT DEFINITIONS (normalized type identity,
+  kind discriminator, daypart/persona fit, recipe pointers, rotation/freshness state,
+  editorial tags), implemented as a segment-type-specific VIEW over the existing append-only
+  ledger (REQ-OD-007, event types `segment_type_created` / `_extended` / `_rewritten` /
+  `_retired` / `_aired`) — NOT a forked store — the structural TWIN of Group OX and the durable
+  inventory that REQ-OB-004's ephemeral segment-roster authority was missing. The brain may
+  add/extend/rewrite/retire types bounded by REQ-OD-006 measured-change and a FROZEN/EVOLVABLE
+  split (REQ-OY-003) that protects the fact contract + never-ship-a-FAIL gate + the
+  news-anchor factual stance. Plus the PER-SEGMENT PRODUCTION PIPELINE (REQ-OY-005): a
+  first-class flow research→write→FACT-CHECK gate→assemble→schedule, pure composition
+  REFERENCING each owning SPEC (KNOWLEDGE-008 KR/KS-006/KF-003/KI-001, PROGRAMMING-007
+  PC/PS/PV + PG-005 gate, IMAGING-010 IH/IP + OE furniture, VOICE-002 TTS, ORCH-005 RA +
+  OPS-004 OA), off the playout path, never-ship-a-FAIL. An INVENTORY peer to the music library
+  (Group OH), imaging (Group OE), and the topic-bank (Group OX). References KNOWLEDGE-008
+  (facts/consensus/freshness), PROGRAMMING-007 (write/voice/PG gate + the REQ-PC-008 content
+  seam), IMAGING-010, ORCH-005/OPS-004 (schedule), CALLIN-003 (listener feed); never re-owns
+  them.
+- Plus the **editorial data-vs-code rail** (REQ-OD-009 [HARD], in Group OD): editorial
+  self-expansion (topic banks, ledger/diary, intent cards, voice-card EVOLVABLE layer,
+  taste/persona profiles) writes to persisted DATA only — never source code or critical
+  runtime config (the FROZEN-zone discipline applied to the running station).
 - Plus **NFRs** (Section 15) and **Risks** (Section 16).
 
 ### 4.2 Out of scope (explicitly deferred)
@@ -427,7 +685,8 @@ seams/scheduling they will attach to. Full design notes are in the Section 17 ro
 
 ## 6. Requirement Group OA — Program Director & 24h Scheduling
 
-Priority: High.
+Priority: mostly High; see the Section 18 traceability index for the per-REQ priority
+(a few REQs — e.g. OA-003d / OA-006 / OA-013 / OA-014 — are Medium).
 
 ### REQ-OA-001 — Autonomous 24h programme planning (Event-driven + self-scheduled)
 
@@ -506,6 +765,82 @@ is a hard rail relaxed only under the empty-legal-set degradation (REQ-OA-003b) 
 logging.
 
 **Acceptance criteria:** see acceptance.md AC-OA-003c.
+
+### REQ-OA-003d — Off-schedule genre-family balance + smooth adjacency (State-driven) [SOFT] [documented compound] — extends the REQ-OA-003 soft scoring layer
+
+[Documented compound requirement: three tightly-coupled SOFT obligations — genre-family
+balance, smooth adjacency, and the [HARD] scheduled-show exemption that is their shared
+activation/exemption gate — kept together because they share one candidate-set scoring pass,
+one `is_unscheduled` gate, and one acceptance entry. Verified intentionally compound, mirroring
+the OA-002 / OA-011 compound pattern. The exemption clause is [HARD]; the two variety layers it
+gates are [SOFT].]
+
+This requirement EXTENDS the REQ-OA-003 soft-separation scoring layer (its explicitly-extensible
+home) with two NEW soft separation dimensions for the OFF-SCHEDULE (host-less / unscheduled)
+playout lane, and a [HARD] exemption that confines them to that lane. Both new dimensions are
+SOFT and strictly SUBORDINATE to the HARD rails: they run ONLY on the already-legal candidate set
+that REQ-OA-003a (no-repeat/artist) and REQ-OA-003c (artist-frequency) produce, they NEVER ban —
+only down-weight — and they degrade via the REQ-OA-003b empty-legal-set relaxation (play one +
+LOG; continuity wins, REQ-OA-008). Selection stays DETERMINISTIC (no RNG).
+
+(a) **Genre-family balance [SOFT].** While the current playout association is `unscheduled`
+(REQ-OB-006), when selecting the next song, the system shall apply a SOFT genre-family balance
+dimension over a rolling window of recent aired+committed tracks (reusing the EXISTING recent
+deque — no new store), down-weighting candidates whose GENRE-FAMILY share over the window exceeds
+a target ceiling, so genre families demonstrably rotate. The penalty is added to the existing
+least-recently-played pick score (composite score = LRP_rank + penalty_lambda * max(0,
+window_share(family) − target_ceiling); pick the minimum). Tracks map to coarse GENRE-FAMILIES
+via a new static `genre_family_map` (the ONLY genuinely new artifact this requirement introduces;
+raw tags are noisy across multi-source acquisition, so FAMILIES — not tags — are the unit). An
+optional soft floor `min_distinct_families_per_window` may require a minimum number of distinct
+families per window stretch. Because a saturated family's penalty only decays as it ages out of
+the rolling window, families rotate naturally and identical state yields an identical pick.
+
+(b) **Smooth adjacency [SOFT].** While the association is `unscheduled`, when selecting the next
+song, the system shall add a SOFT energy/harmonic-distance penalty between each candidate and the
+JUST-AIRED track — reusing the EXISTING ANALYSIS-006 primitive `library.adjacency()` (BPM±tolerance
++ Camelot-compatible neighbours, which already WITHHOLDS the harmonic filter when the seed key is
+low-confidence per ANALYSIS-006 REQ-AT-007 — refuse rather than blend into a clash) plus the
+per-track energy/bpm/camelot features — so back-to-back jarring jumps (funk → black metal) score
+worse than gradual flow. This penalty composes into the same composite sort key as (a). It is a
+SOFT scoring term, NOT a new hard rail: REQ-OA-006 and REQ-OA-014 already DELEGATE the
+adjacency/segue DECISION to the AI, and `library.adjacency` provides query primitives only — the
+decision and mixing policy remain OPS-004's. It biases flow; it does not mandate it. BOUNDARY
+EXCEPTION: the smooth-adjacency penalty is SUSPENDED for the one transition at a DELIBERATE
+boundary — a daypart boundary (REQ-OA-005), a format-clock song-category slot change (REQ-OA-002),
+or top-of-hour — where a larger intentional shift/reset is appropriate. (Genre-family balance (a)
+is NOT suspended at boundaries; only the adjacency term is.)
+
+(c) **[HARD] Scheduled-curated-show exemption — the activation/exemption gate.** While a scheduled
+show/episode is active (REQ-OB-006 association `show_or_episode_id != 'unscheduled'`), the system
+shall NOT apply either (a) or (b); a curated/built show legitimately holds a consistent style — up
+to and including a deliberate single-genre genre-night. [HARD] This is MANDATORY, not a
+convenience: applying any taste/coherence/anti-genre-drift check inside a curated block would
+directly VIOLATE CORE-001 REQ-D-002 [HARD] ("no taste-adherence, coherence, or anti-genre-drift
+check is applied to the persona's selections") and OPS-004 AC-OA-004 ("no taste/coherence match is
+enforced"). The two rules are COMPLEMENTARY, not conflicting: variety is REQUIRED in the
+unscheduled lane (the persona-less surface REQ-D-002 does not own) and FORBIDDEN inside a curated
+block (which REQ-D-002 governs). KEY ELEGANCE: the EXEMPTION predicate IS the ACTIVATION predicate
+— one REQ-OB-006 association check (`show_or_episode_id == 'unscheduled'`) both turns the variety
+layers ON for off-schedule and OFF for scheduled (one gate, one system, not two). [INTERIM /
+self-correcting] The picker shall accept an `is_unscheduled` flag (default True) from the caller so
+the guard is wired from day one; until the show-association seam (REQ-OB-006 + the Group OB
+lifecycle) is coded in the brain, all playout is unscheduled, so the rule applies unconditionally —
+acceptable and self-correcting once the gate exists.
+
+All thresholds — `genre_family_map`, `balance_window`, `target_ceiling`, `penalty_lambda`,
+`adjacency_lambda`, `min_distinct_families_per_window` — are TUNABLE config the AI may evolve (per
+the REQ-OA-004 pattern), and every soft-separation/relaxation decision is logged (AC-OA-003
+traceability). This requirement governs ONLY the off-schedule soft variety layer; the hard rails
+(REQ-OA-003a/REQ-OA-003c) and the empty-set fallback (REQ-OA-003b) are unchanged, and it does NOT
+re-own the transition/render layer (the [[dj-mixing]] crossfade/beatmatch and `radio.liq` operate
+ONE STEP LATER on the selected material) nor the cross-surface dedup view (ORCH-005 REQ-RW-006 is
+an OPTIONAL slow-planning-tick read-side consumer only, never on the <1s `/api/next` hot path). It
+REFERENCES — and does NOT fork — CORE-001 REQ-B-006/REQ-D-002, ANALYSIS-006 `library.adjacency` /
+REQ-AT-007 + the genre/energy/bpm/camelot features, PROGRAMMING-007 REQ-PR-004/PR-009 (the
+orthogonal show-scoped track-anti-convergence axis), and ORCH-005 REQ-RW-006.
+
+**Acceptance criteria:** see acceptance.md AC-OA-003d.
 
 ### REQ-OA-004 — Rotation categories & rotation-rate management (Event-driven)
 
@@ -589,7 +924,10 @@ metadata — fixing bad/garbled/filename-parsed tags (e.g. a typo like "Sly & th
 Familt Stone") and reconciling artist/title/album against authoritative metadata —
 so the catalog the program director reasons over is trustworthy. This EXTENDS
 SPEC-RADIO-CORE-001's library group (metadata extraction + dedup); it does not fork
-the library store.
+the library store. [Disambiguation] OA-010 corrects the catalog / DB RECORD only; it
+does NOT write corrected tags or artwork back to the audio FILES. Any on-file tag or
+artwork WRITE is owned by and routed through SPEC-RADIO-TAGSTREAM-009 (Group TW),
+referenced here, not forked — OPS-004 never writes the audio files itself.
 
 **Acceptance criteria:** see acceptance.md AC-OA-010.
 
@@ -602,26 +940,33 @@ Verified intentionally compound. The user directive marks rich library metadata 
 
 When a track is ingested or re-examined, the system shall enrich it with genre, mood,
 BPM, musical key, energy, and year, sourced from any of (a) embedded tags
-(mutagen/ffprobe), (b) audio analysis for BPM/key/energy (librosa / aubio /
-essentia-class tools), (c) external metadata APIs — the **MusicBrainz API**
-(`musicbrainz.org/doc/MusicBrainz_API`) and **TheAudioDB API**
+(mutagen/ffprobe), (b) the audio-analysis features PRODUCED BY SPEC-RADIO-ANALYSIS-006
+(bpm / camelot / key / energy / cues) — which OWNS the BPM/key/energy extraction
+toolchain; OPS-004 CONSUMES those produced features and does NOT re-specify or re-run
+the librosa/aubio/essentia extraction itself — (c) external metadata APIs — the
+**MusicBrainz API** (`musicbrainz.org/doc/MusicBrainz_API`) and **TheAudioDB API**
 (`theaudiodb.com/free_music_api`) for genre/mood/tags/year (Discogs / Last.fm
 optional) — and/or LLM knowledge, and (d) **filename parsing of the
 `%ARTIST% - %TITLE%` convention as a reliable fallback** (downloads usually follow
-that format) when tags/APIs are missing, so the AI truly knows its catalog.
-Enrichment runs off the playout path and never blocks the stream. (This delivers the
-BPM/key/energy data that R-O-9 previously deferred, enabling DJ-set adjacency
-REQ-OA-006.)
+that format) when tags/APIs are missing, so the AI truly knows its catalog. OPS-004
+owns only the tag-correction/reconciliation across these sources and the resulting
+catalog RECORD (REQ-OA-012); it does not own audio-feature extraction.
+Enrichment runs off the playout path and never blocks the stream. (The BPM/key/energy
+data consumed here is produced by ANALYSIS-006, enabling DJ-set adjacency REQ-OA-006.)
 
 **Acceptance criteria:** see acceptance.md AC-OA-011.
 
 ### REQ-OA-012 — Accurate, queryable, current catalog the PD curates from (Ubiquitous) [HARD]
 
-The system shall maintain an accurate, queryable library catalog (artist, title,
+The system shall maintain an accurate, queryable library catalog RECORD (artist, title,
 album, genre, mood, BPM, key, energy, year, rotation category, play history) that the
 program director uses to build genre nights, mood/energy arcs, and BPM-matched /
 key-compatible DJ-sets, and shall keep the catalog current as acquisition adds music
-(CORE-001 acquisition feeds it). [HARD] per the rich-library-metadata directive.
+(CORE-001 acquisition feeds it). The BPM / key (camelot) / energy fields are POPULATED
+FROM the audio-analysis features PRODUCED BY SPEC-RADIO-ANALYSIS-006 (consumed, not
+re-extracted here); OPS-004 owns the queryable catalog RECORD and the tag-correction/
+reconciliation that fills the editorial fields (genre/mood/year/rotation), not the
+audio-feature extraction. [HARD] per the rich-library-metadata directive.
 
 **Acceptance criteria:** see acceptance.md AC-OA-012.
 
@@ -657,11 +1002,40 @@ always required. Relates to the adjacency decision (REQ-OA-006).
 
 **Acceptance criteria:** see acceptance.md AC-OA-014.
 
+### REQ-OA-015 — Schedule-grid CRUD incl. assign/reassign-persona-to-slot (Event-driven) — dispatches into CORE-001 REQ-B-003
+
+When the program director plans or adjusts the schedule, the system shall expose an
+enumerated SCHEDULE-GRID CRUD operation set as first-class PD capabilities:
+- **ADD** a slot/show, **REMOVE** a slot/show, **MOVE** a slot (re-time) — mapping onto
+  CORE-001 REQ-B-003's existing runtime insert/replace/move-show primitives (extend, do
+  not fork the schedule store).
+- **ASSIGN / REASSIGN-persona-to-slot** — the first-class new operation: bind or re-bind
+  an existing curator persona to a slot, within the inherited host caps (REQ-OB-003 / CORE-001
+  REQ-B-011 ≤2 hosts/show, VOICE-002 REQ-V-D-005 Faroese ≤1) and subject to the
+  PROGRAMMING-007 REQ-PR-004 anti-convergence firewall (a reassigned persona must not collide
+  territories on its new slot).
+
+All grid operations are DISPATCHED through ORCH-005 REQ-RA-001(g) ("plan or adjust the
+schedule/shows") → REQ-RA-002 routes to OPS-004 Group OA/OB → mutates the CORE-001 REQ-B-003
+store; assignments persist via CORE-001 REQ-B-010 and are recorded as REQ-OD-007 ledger
+events. [HARD] Every edit shall PRESERVE the 24h no-gap coverage (CORE-001 REQ-B-002/003) AND
+the always-staffed host-availability invariant (REQ-OB-014), and shall take effect for FUTURE
+blocks WITHOUT interrupting the current stream (CORE-001 REQ-B-003). Grid-edit frequency is
+bounded by the rarity tiering (REQ-OD-010): routine MOVE/REASSIGN is Tier 2; an ADD/REMOVE
+that constitutes a show discontinue/relaunch escalates to Tier 1 (rarest). The website renders
+the live grid atomically (CORE-001 REQ-E-003 / REQ-OB-007) so a listener never sees a
+half-written schedule. This requirement REFERENCES, and does NOT fork, the CORE-001 schedule
+store; the ORCH-005 RA action-surface clarification and any CORE-001 assign-op requirement are
+authored in their own passes (coordination notes only here).
+
+**Acceptance criteria:** see acceptance.md AC-OA-015.
+
 ---
 
 ## 7. Requirement Group OB — Shows & Host Personas
 
-Priority: High.
+Priority: mostly High; see the Section 18 traceability index for the per-REQ priority
+(a few REQs — e.g. OB-004 / OB-005 / OB-007 / OB-008 / OB-012 — are Medium).
 
 ### REQ-OB-001 — Autonomous themed shows with character (Event-driven)
 
@@ -772,6 +1146,100 @@ in response to feedback. Untrusted-input handling (validation/sanitization of th
 body) follows CORE-001's external-input discipline.
 
 **Acceptance criteria:** see acceptance.md AC-OB-009.
+
+---
+
+### Group OB lifecycle extension — Host/Show Lifecycle + Always-Staffed (REQ-OB-010..014)
+
+These EXTEND Group OB with a first-class persona/show existence-state lifecycle. Scope:
+CURATOR personas only — the news anchor (PROGRAMMING-007 REQ-PI-005) is EXEMPT by construction
+(it is a TTS route, not a curator persona) and is touched by NONE of REQ-OB-010..014. All
+transitions are append-only events on the REQ-OD-007 ledger (no new store, no playout/Liquidsoap
+change, consistent with REQ-OD-009); the director diary (REQ-OD-008) carries the editorial
+through-line across runs/restarts. Identity/existence transitions are the RAREST change tier
+(REQ-OD-010). The host/persona/voice DEFINITIONS are owned by CORE-001 (REQ-B-009/010 creation
++ persistence) and PROGRAMMING-007 (REQ-PR/PI/PL); this extension owns only the lifecycle and
+the always-staffed/quarantine rails — it REFERENCES, never re-owns, those definitions.
+
+### REQ-OB-010 — Persona retirement lifecycle FSM (Event-driven)
+
+When the program director decides — on the measured-change cadence (REQ-OD-006, Tier 1
+REQ-OD-010), for a documented EDITORIAL reason (never for appeal/reach, mirroring the
+PROGRAMMING-007 REQ-PR-008 anti-appeal ethos) — to retire a curator persona, the system shall
+transition that persona active -> retiring -> retired, recording `persona_retiring` /
+`persona_retired` events (idempotent IDs) on the REQ-OD-007 ledger. The persona's charter
+(PROGRAMMING-007 REQ-PR-006), PI card (REQ-PI-001), and evolving taste profile (REQ-PL-004)
+shall be ARCHIVED (status=retired), NEVER deleted (REQ-OD-009 data-only), preserving
+auditability. A documented editorial reason is REQUIRED — the REQ-OD-006 canary REJECTS a
+transition lacking one. An optional graceful on-air sign-off is authored under the EXISTING
+PROGRAMMING-007 REQ-PG-006/REQ-PV-009 voice card + REQ-PG-005 quality gate (no new talk
+machinery). This mirrors the existing REQ-OB-004 segment retire pattern lifted to persona
+granularity. (Persona DEFINITIONS owned by CORE-001 REQ-B-009/010 + PROGRAMMING-007; referenced.)
+
+**Acceptance criteria:** see acceptance.md AC-OB-010.
+
+### REQ-OB-011 — Persona launch gate before first air (Event-driven)
+
+When the program director launches a new curator persona, the system shall require, BEFORE the
+persona's first air: (a) the PROGRAMMING-007 REQ-PR-008 growth gate to pass (a documented
+editorial GAP + both-axes distinctness: a free voice AND a distinct territory + REQ-PR-004
+firewall pass); (b) a full PROGRAMMING-007 REQ-PI-001 identity contract authored; and (c) the
+REQ-PI-004 distinctness canary to pass — all within the inherited host caps (REQ-OB-003 /
+CORE-001 REQ-B-011) and the available voice-pool size. The launch shall bind a NEW permanent
+voice drawn from the UNUSED voice pool (the appropriate Kokoro EN or Faroese roster per the
+PROGRAMMING-007 REQ-PR-003 separate-roster rule), bound 1:1 and immutable (REQ-PI-001/002),
+recording `persona_launched` on the REQ-OD-007 ledger; created -> active. Launch is a Tier-1
+identity change (REQ-OD-010). (The gate/identity/voice machinery is owned by PROGRAMMING-007;
+this requirement orders and REFERENCES it, never re-owns it.)
+
+**Acceptance criteria:** see acceptance.md AC-OB-011.
+
+### REQ-OB-012 — Show discontinue / relaunch lifecycle (Event-driven)
+
+When the program director discontinues a show, the system shall transition it live ->
+discontinued -> relaunched, inventing the successor show via REQ-OB-001 and restoring the clock
+cleanly via the EXISTING REQ-OB-005 override-and-restore discipline, recording
+`show_discontinued` / `show_relaunched` events on the REQ-OD-007 ledger. The schedule-grid
+mutation that places the successor in the slot routes through the schedule-grid CRUD (REQ-OA-015)
+-> ORCH-005 REQ-RA-001(g) -> CORE-001 REQ-B-003 (no new store). A discontinue/relaunch is a
+Tier-1 identity change (REQ-OD-010) and is subject to the always-staffed invariant (REQ-OB-014).
+
+**Acceptance criteria:** see acceptance.md AC-OB-012.
+
+### REQ-OB-013 — Voice-retirement / quarantine policy (Unwanted) [HARD]
+
+The system shall NOT re-bind a retired persona's frozen 1:1 voice (PROGRAMMING-007 REQ-PI-001 /
+REQ-PR-003) to any DIFFERENT identity. [HARD] The retired voiceID is QUARANTINED: it is
+re-issuable ONLY as a brand-new persona's voice, and ONLY after a long cooldown drawn from the
+REQ-OD-010 Tier-1 rarity cooldown (so a returning voice is never mistaken for the old host
+mid-cycle). A persona launch (REQ-OB-011) shall draw a NEW unused voice from the pool; if the
+voice pool is EXHAUSTED, the launch is REJECTED (no voice reuse) — continuity wins. This RESTATES
+the PROGRAMMING-007 REQ-PR-003 strict 1:1 "never reused" invariant for the lifecycle case
+(referenced, not re-owned), protecting the listener voice-recognition contract.
+
+**Acceptance criteria:** see acceptance.md AC-OB-013.
+
+### REQ-OB-014 — Always-staffed transaction invariant (Unwanted) [HARD]
+
+If a persona/show lifecycle transition (retire/quit/leave/discontinue) is requested, then the
+system shall NOT COMMIT it unless, at commit time, every slot the departing persona hosted is
+already (re)bound to a present, eligible successor host (reassign, REQ-OA-015) OR the successor
+show/host is pre-staged (relaunch, REQ-OB-012). [HARD] The system shall NOT allow any intermediate
+state in which a scheduled block references a departed/retired persona to be observable by the
+queue filler (CORE-001 REQ-B-005), the website
+(CORE-001 REQ-B-002 queryable schedule / REQ-OB-007), or playout. The transition is a single
+ATOMIC schedule swap modeled on the CORE-001 REQ-E-003 atomic-publish discipline — the
+reassignment/relaunch and the persona state change land together, and if the swap cannot
+complete with full host-availability it does not commit. [HARD] REJECTION RULE (continuity wins):
+if no eligible successor can be bound (voice pool exhausted REQ-OB-013, host caps would be
+violated, no distinct territory available), the transition is REJECTED — the persona STAYS ON AIR
+— and the rejected transition is logged to the REQ-OD-007 ledger; a hostless slot is never
+produced. This GENERALIZES CORE-001 REQ-B-002/003's 24h no-gap TIME-coverage property into a
+HOST-availability property holding atomically across the transition (the lifecycle analogue of
+REQ-OA-003b's "continuity wins"). News anchor is EXEMPT (PROGRAMMING-007 REQ-PI-005) — it is not
+a curator slot.
+
+**Acceptance criteria:** see acceptance.md AC-OB-014.
 
 ---
 
@@ -944,6 +1412,60 @@ up its own editorial through-line rather than starting cold. The diary is the AI
 continuity memory; its content is the AI's call.
 
 **Acceptance criteria:** see acceptance.md AC-OD-008.
+
+### REQ-OD-009 — Editorial self-expansion writes to DATA only, never code/config (Unwanted) [HARD]
+
+In performing its autonomous editorial SELF-EXPANSION — the topic banks (Group OX), the
+append-only ledger/diary threads (REQ-OD-007/008), intent cards, the voice-card EVOLVABLE
+layer, and taste/persona profiles — the system shall write ONLY to persisted DATA stores.
+[HARD] The system shall NOT edit source code, the Liquidsoap configuration, container/
+deployment config, or other critical runtime config during normal operation. This is the FROZEN-zone discipline
+of the design-system constitution (`.claude/rules/moai/design/constitution.md` Section 2 +
+the Frozen Guard, Layer 1) applied to the running station: the brain evolves its editorial
+SURFACE (what it says, plays, themes, and learns), never the MACHINERY that keeps it on
+air.
+
+This requirement REFERENCES rather than re-owns: the design-system FROZEN zone (Section 2)
+and the per-persona Frozen Guard (PROGRAMMING-007 Group PI, being added in parallel — the
+persona-scoped frozen-vs-evolvable boundary). It is the data-vs-code COMPLEMENT to the
+measured-change rails REQ-OD-006: OD-006 bounds HOW FAST the AI changes the editorial data
+it acts on; OD-009 bounds WHAT the self-expansion may write to — persisted data only, never
+the code or critical config. ORCH-005 REQ-RA-004 restates this as it applies to the
+orchestration action surface (referenced, not a fork). (Human-out-of-loop tooling/code
+changes by the HUMAN developer are out of scope — this rail constrains the AUTONOMOUS
+operator's normal-operation self-writes only.)
+
+**Acceptance criteria:** see acceptance.md AC-OD-009.
+
+### REQ-OD-010 — Rarity tier: identity/existence changes are the rarest change tier (State-driven) [HARD]
+
+While applying measured self-change (REQ-OD-006), the system shall PARTITION REQ-OD-006's single
+change budget into an explicit ORDERED tier set in which IDENTITY/EXISTENCE changes are the
+RAREST tier:
+- **Tier 1 (RAREST) — identity/existence:** persona retire/quit (REQ-OB-010), persona launch
+  (REQ-OB-011), show discontinue/relaunch (REQ-OB-012), voice-bearing persona swap. [HARD] The
+  TIGHTEST rate cap and the LONGEST cooldown of all tiers, STRICTLY below the evolvable-drift
+  budget. The voice-quarantine re-issue cooldown (REQ-OB-013) draws from this tier's cooldown.
+- **Tier 2 — structural:** format-clock defaults, dayparting boundaries, segment-type/segment
+  roster changes (REQ-OB-004 / Group OY REQ-OY-002), persona-to-slot REASSIGN (REQ-OA-015 that
+  moves an existing persona).
+- **Tier 3 (most frequent) — evolvable drift:** voice-card EVOLVABLE-layer wording,
+  taste-profile refinement (PROGRAMMING-007 REQ-PL-004), tic-bank/register colour — already
+  bounded by the PROGRAMMING-007 two-zone model + REQ-PI-004 canary.
+
+[HARD] An identity transition (Tier 1) is throttled HARDER than an evolvable change, making
+"enforceably rare, distinct from frequent drift" TESTABLE. The RATIONALE is explicit:
+identity-level change is the rarest tier BECAUSE CONSISTENCY IS A LISTENER OBLIGATION
+(real-world radio). The EXISTING REQ-OD-006 canary REJECTS an identity transition lacking a
+documented editorial gap (mirroring the PROGRAMMING-007 REQ-PR-008 growth gate for the launch
+direction). All tier caps/cooldowns are TUNABLE config; that Tier 1 is strictly the rarest is
+the FIXED rail. This rail sits ON TOP of the complementary PROGRAMMING-007 two-zone separation
+(REQ-PI-001 FROZEN CORE vs EVOLVABLE LAYER; REQ-PI-002/003 anchors + Frozen Guard): the PI zones
+govern WHO a persona is WHILE IT EXISTS; REQ-OD-010 governs WHETHER it exists — non-overlapping.
+It reuses REQ-OD-006's existing rate-limiter/cooldown/canary machinery (no new safety
+mechanism); no appeal/popularity input is admitted (REQ-OF-004 / NFR-O-7).
+
+**Acceptance criteria:** see acceptance.md AC-OD-010.
 
 ---
 
@@ -1286,6 +1808,324 @@ config; the stats are exposed in health/status (NFR-O-6).
 
 ---
 
+## 12b. Requirement Group OX — Topic-Bank Inventory
+
+Priority: High. The TOPIC-BANK is the editorial-theme INVENTORY peer to the music library
+(Group OH) and the imaging clip library (Group OE): a persisted, queryable pool of
+things-to-talk-about the station maintains continuously. It closes a verified gap —
+REQ-OC-002 invents themes ephemerally each planning cycle with no durable record of what
+aired, when, in which generator-category, or how recently, so anti-repetition (REQ-OC-006)
+and freshness/rotation had no inventory to draw on.
+
+[HARD] These requirements DO NOT fork a new datastore. The topic-bank is a topic-specific
+VIEW over the EXISTING append-only event ledger (REQ-OD-007), exactly mirroring how
+ORCH-005 Group RN (news ledger) and PROGRAMMING-007 REQ-PL-003 (acquisition diary) are
+VIEWs over that same substrate. They REFERENCE rather than re-own: KNOWLEDGE-008 owns
+artist/release facts (≠ topics), PROGRAMMING-007 REQ-PC-006 owns the theme-generator
+CATEGORY taxonomy (the bank stores INSTANCES), the anti-appeal rails (REQ-OF-004 /
+NFR-O-7) and the measured-change bounds (REQ-OD-006) are inherited, and the freshness
+reasoning patterns are KNOWLEDGE-008 Group KF + ORCH-005 REQ-RN-003/RN-004.
+
+Coordination note: ORCH-005 REQ-RW-002 adds a thin topic-freshness SENSOR slice so its
+world model can read topic freshness/staleness — ORCH-005 owns that sensor add; OPS-004
+owns this store (the seam is read-by-ORCH, owned-by-OPS, mirroring how ORCH reads OPS's
+ledger/diary and library stats).
+
+The topic-bank is scoped BOTH station-globally AND per-persona/per-show (REQ-OX-006): each
+show and its host persona self-manages its OWN persona-scoped slice, so a single shared
+topic pool does not homogenize the hosts (consistent with the per-persona distinct-taste,
+no-two-hosts-converge curation direction). Per-persona scoping is an additional dimension
+on the SAME ledger view, never a second store.
+
+### REQ-OX-001 — Persisted topic-bank as a view over the append-only ledger (Ubiquitous) [HARD]
+
+The system shall persist a TOPIC-BANK recording, per editorial theme/segment instance the
+AI discovers or airs, at least: a normalized topic identity (a slug and/or semantic key,
+analogous to the music `normalize_key` REQ-OA-010 and the news `story_id` ORCH-005
+REQ-RN-002), a PERSONA/SHOW key (the owning show/host, or `station` for station-global
+topics, REQ-OX-006), the generator-category it belongs to (PROGRAMMING-007 REQ-PC-006),
+`aired_at` (null until aired), a use-count, a freshness/recency marker, a rotation state,
+the discovery source, and editorial tags. [HARD] The topic-bank shall be implemented as a
+TOPIC-SPECIFIC VIEW / event-type over the EXISTING REQ-OD-007 append-only event ledger —
+recording `topic_discovered` / `topic_aired` / `topic_refreshed` / `topic_skipped` events,
+each with an idempotent ID so a replay/retry does not duplicate a topic event — and shall
+NOT fork a new datastore. The bank is the durable inventory of "what we have talked about,
+when, by which host, in which category, and how fresh it is" that theme invention
+(REQ-OX-002) and the freshness/rotation policy (REQ-OX-003) read back across cycles and
+restarts.
+
+**Acceptance criteria:** see acceptance.md AC-OX-001.
+
+### REQ-OX-002 — Theme invention persists to the bank and consults it as an avoid-list (Event-driven)
+
+When the AI invents a theme (REQ-OC-002), the system shall (a) persist the invented theme
+to the topic-bank as a `topic_discovered` (and, when aired, `topic_aired`) event tagged
+with the relevant persona/show key (REQ-OX-006; `station` when not show-scoped), and (b)
+CONSULT the topic-bank as the anti-repetition AVOID-LIST — scoped PER-PERSONA/PER-SHOW
+(REQ-OX-006): a theme on THIS host's own recent history is on this host's avoid-list, AND
+[HARD] a theme recently aired by a DIFFERENT persona is NOT re-airable wholesale by this host
+— it is reference-only (an attributed, additive, own-voice light callback), per the
+cross-persona default in REQ-OX-006 deferring to the ORCH-005 unified-dedup
+reference-vs-duplication rule (REQ-RW-006). Theme invention thus draws on a visible inventory
+of what was recently aired rather than re-generating blind, extending the no-self-imitation
+discipline (REQ-OC-006) from recent talk/scripts to recent THEMES. A lightweight topic-suitability checklist lint
+(relevance / respect / ethos-alignment) is applied at persistence as a quick pre-prep guard
+— it is a checklist, not a fork of the post-generation script gates (REQ-OF-005/006) or
+PROGRAMMING-007 Group PG. The avoid-list behavior is the rail; which fresh theme the AI then
+picks is its creative call.
+
+**Acceptance criteria:** see acceptance.md AC-OX-002.
+
+### REQ-OX-003 — Freshness / rotation policy over the topic-bank (State-driven) [HARD]
+
+While selecting a theme/segment to air, the system shall apply a FRESHNESS / ROTATION
+policy over the topic-bank — within the relevant persona/show scope where one applies
+(REQ-OX-006), else station-globally: prefer fresh (not-recently-aired) topics and
+under-used generator-categories, age out recently-aired themes, and rotate across
+generator-categories so the station does not loop the same handful of themes — mirroring
+the news-cycle discipline (ORCH-005 REQ-RN-003/RN-004). [HARD] The recency window and the
+rotation balance are TUNABLE config the AI may evolve; that recently-aired themes are NOT
+looped (a routine theme does not re-air within its recency window for that scope) is the
+FIXED rail. (No appeal/popularity ranking is applied — only freshness, recency, use-count,
+and category rotation; REQ-OF-004 / NFR-O-7.)
+
+**Acceptance criteria:** see acceptance.md AC-OX-003.
+
+### REQ-OX-004 — Topic-discovery replenishment on a bounded self-scheduled cadence (Event-driven)
+
+When a calendar / anniversary / seasonal opportunity surfaces, or a KNOWLEDGE-008
+artist/release fact surfaces a candidate theme, the system shall REPLENISH the topic-bank —
+a topic-discovery refresh job that adds candidate themes on a self-scheduled cadence,
+BOUNDED like the acquisition refresh (REQ-OH-006) so the bank grows under control rather
+than unbounded. This job REFERENCES KNOWLEDGE-008 Group KR (research jobs) for the underlying
+facts and KNOWLEDGE-008 Group KF (freshness windows) for freshness reasoning — it does NOT
+re-own research or define a new freshness framework. The cadence and the discovery bound are
+TUNABLE config.
+
+**Acceptance criteria:** see acceptance.md AC-OX-004.
+
+### REQ-OX-005 — Queryable topic-bank surfaced to the PD, show-prep, and health (Ubiquitous) [HARD]
+
+The system shall make the topic-bank QUERYABLE by category / recency / locale / persona-show
+and available as context to the program director and show-prep (extending the
+playbook-informs-programming seam REQ-OD-004), so the station's thematic inventory actually
+shapes what it plans next rather than sitting in storage. [HARD] Topic-bank events
+(`topic_discovered` / `topic_aired` / `topic_refreshed` / `topic_skipped`) shall be surfaced
+via the EXISTING structured logs / health surface (NFR-O-6 / CORE-001 health/status) — no new
+observability subsystem is added.
+
+**Acceptance criteria:** see acceptance.md AC-OX-005.
+
+### REQ-OX-006 — Per-persona / per-show topic-bank scoping (Event-driven)
+
+When the program director plans or runs a show with a host persona, the system shall let
+that SHOW and its HOST persona self-manage its OWN persona-scoped slice of the topic-bank:
+- Topic entries carry a PERSONA/SHOW KEY (REQ-OX-001), so the bank distinguishes "this
+  host's topics" from another host's and from station-global topics (keyed `station`).
+- Theme invention (REQ-OC-002) applies THAT HOST'S persona + show identity when generating
+  new topics into that slice, expanding that persona's editorial surface in its own voice
+  rather than a single homogenized station pool.
+- The anti-repetition avoid-list (REQ-OX-002 / REQ-OC-006) and the freshness/rotation
+  policy (REQ-OX-003) operate within PER-PERSONA/PER-SHOW scope: a topic this host aired
+  recently is on THIS host's own avoid-list (own-history recency).
+- [HARD] CROSS-PERSONA DEFAULT (inverted — the dedup-bug fix): a topic recently aired by a
+  DIFFERENT persona is NOT simply "fresh" for this host. Host B shall NOT re-air another
+  host's exact recent topic as a fresh, wholesale exact topic (that would be cross-host
+  copying — the opposite of the owner's "we won't have two different hosts discuss the same
+  topics exactly" intent). Host B MAY only make an ATTRIBUTED, ADDITIVE, own-voice LIGHT
+  reference to it (depth director-gated — a light callback, not a wholesale re-run), per the
+  reference-vs-duplication rule owned cross-surface by ORCH-005 unified-dedup (REQ-RW-006 +
+  its reference rule, being added in parallel). OX-006 owns the PER-TOPIC cross-persona
+  default in the topic-bank; ORCH-005 owns the cross-surface unified-dedup rule that OX-006
+  defers to. So distinct hosts keep distinct topical fingerprints (no two hosts converge,
+  and no host copies another's topic wholesale) — both via own-history recency AND the
+  cross-persona reference-only default.
+
+Station-global topics remain valid (cross-show / unscheduled, keyed `station`); per-persona
+is an ADDITIONAL scoping dimension, not a replacement. [HARD] It remains a VIEW over the one
+REQ-OD-007 ledger — the persona/show key is a FIELD on the topic events, NOT a new store.
+The host/persona DEFINITIONS are owned by PROGRAMMING-007 (referenced, not re-owned), and the
+cross-surface reference-vs-duplication rule is owned by ORCH-005 (REQ-RW-006, referenced, not
+re-owned); this requirement owns only the topic-bank's persona/show SCOPING and the per-topic
+cross-persona default. Which topics each persona generates is its creative call; that the bank
+is persona-scoped, and that another persona's recent topic is reference-only not re-airable,
+are the rails.
+
+**Acceptance criteria:** see acceptance.md AC-OX-006.
+
+---
+
+## 12c. Requirement Group OY — Segment-Type Registry & Per-Segment Production Pipeline
+
+Priority: High. The SEGMENT-TYPE REGISTRY is the structural TWIN of the topic-bank (Group OX):
+Group OX persists WHAT to talk about (theme/segment INSTANCES); the registry persists HOW the
+talk is structured (segment-TYPE DEFINITIONS). It is the durable inventory that REQ-OB-004's
+ephemeral segment-roster authority ("define, run, evolve, and retire its OWN recurring named
+segments... the roster is the AI's to grow") was missing — exactly as Group OX was the durable
+inventory REQ-OC-002 theme-invention was missing. Co-located here, the inventory quartet is
+complete: music library (Group OH), imaging clips (Group OE), topic-bank (Group OX), and
+segment-types (Group OY).
+
+[HARD] These requirements DO NOT fork a new datastore. The registry is a segment-type-specific
+VIEW over the EXISTING REQ-OD-007 append-only ledger — events `segment_type_created` /
+`segment_type_extended` / `segment_type_rewritten` / `segment_type_retired` /
+`segment_type_aired`, each with an idempotent ID — exactly mirroring how Group OX
+(`topic_*`), ORCH-005 Group RN (news ledger), and PROGRAMMING-007 REQ-PL-003 (acquisition diary)
+are VIEWs over that same substrate. They REFERENCE rather than re-own: KNOWLEDGE-008
+(facts/consensus REQ-KS-006/freshness REQ-KF-003/grounding feed REQ-KI-001), PROGRAMMING-007
+(write Group PC/PS/PV + the two-tier fact-check gate REQ-PG-005 + the REQ-PC-008 content seam +
+the persona/news-anchor model REQ-PI-005), IMAGING-010 (assemble Group IH/IP + short-form audio
+furniture Group IL/IS), VOICE-002 (TTS), ORCH-005/OPS-004 (schedule Group RA / Group OA), and
+CALLIN-003 (listener feed Group CF). The editorial CONTENT behind each recipe pointer stays in
+PROGRAMMING-007 (REQ-PC-008): OPS-004 owns the STORE; PROGRAMMING-007 owns the CONTENT.
+
+Coordination note: ORCH-005 REQ-RW-002 MAY gain a thin segment-type-freshness SENSOR slice so the
+director reads format rotation state — ORCH owns the sensor add, OPS-004 owns this store
+(read-by-ORCH, owned-by-OPS, mirroring the Group OX sensor seam). The news anchor (REQ-PI-005) is
+EXCLUDED BY CONSTRUCTION from curator lifecycle/staffing; news_analysis routes to the news-anchor
+factual stance, the other four starter types to music personas.
+
+### REQ-OY-001 — Persisted segment-type registry as a view over the append-only ledger (Ubiquitous) [HARD]
+
+The system shall persist a SEGMENT-TYPE REGISTRY recording, per AI-defined segment type, at
+least: a normalized type identity (a slug and/or semantic key, analogous to the music
+`normalize_key` REQ-OA-010, the news `story_id` ORCH-005 REQ-RN-002, and the topic identity
+REQ-OX-001, so "music_essay" and "Music Essay" count once), a KIND DISCRIMINATOR (TALK-LONG, an
+editorial talk body over music, vs SHORT-FORM, a POINTER to existing IMAGING-010 / OPS-004 Group
+OE audio furniture — the registry never re-owns the imaging taxonomy), DAYPART/PERSONA FIT (which
+dayparts REQ-OA-009 and personas the type suits, honoring host caps REQ-OB-003 and the
+news-anchor exclusion REQ-PI-005), RECIPE POINTERS (research → KNOWLEDGE-008 Group KR + OPS-004
+Group OC; write → PROGRAMMING-007 Group PC/PS/PV + the type's skeleton; fact-check-LEVEL → gate
+intensity REQ-PG-005; assemble → VOICE-002 TTS or IMAGING-010 Group IH/IP; schedule → ORCH-005
+Group RA + OPS-004 Group OA), input-source bindings (e.g. news_analysis → ORCH-005 Group RN;
+listener_mailbag → CALLIN-003 Group CF / CORE-001 REQ-D-008), rotation/freshness state (use-count,
+last_aired_at, recency marker, rotation state — reusing the REQ-OX-003 discipline), and editorial
+tags + generator-category linkage (PROGRAMMING-007 REQ-PC-006 owns the category taxonomy; the
+registry tags instances). [HARD] The registry shall be implemented as a segment-type-specific
+VIEW / event-type over the EXISTING REQ-OD-007 append-only ledger (the five `segment_type_*`
+events, each idempotent so a replay/retry does not duplicate a type event) and shall NOT fork a
+new datastore. (This upgrades REQ-OB-004's ephemeral authority to a persisted inventory; it is
+the structural twin of REQ-OX-001.)
+
+**Acceptance criteria:** see acceptance.md AC-OY-001.
+
+### REQ-OY-002 — Brain-editable taxonomy: add / extend / rewrite / retire under the change rails (Event-driven) [HARD]
+
+When the AI decides to evolve its formats, the system shall let it CREATE
+(`segment_type_created`), EXTEND a type's recipe/skeleton (`segment_type_extended`), REWRITE a
+type's structure (`segment_type_rewritten`), or RETIRE a type (`segment_type_retired`)
+autonomously, human-out-of-loop — each operation recorded as a registry event on the REQ-OD-007
+ledger and [HARD] BOUNDED by the REQ-OD-006 measured-change rails (rate-limit + cooldown +
+canary against recent programming + contradiction detection). This EXTENDS REQ-OD-006's existing
+named coverage of "the recurring-segment roster" from the ephemeral roster to the persisted
+registry, at the Tier-2 structural cadence (REQ-OD-010). Which formats to invent/extend/retire is
+the AI's creative call; that the change is bounded is the rail.
+
+**Acceptance criteria:** see acceptance.md AC-OY-002.
+
+### REQ-OY-003 — FROZEN / EVOLVABLE split protecting coherence + the news-anchor factual stance (State-driven) [HARD]
+
+While evolving any segment type (REQ-OY-002), the system shall NEVER weaken or remove a FROZEN
+invariant. [HARD] FROZEN (a type edit can NEVER touch): the closed-world fact contract
+(PROGRAMMING-007 REQ-PG-001/002 + KNOWLEDGE-008 consensus REQ-KS-006 / freshness REQ-KF-003), the
+two-tier quality gate never-ship-a-FAIL (REQ-PG-005), the apolitical rail (REQ-OF-004), the
+fictional-persona ethics (PROGRAMMING-007 REQ-PT-005/006), no-self-imitation (REQ-OC-006),
+no-pandering / anti-appeal (REQ-OF-004 / NFR-O-7, CALLIN-003 REQ-CF-003), host caps (REQ-OB-003),
+and — critically — the NEWS-ANCHOR FACTUAL STANCE: the news_analysis type's fact-check-level and
+apolitical framing are FROZEN. The brain MAY extend/rewrite a type's SURFACE (length, hook style,
+daypart fit) but can NEVER lower a type's fact-check-level, relax its consensus/freshness
+requirement, make it partisan, or let any type — existing or newly created — opt out of the
+FROZEN gate. EVOLVABLE (a type edit MAY change, within the rails): the type's skeleton shape,
+length targets, daypart/persona fit (except the news-anchor's stance), recipe-pointer selection,
+rotation/freshness windows, editorial tags, and the type roster itself (add/retire types). This
+mirrors the PROGRAMMING-007 REQ-PI-011 / Group PI FROZEN invariant model (referenced, not
+re-owned).
+
+**Acceptance criteria:** see acceptance.md AC-OY-003.
+
+### REQ-OY-004 — Five seed segment types initialized at startup (Event-driven)
+
+When the registry is first initialized, the system shall SEED it with the starter types
+**deep_dive** (compact single-topic exploration; FULL fact-check; any music host),
+**news_analysis** (current events through a late-night lens, apolitical; FULL + news-cycle
+freshness/consensus; the news-anchor stance), **story** (narrative storytelling from music +
+culture; FULL on factual claims, perceptual/fictional color via the fictional-persona ethics
+rail), **listener_mailbag** (listener letters + responses; the host's OWN factual assertions
+fully gated, the listener's quoted words attributed-not-adopted; moderation floor + no-pandering),
+and **music_essay** (focused essay on an artist/album/genre; FULL; at most one grounded
+comparison REQ-PG-003) — each as a brain-editable DEFINITION (skeleton, length default, input
+bindings, fact-check-level, persona fit), recorded as `segment_type_created` events, subject to
+REQ-OY-002/003. The seed content's editorial SUBSTANCE lives in PROGRAMMING-007 (REQ-PC-008
+seam); the registry stores the DEFINITIONS + recipe pointers. The brain may add a sixth type at
+any time under the rails.
+
+**Acceptance criteria:** see acceptance.md AC-OY-004.
+
+### REQ-OY-005 — First-class per-segment production pipeline: research -> write -> fact-check -> assemble -> schedule (Event-driven) [HARD]
+
+When the AI decides to produce a segment INSTANCE of a registry type, the system shall run a
+first-class production FLOW, keyed to that type's recipe pointers, with five stages each
+REFERENCING (never re-owning) its owning seam:
+- **(a) RESEARCH** via KNOWLEDGE-008 Group KR (research jobs incl. pre-show prep) + OPS-004 Group
+  OC (mode-B web search, cultural/historical depth) + the Group OX topic-bank as theme instance +
+  anti-repetition avoid-list; for news_analysis add ORCH-005 Group RN (news ledger); for
+  listener_mailbag add CALLIN-003 Group CF normalized listener signals (-> CORE-001 REQ-D-008).
+- **(b) WRITE** via PROGRAMMING-007 Group PC (anatomy, theme generators REQ-PC-006, say-category
+  rotation) + Group PS (ear-writing) + Group PV (delivery + voice card REQ-PG-006), under the
+  closed-world fact contract REQ-PG-001 (only the verified fact bundle is packed; no free-recall
+  facts).
+- **(c) FACT-CHECK** as an explicit GATE via PROGRAMMING-007 REQ-PG-005 (Tier-1 deterministic
+  forbidden-fact scan + Tier-2 adversarial self-check) backed by KNOWLEDGE-008 REQ-KS-006
+  consensus / REQ-KF-003 freshness / REQ-KI-001 grounding feed; the per-type fact-check-LEVEL
+  (REQ-OY-001) selects gate intensity (news_analysis adds the news-cycle freshness/dedup tier).
+- **(d) ASSEMBLE** via VOICE-002 TTS for a pure-talk segment, or IMAGING-010 Group IH/IP when a
+  bed / sound-design is wanted. SHORT-FORM transitions (station ID / open / close) are NOT produced
+  here — they are scheduled-in as existing OPS-004 Group OE + IMAGING-010 Group IL/IS furniture,
+  referenced as boundary furniture, never duplicated.
+- **(e) SCHEDULE** via ORCH-005 Group RA (REQ-RA-001 enqueue + plan/adjust; REQ-RA-002 dispatch
+  through EXISTING seams) + OPS-004 Group OA (24h planning, format-clock slot, run-mode); the
+  director chooses WHEN, the pipeline produces a ready segment.
+
+[HARD] The flow is PURE COMPOSITION — it adds NO new research engine, NO new gate, NO new playout
+kind, NO new store — and runs off the playout path (REQ-OE-012 buffer). Each production records
+its stages as REQ-OD-007 ledger events (`segment_type_aired` + the existing decision/diary events
+via ORCH-005 REQ-RA-003), so a production is durable and auditable.
+
+**Acceptance criteria:** see acceptance.md AC-OY-005.
+
+### REQ-OY-006 — Fact-check is a hard gate before air; never ship a FAIL (Unwanted) [HARD]
+
+The system shall NOT air a produced segment whose script FAILS the fact-check gate (REQ-OY-005
+stage c / PROGRAMMING-007 REQ-PG-005): on FAIL it shall REGENERATE ONCE, and on a SECOND FAIL it
+shall SKIP the segment (talk less, never ship a wrong fact — consistent with the graceful-skip of
+REQ-OF-006 and the never-silence rail REQ-OA-008). The per-type fact-check-LEVEL (REQ-OY-001)
+selects gate intensity; ALL levels are never-ship-a-FAIL. The enforceable line: FACT TOKENS
+(year/label/producer/personnel/chart/award/location/named attribution) must be in the contract and
+(for editorial facts) consensus-passed + non-stale to be voiced AS CERTAIN, else voiced QUALIFIED
+or stayed silent; PERCEPTUAL/taste claims grounded in the audible (or the ANALYSIS-006 sonic
+profile) and the persona's genuine POV PASS THROUGH (REQ-PG-002/006); the listener's quoted text
+in listener_mailbag is attributed-and-sanitized, not adopted as the station's fact. This RE-OWNS
+NOTHING; it invokes the existing gate.
+
+**Acceptance criteria:** see acceptance.md AC-OY-006.
+
+### REQ-OY-007 — Registry queryable + rotation/freshness surfaced to PD, show-prep, and health (Ubiquitous) [HARD]
+
+The system shall make the registry QUERYABLE by kind / daypart / persona / generator-category /
+recency and available as context to the program director and show-prep (extending the
+playbook-informs-programming seam REQ-OD-004 and the Group OX surfacing REQ-OX-005), so the
+station's FORMAT inventory actually shapes what it plans next rather than sitting in storage. The
+system shall apply a FRESHNESS / ROTATION policy over type use (mirroring REQ-OX-003) so formats
+rotate and the station does not loop the same handful of formats. [HARD] Registry events
+(`segment_type_*`) shall be surfaced via the EXISTING structured logs / health surface (NFR-O-6 /
+CORE-001 health/status) — no new observability subsystem — and NO appeal/popularity ranking is
+applied (format selection keys only on freshness/recency/use-count/category rotation; REQ-OF-004 /
+NFR-O-7).
+
+**Acceptance criteria:** see acceptance.md AC-OY-007.
+
+---
+
 ## 13. Exclusions (What NOT to Build)
 
 [HARD] This SPEC explicitly excludes the following:
@@ -1318,6 +2158,57 @@ config; the stats are exposed in health/status (NFR-O-6).
 - **Autonomous purchasing / payment** — the Bandcamp hook (REQ-OH-005) only
   RECOMMENDS a purchase to the human; the system does NOT buy, pay, or transact (no
   monetization/finance — SPEC-RADIO-FINANCE).
+- **A forked topic-bank datastore, a topic appeal/popularity score, or a re-owned
+  research/freshness framework** — Group OX is a VIEW over the existing REQ-OD-007 ledger
+  (never a new store), it ranks topics ONLY by freshness/recency/use-count/category
+  rotation (never by engagement/appeal — REQ-OF-004 / NFR-O-7), and it references
+  KNOWLEDGE-008 Group KR/KF + PROGRAMMING-007 REQ-PC-006 rather than re-specifying
+  research, freshness windows, or the generator-category taxonomy. A SECOND topic store
+  per persona is also excluded — per-persona scoping (REQ-OX-006) is a key/field on the one
+  ledger view, not a new store.
+- **The autonomous operator editing source code or critical runtime config** — REQ-OD-009
+  [HARD] confines editorial self-expansion to persisted DATA stores only; the brain never
+  rewrites its own code, the Liquidsoap config, or deployment config during normal
+  operation (the FROZEN-zone discipline applied to the running station). This does NOT
+  restrict the HUMAN developer's tool/code changes, which are out-of-loop by design.
+- **A forked segment-type registry datastore, a new fact-check gate, a new research engine,
+  a new playout kind, or a format appeal/popularity score** — Group OY is a VIEW over the
+  existing REQ-OD-007 ledger (never a new store), it composes the EXISTING gate
+  (PROGRAMMING-007 REQ-PG-005 + KNOWLEDGE-008 KS-006/KF-003/KI-001), research
+  (KNOWLEDGE-008 KR + OPS-004 OC), assembly (VOICE-002 / IMAGING-010), and schedule
+  (ORCH-005 RA / OPS-004 OA) rather than re-owning any of them, and it ranks formats ONLY by
+  freshness/recency/use-count/category rotation (never by engagement/appeal — REQ-OF-004 /
+  NFR-O-7). Short-form transitions are NOT produced by Group OY — they remain OPS-004 Group
+  OE / IMAGING-010 furniture, referenced as pointers only.
+- **A segment type that opts out of the FROZEN gate** — no registry edit may lower a type's
+  fact-check-level, relax consensus/freshness, make a type partisan, or weaken the
+  news-anchor factual stance (REQ-OY-003); the never-ship-a-FAIL gate is FROZEN for every
+  type, existing or newly created.
+- **Re-binding a retired persona's voice to a different identity, or any intermediate
+  hostless schedule state** — REQ-OB-013 [HARD] quarantines a retired 1:1 voice (re-issuable
+  only as a brand-new persona after the Tier-1 cooldown; launch is rejected if the pool is
+  exhausted), and REQ-OB-014 [HARD] forbids any committed transition that leaves a scheduled
+  block naming a departed persona (continuity wins — the persona stays on air rather than a
+  slot going hostless).
+- **The news anchor entering lifecycle/staffing/anti-convergence machinery** — the news
+  anchor (PROGRAMMING-007 REQ-PI-005) is a TTS route, not a curator persona, and is EXEMPT
+  from REQ-OB-010..014, REQ-OA-015 assign, and REQ-OD-010 identity tiering.
+- **The track-level anti-convergence refinement, the ORCH-005 RA lifecycle-action +
+  unified-dedup clarification, and any CORE-001 assign-op requirement** — these are authored
+  in their OWN passes (PROGRAMMING-007 REQ-PR-004 refinement; ORCH-005 REQ-RA seam; CORE-001
+  Group B). This SPEC only REFERENCES them as coordination notes; it does not author or fork
+  them here.
+- **A HARD genre-family/adjacency variety RAIL, a new variety store, a coherence check
+  inside curated shows, RNG-based variety, or a new transition/render layer** — REQ-OA-003d
+  is SOFT-only (down-weight, never ban) and strictly subordinate to the HARD rails
+  (REQ-OA-003a/REQ-OA-003c); it adds NO new store (it reuses the existing recent deque, and
+  the only new artifact is the `genre_family_map` DATA table), it is DETERMINISTIC (no RNG),
+  and it is FORBIDDEN inside a scheduled/curated block ([HARD] exemption, protecting CORE-001
+  REQ-D-002 + AC-OA-004 — applying any taste/coherence/anti-genre-drift check there is
+  explicitly excluded). It operates at SELECTION; it does NOT build, fork, or modify the
+  [[dj-mixing]] crossfade/beatmatch TRANSITION layer or `radio.liq` (no playout/Liquidsoap
+  change), and it does NOT depend on the ORCH-005 REQ-RW-006 unified-dedup view on the
+  <1s hot path (that consumer is optional and slow-tick only).
 
 ---
 
@@ -1365,7 +2256,13 @@ built. See acceptance.md AC-NFR-O-5.
 ### NFR-O-6 — Observability (Ubiquitous) — Priority Medium
 The system shall emit structured logs for program-director decisions, separation
 relaxations, imaging production (concept/mix/loudnorm/encode), playbook updates, news
-aggregation/grounding/attribution, and fallbacks, sufficient to diagnose an incident
+aggregation/grounding/attribution, topic-bank events (topic_discovered / topic_aired /
+topic_refreshed / topic_skipped, Group OX), segment-type registry events
+(segment_type_created / _extended / _rewritten / _retired / _aired, Group OY) and
+per-segment production stages (research/write/fact-check/assemble/schedule, REQ-OY-005),
+persona/show lifecycle transitions (persona_retiring / persona_retired / persona_launched /
+show_discontinued / show_relaunched, REQ-OB-010..014, incl. rejected transitions) and
+schedule-grid CRUD edits (REQ-OA-015), and fallbacks, sufficient to diagnose an incident
 after the fact, surfaced through the CORE-001 health/status surface. See acceptance.md
 AC-NFR-O-6.
 
@@ -1432,9 +2329,9 @@ AC-NFR-O-11.
   revenue check. Mitigated by pre-render/cache + procedural fallback + config gate
   (REQ-OE-004) + a registration/revenue step.
 - **R-O-9 — Beat-aligned mix refinement (Low/Medium, partly deferred).** BPM/key/
-  energy enrichment is now an in-scope requirement (REQ-OA-011, via
-  librosa/aubio/essentia + external metadata), which enables DJ-set adjacency
-  ordering (REQ-OA-006). The remaining gap is only the playout-layer sample-accurate
+  energy data is now available to enrichment (REQ-OA-011) by CONSUMING the audio-analysis
+  features PRODUCED BY SPEC-RADIO-ANALYSIS-006 (which owns the librosa/aubio/essentia
+  extraction) plus external metadata, which enables DJ-set adjacency ordering (REQ-OA-006). The remaining gap is only the playout-layer sample-accurate
   beat-aligned crossfade that makes a mix seamless; that refinement is budgeted as a
   later tuning phase, and analysis quality/coverage on a modest box is a tuning
   concern.
@@ -1531,6 +2428,117 @@ AC-NFR-O-11.
   disk/queue depth (ties to R-O-17 disk + OH-001 balance). Relayed; confirm with the
   user. Build concern: choosing the queue bound + throttle thresholds so the station
   keeps acquiring what it needs without amassing an uncontrolled backlog.
+- **R-O-26 — Topic-bank inventory as a view over the ledger (Low/Medium, gap-fill).**
+  REQ-OX-001..005 add a persisted, queryable TOPIC-BANK — the editorial-theme inventory
+  peer to the music library (Group OH) and imaging (Group OE) — as a topic-specific VIEW
+  over the existing append-only ledger (REQ-OD-007), exactly mirroring how ORCH-005 Group
+  RN (news) and PROGRAMMING-007 REQ-PL-003 (acquisition diary) are views over that same
+  substrate. It closes a verified gap: REQ-OC-002 today invents themes ephemerally with
+  no persisted record of what aired, when, in which generator-category, or how recently —
+  so anti-repetition (REQ-OC-006) and freshness/rotation had no durable inventory to draw
+  on. Build concerns: (a) topic-identity normalization — whether a topic is semantically
+  deduped (like the news `story_id` REQ-RN-002 / the music `normalize_key` REQ-OA-010) or
+  keyed by generator-category + slug (affects how anti-repetition queries behave); (b) the
+  topic-discovery refresh cadence + bound (modeled on REQ-OH-006); (c) [HARD] the bank
+  stores topics, freshness, and rotation state — NEVER an appeal/popularity score (the
+  anti-appeal ethos REQ-OF-004 / NFR-O-7 holds; topics are not optimized for engagement).
+  Coordination note: ORCH-005 REQ-RW-002 adds a thin topic-bank SENSOR slice so its world
+  model can read topic freshness/staleness — ORCH owns that sensor add; OPS-004 owns this
+  store. Gap-fill extension (verified gap-analysis); confirm with the user.
+- **R-O-27 — Per-persona/per-show topic-bank scoping (Low/Medium, relayed).** REQ-OX-006
+  scopes the topic-bank per host persona + show (persona/show key on the topic events) so
+  each host self-manages its own topical surface and the anti-repetition + freshness policy
+  run per-persona — serving the confirmed per-persona distinct-taste / no-two-hosts-converge
+  curation direction. Build concerns: (a) it stays a VIEW over the one REQ-OD-007 ledger
+  (key is a field, NOT a second store); (b) persona/show definitions are owned by
+  PROGRAMMING-007 (referenced, not re-owned) — the topic-bank only adds the scoping key;
+  (c) station-global topics (`station`) coexist with persona-scoped ones. Relayed during
+  authoring (owner plan); confirm with the user.
+- **R-O-28 — Data-vs-code editorial-write-only rail (Low/Medium, relayed; [HARD]).**
+  REQ-OD-009 [HARD] confines the autonomous operator's editorial self-expansion (topic
+  banks, ledger/diary threads, intent cards, voice-card EVOLVABLE layer, taste/persona
+  profiles) to persisted DATA stores; it MUST NOT edit source code or critical runtime
+  config during normal operation — the FROZEN-zone discipline (design-system constitution
+  Section 2 + Frozen Guard Layer 1) applied to the running station. It references the
+  design-system FROZEN zone + the per-persona Frozen Guard (PROGRAMMING-007 Group PI, being
+  added in parallel) and is the data-vs-code complement to the measured-change rails
+  (REQ-OD-006). ORCH-005 REQ-RA-004 restates it for the action surface (not a fork). Build
+  concerns: (a) a clear data/code boundary in the brain (what paths are writable by the
+  autonomous loop vs. frozen); (b) the rail constrains the AUTONOMOUS operator only — the
+  human developer's tooling/code changes remain out-of-loop by design. Relayed during
+  authoring (owner plan); confirm with the user.
+- **R-O-29 — Segment-type registry + per-segment production pipeline (Low/Medium, design
+  dossier).** Group OY (REQ-OY-001..007) adds a persisted, queryable SEGMENT-TYPE REGISTRY —
+  the structural twin of Group OX — as a VIEW over the existing REQ-OD-007 ledger
+  (`segment_type_*` events), plus a first-class per-segment production pipeline
+  research→write→FACT-CHECK gate→assemble→schedule. It closes a verified gap: REQ-OB-004
+  granted ephemeral authority to define/evolve/retire named segments with no persisted,
+  queryable TYPE DEFINITION. Build concerns: (a) type-identity normalization (slug vs
+  semantic key) so a type counts once; (b) whether distinct fact-check-LEVEL labels (FULL /
+  MODERATE) are needed at all, or whether the single PG-005 gate + per-type
+  freshness/consensus toggles suffice (simpler — open question); (c) [HARD] the pipeline is
+  PURE COMPOSITION — no new gate, research engine, playout kind, or store; it must NOT weaken
+  the FROZEN gate or the news-anchor stance (REQ-OY-003); (d) listener_mailbag references
+  CALLIN-003 Group CF (REQ-CF-001/002), authored in its own SPEC — finalize the reference
+  once it lands. Group-letter check: OY is the next free letter (OA/OB/OC/OD/OE/OF/OG/OH/OX
+  taken). Design-dossier extension (verified, refuted=false on all three claims); confirm
+  with the user.
+- **R-O-30 — Host/show lifecycle + always-staffed + voice quarantine + rarity tier + grid
+  CRUD (Medium, design dossier; [HARD] rails).** REQ-OB-010..014 add a persona/show lifecycle
+  FSM; REQ-OA-015 adds schedule-grid CRUD (assign/reassign persona); REQ-OD-010 adds the
+  rarity tiering. The dossier REFUTED two "already-covered" claims: (1) the always-staffed
+  invariant does NOT hold today — CORE-001 REQ-B-002/003 guarantee 24h TIME-coverage at
+  build/edit time but a departure is not a modeled edit, so no-gap was never exercised against
+  a retirement (fixed by the REQ-OB-014 atomic transaction); (2) identity changes are NOT
+  enforceably rare today — REQ-OD-006 is a single flat budget with no tier and no
+  listener-consistency obligation (fixed by REQ-OD-010's Tier-1 rarest tier). Build concerns:
+  (a) the voice re-issue cooldown — tie to the OD-010 Tier-1 cooldown by default, or a
+  separately-tuned (longer) `voice_requarantine_window`? (open); (b) track-exclusivity WINDOW
+  semantics (permanent-per-adoption vs windowed) belong to the PROGRAMMING-007 REQ-PR-004
+  refinement (other pass), not here; (c) successor-binding preference order
+  reassign→relaunch→reject — the director may always fall back to reject (continuity wins);
+  (d) Faroese roster depth — launch-from-unused-pool can exhaust the small Faroese pool
+  faster, and reject-on-exhaustion must be acceptable for Faroese shows; (e) a
+  persona-without-show symmetric rail (auto-retire vs bench a showless persona) is NOT in this
+  pass — flag for a scope decision. Design-dossier extension; confirm with the user.
+- **R-O-31 — Cross-persona topic dedup default bug fix (Low, relayed; [HARD]).** The v0.6.0
+  REQ-OX-006 wording let a topic aired by host A count as simply FRESH for host B, permitting
+  wholesale cross-host topic copying — the opposite of the per-persona distinct-taste intent.
+  v0.8.0 inverts the cross-persona default to reference-only: another persona's recent topic is
+  NOT re-airable wholesale; host B may only make an attributed, additive, own-voice light
+  reference (depth director-gated), deferring to the ORCH-005 unified-dedup
+  reference-vs-duplication rule (REQ-RW-006, owned cross-surface by ORCH-005, being added in
+  parallel). OX-006 owns the per-topic cross-persona default; ORCH-005 owns the cross-surface
+  rule. Build concerns: (a) the reference-vs-re-air boundary (what counts as a "light callback"
+  vs a "wholesale re-run") and its depth-director gate live in the ORCH-005 rule — finalize the
+  REQ-RW-006 reference once it lands so the OX-006 reference is not dangling; (b) own-history
+  recency (a host's own recent topic on its own avoid-list, REQ-OX-003) is unchanged and
+  distinct from the cross-persona default. Wording correction only (no new REQ); relayed during
+  the dedup design pass — confirm with the user.
+- **R-O-32 — Off-schedule genre-family balance + smooth adjacency (Low/Medium, design dossier;
+  one [HARD] sub-clause).** REQ-OA-003d adds two SOFT off-schedule playout-variety dimensions
+  (genre-family balance + smooth adjacency) on top of the REQ-OA-003 soft scoring layer, plus a
+  [HARD] scheduled-curated-show exemption whose predicate is also the activation predicate. The
+  dossier returned refuted=false on both claims (genre-balance + smooth-adjacency are enforceable
+  at selection without fighting the no-repeat/anti-convergence/dedup rules; and the exemption
+  cleanly lets a built show hold a consistent style while off-schedule stays varied). Build
+  concerns / open questions carried from the dossier: (a) the show-association seam (REQ-OB-006,
+  station-mgmt/show-lifecycle) is not yet coded — ship now with `is_unscheduled` defaulting to True
+  (rule active for all current playout, exemption wired-but-dormant) rather than blocking, since it
+  is self-correcting once OB-006 lands; (b) `genre_family_map` ownership/granularity — how many
+  umbrella families, how funk/soul/disco vs jazz/blues split, and whether the map is seeded purely
+  statically or partly derived from ANALYSIS-006's genre/mood reconciliation (the [HARD] rail is
+  only that it is families-not-tags and is the sole new artifact); (c) `balance_window` unit —
+  fixed track count (~30-40) vs a format-clock-hour time window vs 2× the no-repeat window (the
+  no-repeat ring is currently small); (d) relative weighting — whether `penalty_lambda` and
+  `adjacency_lambda` sum into one composite sort key (default) or apply as ordered tie-breakers,
+  and their weight vs the base LRP rank; (e) whether smooth-adjacency consumes the [[dj-mixing]]
+  genre-gating (electronic-only beatmatch tolerance vs general gentle adjacency) at SELECTION, or
+  stays genre-agnostic and leaves genre-gating to the downstream transition/render layer; (f)
+  whether the optional ORCH-005 REQ-RW-006 cross-surface consumption on the planning tick is in the
+  first version or deferred to keep the hot path clean (default: deferred — hot path stays clean).
+  All thresholds are TUNABLE/AI-evolvable; the only [HARD] sub-clause is the scheduled-show
+  exemption (protecting REQ-D-002). Design-dossier extension; confirm with the user.
 
 ---
 
@@ -1600,6 +2608,7 @@ are in acceptance.md Section B).
 | REQ-OA-003a | Program Director & Scheduling | High | State | AC-OA-003a |
 | REQ-OA-003b | Program Director & Scheduling | High | Unwanted | AC-OA-003b |
 | REQ-OA-003c | Program Director & Scheduling | High | State | AC-OA-003c |
+| REQ-OA-003d | Program Director & Scheduling | Medium | State | AC-OA-003d |
 | REQ-OA-004 | Program Director & Scheduling | High | Event | AC-OA-004 |
 | REQ-OA-005 | Program Director & Scheduling | High | State | AC-OA-005 |
 | REQ-OA-006 | Program Director & Scheduling | Medium | Event | AC-OA-006 |
@@ -1611,6 +2620,7 @@ are in acceptance.md Section B).
 | REQ-OA-012 | Program Director & Scheduling | High | Ubiquitous | AC-OA-012 |
 | REQ-OA-013 | Program Director & Scheduling | Medium | Event | AC-OA-013 |
 | REQ-OA-014 | Program Director & Scheduling | Medium | Event | AC-OA-014 |
+| REQ-OA-015 | Program Director & Scheduling | High | Event | AC-OA-015 |
 | REQ-OB-001 | Shows & Host Personas | High | Event | AC-OB-001 |
 | REQ-OB-002 | Shows & Host Personas | High | State | AC-OB-002 |
 | REQ-OB-003 | Shows & Host Personas | High | Ubiquitous | AC-OB-003 |
@@ -1620,12 +2630,17 @@ are in acceptance.md Section B).
 | REQ-OB-007 | Shows & Host Personas | Medium | Event | AC-OB-007 |
 | REQ-OB-008 | Shows & Host Personas | Medium | Event | AC-OB-008 |
 | REQ-OB-009 | Shows & Host Personas | High | Event | AC-OB-009 |
+| REQ-OB-010 | Shows & Host Personas | High | Event | AC-OB-010 |
+| REQ-OB-011 | Shows & Host Personas | High | Event | AC-OB-011 |
+| REQ-OB-012 | Shows & Host Personas | Medium | Event | AC-OB-012 |
+| REQ-OB-013 | Shows & Host Personas | High | Ubiquitous | AC-OB-013 |
+| REQ-OB-014 | Shows & Host Personas | High | Unwanted | AC-OB-014 |
 | REQ-OC-001 | Research-Driven Show Prep | High | Ubiquitous | AC-OC-001 |
 | REQ-OC-002 | Research-Driven Show Prep | High | Event | AC-OC-002 |
 | REQ-OC-003 | Research-Driven Show Prep | High | Event | AC-OC-003 |
 | REQ-OC-004 | Research-Driven Show Prep | Medium | Ubiquitous | AC-OC-004 |
-| REQ-OC-005 | Research-Driven Show Prep | High | Unwanted | AC-OC-005 |
-| REQ-OC-006 | Research-Driven Show Prep | High | Unwanted | AC-OC-006 |
+| REQ-OC-005 | Research-Driven Show Prep | High | Ubiquitous | AC-OC-005 |
+| REQ-OC-006 | Research-Driven Show Prep | High | Ubiquitous | AC-OC-006 |
 | REQ-OD-001 | Self-Learning Playbook | High | Ubiquitous | AC-OD-001 |
 | REQ-OD-002 | Self-Learning Playbook | High | Event | AC-OD-002 |
 | REQ-OD-003 | Self-Learning Playbook | High | Event/Self-scheduled | AC-OD-003 |
@@ -1634,6 +2649,8 @@ are in acceptance.md Section B).
 | REQ-OD-006 | Self-Learning Playbook | High | State | AC-OD-006 |
 | REQ-OD-007 | Self-Learning Playbook | High | Ubiquitous | AC-OD-007 |
 | REQ-OD-008 | Self-Learning Playbook | Medium | Event | AC-OD-008 |
+| REQ-OD-009 | Self-Learning Playbook | High | Unwanted | AC-OD-009 |
+| REQ-OD-010 | Self-Learning Playbook | High | State | AC-OD-010 |
 | REQ-OE-001 | Self-Produced Imaging | High | Event | AC-OE-001 |
 | REQ-OE-002 | Self-Produced Imaging | High | Event | AC-OE-002 |
 | REQ-OE-003 | Self-Produced Imaging | High | Event | AC-OE-003 |
@@ -1642,21 +2659,21 @@ are in acceptance.md Section B).
 | REQ-OE-006 | Self-Produced Imaging | High | Event | AC-OE-006 |
 | REQ-OE-007 | Self-Produced Imaging | High | Event | AC-OE-007 |
 | REQ-OE-008 | Self-Produced Imaging | High | Ubiquitous | AC-OE-008 |
-| REQ-OE-009 | Self-Produced Imaging | High | Unwanted | AC-OE-009 |
-| REQ-OE-010 | Self-Produced Imaging | High | Unwanted | AC-OE-010 |
+| REQ-OE-009 | Self-Produced Imaging | High | Ubiquitous | AC-OE-009 |
+| REQ-OE-010 | Self-Produced Imaging | High | Ubiquitous | AC-OE-010 |
 | REQ-OE-011 | Self-Produced Imaging | Medium | State | AC-OE-011 |
 | REQ-OE-012 | Self-Produced Imaging | High | State | AC-OE-012 |
 | REQ-OF-001 | Liveliness & Quality | High | Ubiquitous | AC-OF-001 |
-| REQ-OF-002 | Liveliness & Quality | Medium | Unwanted | AC-OF-002 |
+| REQ-OF-002 | Liveliness & Quality | Medium | Ubiquitous | AC-OF-002 |
 | REQ-OF-003 | Liveliness & Quality | High | Ubiquitous | AC-OF-003 |
-| REQ-OF-004 | Liveliness & Quality | High | Unwanted | AC-OF-004 |
-| REQ-OF-005 | Liveliness & Quality | High | Unwanted | AC-OF-005 |
+| REQ-OF-004 | Liveliness & Quality | High | Ubiquitous | AC-OF-004 |
+| REQ-OF-005 | Liveliness & Quality | High | Ubiquitous | AC-OF-005 |
 | REQ-OF-006 | Liveliness & Quality | High | Event | AC-OF-006 |
 | REQ-OG-001 | News & Newscasting | High | Event | AC-OG-001 |
 | REQ-OG-002 | News & Newscasting | High | Event/Self-scheduled | AC-OG-002 |
 | REQ-OG-003 | News & Newscasting | High | Ubiquitous | AC-OG-003 |
 | REQ-OG-004 | News & Newscasting | High | Ubiquitous | AC-OG-004 |
-| REQ-OG-005 | News & Newscasting | High | Unwanted | AC-OG-005 |
+| REQ-OG-005 | News & Newscasting | High | Ubiquitous | AC-OG-005 |
 | REQ-OG-006 | News & Newscasting | High | Event | AC-OG-006 |
 | REQ-OG-007 | News & Newscasting | High | Event | AC-OG-007 |
 | REQ-OG-008 | News & Newscasting | Medium | Optional | AC-OG-008 |
@@ -1667,6 +2684,19 @@ are in acceptance.md Section B).
 | REQ-OH-004 | Library Management & Acquisition Policy | High | State | AC-OH-004 |
 | REQ-OH-005 | Library Management & Acquisition Policy | Medium | Event | AC-OH-005 |
 | REQ-OH-006 | Library Management & Acquisition Policy | High | State | AC-OH-006 |
+| REQ-OX-001 | Topic-Bank Inventory | High | Ubiquitous | AC-OX-001 |
+| REQ-OX-002 | Topic-Bank Inventory | High | Event | AC-OX-002 |
+| REQ-OX-003 | Topic-Bank Inventory | High | State | AC-OX-003 |
+| REQ-OX-004 | Topic-Bank Inventory | Medium | Event | AC-OX-004 |
+| REQ-OX-005 | Topic-Bank Inventory | High | Ubiquitous | AC-OX-005 |
+| REQ-OX-006 | Topic-Bank Inventory | High | Event | AC-OX-006 |
+| REQ-OY-001 | Segment-Type Registry & Pipeline | High | Ubiquitous | AC-OY-001 |
+| REQ-OY-002 | Segment-Type Registry & Pipeline | High | Event | AC-OY-002 |
+| REQ-OY-003 | Segment-Type Registry & Pipeline | High | State | AC-OY-003 |
+| REQ-OY-004 | Segment-Type Registry & Pipeline | Medium | Event | AC-OY-004 |
+| REQ-OY-005 | Segment-Type Registry & Pipeline | High | Event | AC-OY-005 |
+| REQ-OY-006 | Segment-Type Registry & Pipeline | High | Ubiquitous | AC-OY-006 |
+| REQ-OY-007 | Segment-Type Registry & Pipeline | High | Ubiquitous | AC-OY-007 |
 | NFR-O-1 | Non-Functional | High | Ubiquitous | AC-NFR-O-1 |
 | NFR-O-2 | Non-Functional | High | Ubiquitous | AC-NFR-O-2 |
 | NFR-O-3 | Non-Functional | High | Ubiquitous | AC-NFR-O-3 |
