@@ -84,6 +84,17 @@ PROGRAMMING-007 Group PL taste self-learning · ORCH-005 world-model/action-surf
 lived-experience (news-reading) · MEMORY-031 four-layer build · INTEGRITY-033 enforcement build ·
 INTERVIEW-CRAFT-034 · richer formats/dayparting/format-clock.
 
+## Voice / TTS (queued, user-in-the-loop — gates the cast size)
+
+- **VOICE-002 TTS A/B (deferred, owed):** compare KOKORO (current primary) vs QWEN-TTS (24 kHz) vs
+  CHATTERBOX (22.05 kHz) for naturalness. User-in-the-loop: prepare identical sample scripts rendered by
+  each engine, the user listens and picks the primary. Needs the engines installed + the RTX 2000 Ada GPU
+  plumbed into Docker (not wired yet). The `TTSProvider` seam is engine-agnostic, so the winner swaps in
+  WITHOUT touching personas/minting — not a blocker for the persona build chain.
+- **Voice-palette expansion:** the 1:1 voice<->persona firewall caps the number of distinct personas at the
+  number of distinct verified voices (~7 Kokoro + ~6 Piper today). Kokoro ships 54 voicepacks → verify and
+  widen the palette to unlock a large autonomous cast. Do this when many personas are wanted.
+
 ## Discipline
 Atomic green commits per step (run `python3 -m pytest brain/ -q`). Default/empty path stays byte-identical
 (behavior preservation). Never leave a broken tree. If a budget window ends mid-step, stop at the last
