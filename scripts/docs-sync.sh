@@ -23,6 +23,7 @@ declare -A PAGES=(
   [acquisition]=Acquisition
   [analysis]=Analysis
   [curation-director]=Curation-Director
+  [enrichment]=Enrichment
   [knowledge-research]=Knowledge-Research
   [library-ingestion]=Library-Ingestion
   [playout]=Playout

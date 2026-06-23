@@ -55,10 +55,15 @@ The page includes inline JavaScript that:
    `"http://" + location.hostname + ":<port><mount>"`
 2. Sets that URL as the `<audio>` element's `src`.
 3. Calls `/api/nowplaying` immediately on load, then every 5 seconds via
-   `setInterval`.
+   `setInterval`. It also fires an immediate refresh when the page regains
+   visibility (`document.addEventListener("visibilitychange", ...)`) and when
+   the tab is focused (`window.addEventListener("focus", ...)`), so a listener
+   returning to a background tab sees the current track without waiting for the
+   next poll cycle.
 4. On each response it updates:
    - `#np-title` / `#np-artist` — currently airing track (or a "Silence" message
      when `now_playing` is null)
+   - `#np-album` — album name when present (hidden if absent)
    - `#lib` — total tracks in library (`d.library`)
    - `#dl` — count of active downloads (`d.downloading.length`)
    - `#recent` — up to 12 recently played tracks (`d.recent`)
@@ -89,7 +94,7 @@ The rendered page has:
 
 - Dark gold-on-black theme with CSS custom properties.
 - A pulsing "Live" badge and an HTML5 `<audio>` player wired to the Icecast stream.
-- "Now Playing" card showing title and artist.
+- "Now Playing" card showing title, artist, and album (album line is hidden when absent).
 - Two-column grid: "Recently Played" list (up to 12 tracks) and a "Station" card
   with library size, active-download count, and a static schedule note
   ("Freeform, around the clock. Shows & hosts coming soon.").
@@ -117,6 +122,11 @@ The rendered page has:
 - **Play history and show descriptions not rendered.** REQ-OB-006, REQ-OB-007,
   and REQ-OB-008 (persisted play-history, per-show tracklists, AI-authored show
   descriptions) are defined in SPEC-RADIO-OPS-004 and are not yet implemented.
+
+- **Durable last-played is not built.** The `#recent` list shown on the page
+  comes from the in-memory `StationState._recent` ring (cleared on brain restart).
+  Persisting play history across restarts is tracked as SPEC-WEBUI-018 (roadmap,
+  not implemented).
 
 ## See also
 

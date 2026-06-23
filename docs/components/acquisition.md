@@ -177,6 +177,22 @@ the acquisition channel in the library index (used by `ANALYSIS-006`).
 
 ---
 
+## Roadmap
+
+The following are designed but not yet implemented:
+
+- **Download deduplication (DEDUP-014)** — detect when two wishlist entries resolve
+  to the same file (e.g. same ISRC, same fingerprint) and avoid double-downloading.
+  Currently the acquirer can fetch the same recording twice under different
+  artist/title spellings.
+
+- **Low-queue source preference (ACQQUEUE-019)** — when slskd's download queue is
+  short, prefer Soulseek peers that are currently idle over peers with long queues.
+  The current `rank_key` uses `has_free_slot` as a binary signal; ACQQUEUE-019
+  would extend it with a queue-depth estimate from the slskd API response.
+
+---
+
 ## See also
 
 - `.moai/specs/SPEC-RADIO-CORE-001/spec.md` — Group A requirements driving this subsystem.

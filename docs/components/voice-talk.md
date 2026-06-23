@@ -61,6 +61,26 @@ directions from the LLM response before it reaches TTS.
 4. Deletes the intermediate WAV.
 5. Returns a `TalkClip` (path, text, provider name) or `None` on any failure.
 
+### First-run welcome (`BRAIN_WELCOME_ENABLED`)
+
+When `BRAIN_WELCOME_ENABLED=1` (default), `TalkDirector` produces a single welcome
+clip during startup and passes it to `state.set_pending_welcome()`. The Picker
+serves it as the very first `/api/next` response — before any music — and clears
+the welcome slot so it never repeats within a session. The clip is generated with
+the same `produce_talk_clip` path as regular breaks (TTS → loudnorm → MP3).
+
+Set `BRAIN_WELCOME_ENABLED=0` to suppress the welcome on restart (e.g., during
+rapid development restarts where the welcome clip would be annoying).
+
+### Host-break label
+
+On-air metadata for a talk break now uses just the station name (`STATION_NAME`)
+as the `title` in the ICY `StreamTitle` rather than a verbose "Host Break" or
+persona string. This keeps the now-playing display clean for listeners and avoids
+leaking internal persona names over the stream.
+
+---
+
 ### TTS providers
 
 | Provider | Role | Notes |
@@ -136,6 +156,7 @@ All knobs are environment variables. Defaults are production-safe.
 | `BRAIN_TALK_LRA` | `talk_loudness_lra` | `11.0` | Loudness range (LU). |
 | `BRAIN_TTS_TIMEOUT_SEC` | `tts_timeout_seconds` | `60` | Piper subprocess timeout. |
 | `BRAIN_TALK_NORM_TIMEOUT_SEC` | `talk_loudnorm_timeout_seconds` | `60` | ffmpeg loudnorm timeout. |
+| `BRAIN_WELCOME_ENABLED` | `welcome_enabled` | `1` | Set `0` to suppress the first-run welcome clip on startup. |
 
 Talk clips land in `cfg.talk_clips_dir`, which is `{music_dir}/.talk/`. Clips older
 than 6 hours are pruned by `voice.prune_old_clips()`, called from the `TalkDirector`

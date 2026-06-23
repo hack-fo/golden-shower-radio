@@ -152,6 +152,32 @@ These are shared across multiple modules; import from `brain.config`, not locall
 | `BRAIN_LLM_BATCH` | `25` | Tracks requested per LLM call |
 | `BRAIN_RECENT_WINDOW` | `20` | How many recently-played tracks to track |
 
+#### Metadata Enrichment / AcoustID Fingerprinting (ENRICH-012)
+
+| Env Var | Default | Notes |
+|---|---|---|
+| `BRAIN_ENRICH_TAGS_ENABLED` | `1` | Master switch for the enrichment subsystem (AcoustID + MusicBrainz lookups) |
+| `BRAIN_ENRICH_WRITE_FILES` | `0` | Set `1` to allow mutagen tag write-back (artist/title/album/year/genre). Cover art is preserved; write is idempotent via `enrich_version` gate. |
+| `BRAIN_ENRICH_BACKFILL` | `1` | Set `0` to disable background backfill of un-enriched tracks |
+| `BRAIN_ENRICH_CONFIDENCE` | `0.85` | Minimum AcoustID confidence score for a fingerprint match to be accepted |
+| `BRAIN_ACOUSTID_API_KEY` | `` | Required for AcoustID lookups; empty disables fingerprint path silently |
+| `BRAIN_FPCALC_PATH` | `fpcalc` | Path to the `fpcalc` binary (Chromaprint); must be on `$PATH` or absolute |
+
+Enrichment never runs on the `/api/next` hot path. New-download enrichment is
+triggered via an on-download hook; backfill runs in the background `EnrichmentWorker`
+only. A per-track `enrich_version` field in `library.json` prevents re-running
+enrichment on already-processed files.
+
+A pre-run baseline snapshot is written to `data/db/enrich-baseline.json` at
+startup when enrichment is enabled; it captures the unenriched state for later
+comparison.
+
+#### Welcome Clip
+
+| Env Var | Default | Notes |
+|---|---|---|
+| `BRAIN_WELCOME_ENABLED` | `1` | Set `0` to suppress the one-shot welcome clip played before the first song of each session |
+
 #### Talking Layer (TTS Host Voice)
 
 | Env Var | Default | Notes |
@@ -269,9 +295,10 @@ logs greppable by subsystem (e.g., `grep '"logger":"brain.director"'`).
   `main.dropped_anthropic_api_key`. Authentication is via `~/.claude` OAuth only.
 
 - **All master switches default ON.** `BRAIN_TALK_ENABLED`, `BRAIN_ANALYSIS_ENABLED`,
-  `BRAIN_ENRICHMENT_ENABLED`, `BRAIN_WATCH_ENABLED`, and `BRAIN_KNOWLEDGE_ENABLED`
-  are all `"1"` by default. To run a minimal music-only brain (phase-1 behavior),
-  set all five to `"0"`.
+  `BRAIN_ENRICHMENT_ENABLED`, `BRAIN_ENRICH_TAGS_ENABLED`, `BRAIN_WATCH_ENABLED`,
+  and `BRAIN_KNOWLEDGE_ENABLED` are all `"1"` by default. To run a minimal
+  music-only brain (phase-1 behavior), set all to `"0"`. Note: `BRAIN_ENRICH_WRITE_FILES`
+  defaults `"0"` — tag write-back is opt-in.
 
 - **`_env` treats empty string as absent.** Setting `BRAIN_LASTFM_API_KEY=` and
   not setting it at all are identical. This is intentional: empty optional keys

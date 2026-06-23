@@ -51,6 +51,41 @@ Numeric values are emitted unquoted (Liquidsoap reads them as floats). An unanal
 
 `mksafe` wraps the output so `output.icecast` always receives an infallible source. A brief silence is acceptable if the brain stalls; there is no hard zero-gap SLA.
 
+### Crossfade metadata-lag fix
+
+`cross()` consumes the incoming track's metadata packet to compute the blend; as a
+result, the `on_metadata` callback would fire with the *outgoing* track's tags
+during the overlap window, causing now-playing and the ICY `StreamTitle` to lag
+behind the audio.
+
+The fix re-inserts the incoming metadata immediately after the cross blend so
+Liquidsoap sees a fresh metadata packet the moment the new track takes over:
+
+```liquidsoap
+def transition(a, b) =
+  ...
+  blended = add([fade.out(3.0, a), fade.in(3.0, b)])
+  blended = source.rewrite_metadata(b_meta, blended)
+  blended
+end
+```
+
+`b_meta` is extracted from `b` before the blend. After the rewrite, `on_metadata`
+fires in lockstep with what the listener hears.
+
+The ICY `StreamTitle` also now includes album when present:
+`Artist - Title (Album)` if album is non-empty, `Artist - Title` otherwise.
+
+### First-run welcome
+
+When `BRAIN_WELCOME_ENABLED` is `1` (the default), the brain generates and
+pre-renders a short welcome clip before the first song of the session. Liquidsoap
+serves it as the very first item from `/api/next`, ahead of any music. The welcome
+uses the same TTS/loudnorm pipeline as regular talk breaks but is produced once at
+startup, not on a recurring cadence.
+
+---
+
 ### Ground-truth now-playing (`radio.liq → report_airing` + `brain/server.py → _handle_airing`)
 
 `radio.on_metadata(report_airing)` fires the instant a new metadata packet reaches the Icecast output. Because `cross` merges two tracks into one continuous output, `on_track` fires unreliably at crossfade boundaries; `on_metadata` fires in lockstep with what the Icecast `StreamTitle` shows to listeners, which is the correct definition of "on air".
@@ -113,6 +148,8 @@ The split is essential: with `prefetch=2`, the committed item is up to two track
 - **Talk is best-effort.** If no clip is pre-rendered when a break is due, the picker silently plays music instead. This is by design; playout continuity takes priority.
 - **`cross.smart` is banned for music→music.** It can hard-cut. The `add([fade.out, fade.in])` form is unconditional.
 - **Airing reports are idempotent.** `cross` can emit duplicate metadata packets during a fade; `set_on_air` ignores them. Do not add dedup logic on the Liquidsoap side.
+- **Welcome clip is first-in-queue.** When `BRAIN_WELCOME_ENABLED=1` the very first `/api/next` response is the welcome clip, not a song. Subsequent `/api/next` calls operate normally.
+- **Album in ICY StreamTitle.** `_annotate_uri` now includes `album` in the annotate string; the Liquidsoap `StreamTitle` format string renders `Artist - Title (Album)` when album is non-empty.
 - **Empty 200 from `/api/next` means "nothing ready, try again".** Liquidsoap's `retry_delay=2.0` handles this; the brain never crashes the streaming thread by returning a non-200 error.
 
 ---

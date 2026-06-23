@@ -210,6 +210,8 @@ DB path is `Config.knowledge_db_path` → `{db_dir}/knowledge.db`.
 
 **Last.fm key required**: The Last.fm provider is a no-op with no key. Set `LASTFM_API_KEY` in the brain container env to enable it.
 
+**musicbrainzngs now installed**: Prior to ENRICH-012, `musicbrainzngs` was referenced in comments but never declared in `requirements.txt`, so every MusicBrainz call in `brain/research.py` (and `brain/metadata.py`) silently no-op'd. The package is now a pinned dependency (`musicbrainzngs>=0.7,<1.0`). If you are running an older image, rebuild or `pip install musicbrainzngs` in the container.
+
 **Freshness is Faroe-local**: `current_faroe_date()` uses `Atlantic/Faroe` timezone (the brain container runs with `TZ=Atlantic/Faroe`). Freshness cutoffs are evaluated against that local date, not UTC.
 
 **Entity key discipline**: Artist entity `norm_key` must be `normalize_key(artist, "")` — the same key the library uses. Any deviation breaks the `lib_key` attachment and the grounding feed lookup.
@@ -235,6 +237,12 @@ DB path is `Config.knowledge_db_path` → `{db_dir}/knowledge.db`.
 ```
 
 Log events use `log_event()` with structured keys: `research.batch_done`, `research.provider_error`, `knowledge.fact_rejected`, `knowledge.recompute_consensus_error`, etc.
+
+---
+
+## Roadmap
+
+**Last.fm show research (SHOWS-020 — designed, not yet built)**: A planned provider would use the Last.fm API to fetch recent releases, upcoming events, and set-list-derived track lists for artists already in the knowledge store. The schema's `time_sensitive` fact kind and `valid_until` expiry are designed to accommodate this. The `_provider_lastfm` currently wired in `research.py` writes only similar-artist edges (network topology); show/release data is out of scope for increment-1.
 
 ---
 

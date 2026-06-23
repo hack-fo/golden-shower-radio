@@ -55,8 +55,11 @@ As of 2026-06-22 slskd is **disabled by default**. See [Acquisition](components/
 `deploy/Dockerfile.brain` builds on `python:3.12-slim` (Debian/glibc, **not** Alpine —
 the `claude-agent-sdk` wheel bundles a native CLI binary that links glibc). It bakes in
 CPU-only PyTorch, Kokoro (with its English voice palette and the spaCy G2P model), a Piper
-fallback voice, and the `librosa`/`pyloudnorm` audio stack, so the first run never stalls
-downloading models and the audio engine is proven to import at build time.
+fallback voice, the `librosa`/`pyloudnorm` audio stack, the `libchromaprint-tools` system
+package (which provides `fpcalc` for AcoustID fingerprinting), and `musicbrainzngs` (the
+MusicBrainz Python client — previously absent, causing all MusicBrainz lookups to
+silently no-op). The first run never stalls downloading models and the audio engine is
+proven to import at build time.
 
 ---
 
@@ -120,12 +123,13 @@ daemon thread (catch, log, continue), with graceful shutdown on SIGINT/SIGTERM.
 | `main.py`, `config.py`, `logging_setup.py` | **Runtime / Config** | Wire up and start all workers; strip `ANTHROPIC_API_KEY`; env-driven frozen `Config`; JSON-per-line structured logging. |
 | `server.py`, `state.py` | **HTTP + State** | `ThreadingHTTPServer` on `:8080`. `Picker` selects next item (talk clip if due+ready, else least-recently-played). `StationState` holds in-memory play history, now-playing, talk cadence, and the pending-talk slot. |
 | `director.py`, `llm.py` | **Curation Director** | The LLM program-director loop. Periodically calls Claude for a batch (~25 tracks), dedups against recent history, feeds survivors to acquisition. Two Claude personas: `PERSONA` (curator, picks real tracks, returns JSON) and `HOST_PERSONA` (on-air host, writes spoken links). Both use the Max subscription, tools-off, single-turn. |
-| `acquire.py`, `slskd.py`, `ytdlp.py` | **Acquisition** | Turns `{artist, title}` wishlist items into audio files: slskd (Soulseek P2P, optional/off by default) → yt-dlp fallback. Rate-limited, bounded workers, idempotent via `attempts.json`. |
+| `acquire.py`, `slskd.py`, `ytdlp.py` | **Acquisition** | Turns `{artist, title}` wishlist items into audio files: slskd (Soulseek P2P, optional/off by default) → yt-dlp fallback. Rate-limited, bounded workers, idempotent via `attempts.json`. Calls the enrichment hook immediately after a successful download. |
 | `library.py`, `analyzer.py` | **Library + Ingestion** | `Library` scans `MUSIC_DIR`, extracts metadata (mutagen + filename fallback), dedups via `normalize_key`, and selects the next track (least-recently-played). JSON index is playout source of truth. `Analyzer` background-fills audio-feature records (BPM, key, energy, cue points). |
 | `analysis.py`, `metadata.py` | **Analysis Engine** | CPU-only DSP via librosa (BPM, key/Camelot, energy, LUFS, cue points, sonic character) plus multi-source consensus metadata (MusicBrainz, TheAudioDB, Last.fm). Background-only; never on the pull path. |
-| `talk.py`, `voice.py`, `llm.py` | **Voice + Talk** | Pre-renders host talk clips between songs. `TalkDirector` polls cadence, calls Claude for a script, renders via Kokoro (primary) or Piper (fallback), normalises loudness with ffmpeg, parks the clip in a one-slot buffer. |
+| `enrich.py` | **Enrichment** | ENRICH-012. Identifies the canonical recording (AcoustID fingerprint → AcoustID API → MusicBrainz; text-match fallback) and corrects core identity tags (artist, title, album, year, genre). Writes corrected tags to the file (mutagen, cover-art-preserving) and updates `library.json`. Gated by `enrich_version`; runs as a background `EnrichmentWorker` backfill and as an on-download hook. Never on the `/api/next` path. |
+| `talk.py`, `voice.py`, `llm.py` | **Voice + Talk** | Pre-renders host talk clips between songs. `TalkDirector` polls cadence, calls Claude for a script, renders via Kokoro (primary) or Piper (fallback), normalises loudness with ffmpeg, parks the clip in a one-slot buffer. Produces a one-shot welcome clip on first run (gated by `BRAIN_WELCOME_ENABLED`). |
 | `knowledge.py`, `research.py` | **Knowledge + Research** | SQLite editorial knowledge store (KNOWLEDGE-008). Dated, sourced, consensus-gated artist facts + relational graph. `Researcher` daemon fills it from MusicBrainz and Last.fm. `grounding_for_artist()` is the only interface the talk layer reads. |
-| `website.py` | **Website** | Renders the station HTML page once at startup, stored in `StationState`. Served at `GET /`; `GET /api/nowplaying` feeds the live poll. |
+| `website.py` | **Website** | Renders the station HTML page once at startup, stored in `StationState`. Served at `GET /`; `GET /api/nowplaying` feeds the live poll. Refreshes immediately on tab focus/visibility-change. Shows album alongside artist/title. |
 
 ### Subsystem interaction diagram
 
@@ -141,8 +145,14 @@ Claude Max subscription
         │                                                      │
         ▼                                                      │
   acquire.py ──▶ slskd.py / ytdlp.py ──▶ /music/*.flac       │
-        │                                        │             │
-        ▼                                        ▼             │
+        │                │                       │             │
+        │         on-download hook               │             │
+        │                ▼                       │             │
+        │          enrich.py ◀──────────────────-┘             │
+        │      (AcoustID / MB text-match;        │             │
+        │       mutagen tag write-back;          │             │
+        │       EnrichmentWorker backfill)       │             │
+        ▼                                        │             │
   library.py ◀───────────── scan ────── MUSIC_DIR             │
         │                                                      │
         ├─▶ analyzer.py ──▶ analysis.py / metadata.py         │
@@ -176,12 +186,13 @@ The `/api/next` budget is `<1 s`. The request path only reads state and commits.
 expensive operation runs on its own daemon thread:
 
 - **director** → calls Claude, fills the wishlist
-- **acquire workers** → download files (slskd + yt-dlp)
+- **acquire workers** → download files (slskd + yt-dlp); triggers the on-download enrichment hook
+- **enrichment worker** → AcoustID / MusicBrainz identification + tag write-back (bounded batch, pauses during downloads)
 - **analyzer** → audio DSP (serialized, throttled, yields when downloads are in flight)
 - **talk director** → LLM script + TTS + ffmpeg loudnorm, pre-rendering into a one-slot buffer
 - **research worker** → fills the knowledge base (bounded batch, pauses during downloads)
 
-**Deep dives:** [Runtime / Config](components/runtime-config.md) · [Playout](components/playout.md) · [Curation Director](components/curation-director.md) · [Acquisition](components/acquisition.md) · [Library + Ingestion](components/library-ingestion.md) · [Analysis](components/analysis.md) · [Voice + Talk](components/voice-talk.md) · [Knowledge + Research](components/knowledge-research.md) · [Website](components/website.md)
+**Deep dives:** [Runtime / Config](components/runtime-config.md) · [Playout](components/playout.md) · [Curation Director](components/curation-director.md) · [Acquisition](components/acquisition.md) · [Library + Ingestion](components/library-ingestion.md) · [Analysis](components/analysis.md) · [Enrichment](components/enrichment.md) · [Voice + Talk](components/voice-talk.md) · [Knowledge + Research](components/knowledge-research.md) · [Website](components/website.md)
 
 ---
 
@@ -190,23 +201,50 @@ expensive operation runs on its own daemon thread:
 Development follows a SPEC-first methodology; specs live under `.moai/specs/`. Each is
 a layer of the station. The numbering is globally incrementing within the RADIO series.
 
-| SPEC | One-line summary | Built? |
+The table below covers all SPECs whose code is **built and running**. SPECs that are designed
+but not yet implemented are listed in the [Roadmap / SPEC backlog](#roadmap--spec-backlog) section below.
+
+| SPEC | One-line summary | Status |
 |------|------------------|--------|
-| **CORE-001** | The v1 engine: library + autonomous acquisition (slskd/yt-dlp) + 24/7 pull-based playout (Liquidsoap + Icecast) + the LLM program-director curation loop + the self-controlled website. Establishes the Creative Autonomy Principle. | **Yes** |
-| **VOICE-002** | The on-air host voice layer: pluggable TTS (Kokoro/Piper English, teldutala.fo Faroese planned), LLM-authored talk links, loudness-matched clips, clean live transitions, per-persona voice assignment (planned). | **Yes** (English; Faroese planned) |
-| **CALLIN-003** | Live listener call-in (telephony / STT / two-way). Documented as a seam. | Roadmap |
-| **OPS-004** | Makes the station "alive": autonomous 24h schedule planning, themed shows + hosts, research-driven show prep, self-learning radio-craft playbook, self-produced imaging/jingles, autonomous newscasting. | Planned |
-| **ORCH-005** | Orchestration & awareness — the "nervous system": director-loop world-model, event reaction, news ledger/dedup over the OPS-004 substrate. | Planned |
-| **ANALYSIS-006** | The track-intelligence substrate: offline CPU audio engine + per-track data model (BPM/key/energy/cue/beat-grid), metadata enrichment with consensus, library auto-ingest scan, per-item `annotate:` transition metadata. Per-persona taste-feature dimensions. | **Yes** |
-| **PROGRAMMING-007** | The editorial layer: persona/roster model, taste-charter + anti-convergence curation policy (no two hosts converge), radio-craft playbook + talk rules, ear-writing rules for TTS, show formats. | Planned |
-| **KNOWLEDGE-008** | The editorial-knowledge layer: dated, sourced artist/band knowledge in a relational SQLite store, continuous research jobs, knowledge graph for sane transitions, the grounding feed the host speaks from. | **Yes** |
-| **TAGSTREAM-009** | File-tag write-back, artwork, richer stream/web now-playing. | Planned |
-| **IMAGING-010** | Self-produced station imaging, jingles, and stingers. | Planned |
+| **CORE-001** | The v1 engine: library + autonomous acquisition (slskd/yt-dlp) + 24/7 pull-based playout (Liquidsoap + Icecast) + the LLM program-director curation loop + the self-controlled website. Establishes the Creative Autonomy Principle. | **Built** |
+| **VOICE-002** | The on-air host voice layer: pluggable TTS (Kokoro/Piper English, teldutala.fo Faroese planned), LLM-authored talk links, loudness-matched clips, clean live transitions, per-persona voice assignment (planned). | **Built** (English; Faroese: roadmap) |
+| **ANALYSIS-006** | The track-intelligence substrate: offline CPU audio engine + per-track data model (BPM/key/energy/cue/beat-grid), metadata enrichment with consensus, library auto-ingest scan, per-item `annotate:` transition metadata. Per-persona taste-feature dimensions. | **Built** |
+| **KNOWLEDGE-008** | The editorial-knowledge layer: dated, sourced artist/band knowledge in a relational SQLite store, continuous research jobs, knowledge graph for sane transitions, the grounding feed the host speaks from. | **Built** |
+| **ENRICH-012** | Core-identity tag enrichment: AcoustID fingerprint (fpcalc) → AcoustID API → MusicBrainz identification; text-match fallback; filename-corroboration cross-check; mutagen tag write-back (artist/title/album/year/genre, cover-art-preserving); `enrich_version` idempotency gate; background `EnrichmentWorker` backfill; on-download hook. Fixes the garbled/empty tags that slskd and yt-dlp downloads routinely arrive with. `musicbrainzngs` is now installed (it previously was not, so all MusicBrainz lookups in `metadata.py` silently no-op'd until this fix). | **Built** |
 
 The shipped engine is built on a **brain-only seam**: new layers extend the Python `brain/`
 package without forking the library store and (for the most part) without Liquidsoap
 changes — the only playout-facing contract is the per-request `annotate:` metadata the
 existing transition function already reads.
+
+---
+
+## Roadmap / SPEC backlog
+
+These SPECs are **designed and audited but not yet implemented**. The authoritative source for
+each is `.moai/specs/SPEC-RADIO-<ID>/spec.md`.
+
+| SPEC | One-line description | Status |
+|------|----------------------|--------|
+| **CALLIN-003** | Live listener call-in (telephony / STT / two-way). | Designed |
+| **OPS-004** | Autonomous 24h schedule planning, themed shows + hosts, research-driven show prep, imaging/jingles, newscasting. | Designed |
+| **ORCH-005** | Station nervous system: director-loop world-model, event reaction, news ledger over the OPS-004 substrate. | Designed |
+| **PROGRAMMING-007** | Editorial layer: persona/roster model, anti-convergence curation policy, radio-craft playbook, show formats. | Designed |
+| **TAGSTREAM-009** | File-tag write-back, artwork, richer stream/web now-playing. | Designed |
+| **IMAGING-010** | Self-produced station imaging, jingles, and stingers. | Designed |
+| **REQUEST-011** | Listener song requests + acquisition-growth surface. | Designed |
+| **STATS-013** | Analytics and insight site. | Designed |
+| **DEDUP-014** | Download deduplication. | Designed |
+| **LIKE-015** | Explicit likes + implicit drop-off signals. | Designed |
+| **HOSTCTX-016** | Hosts speak year, album, and curiosa from enriched metadata. | Designed |
+| **MBMIRROR-017** | MusicBrainz access: public API + local cache default; optional self-hosted Hetzner mirror. | Designed |
+| **WEBUI-018** | 2026 website redesign + durable last-played history. | Designed |
+| **ACQQUEUE-019** | slskd low-queue source preference for acquisition. | Designed |
+| **SHOWS-020** | Last.fm-powered per-persona show variation. | Designed |
+| **ALBUMART-021** | Embed Cover Art Archive front covers. | Designed |
+| **DATASTORE-022** | Consolidate all JSON stores into four SQLite files (knowledge.db + brain.db + state.db + events.db, WAL). | Designed |
+| **LOOKUPLOG-023** | Identification-lookup ledger. | Designed |
+| **FILENAME-024** | Filename ↔ ID3 consistency (detect + flag; opt-in rename). | Designed |
 
 ---
 
@@ -223,34 +261,45 @@ A track's life, end to end:
       → slskd search → rank → download           → /music/<file>  (if slskd enabled)
       → (nothing/stall? → yt-dlp fallback)
       → record outcome in attempts.json (idempotent across restarts)
+      → on success: enrich.enrich_track() [on-download hook]
+           → AcoustID fingerprint (fpcalc) → AcoustID API → MusicBrainz match
+           → (no fpcalc / low confidence? → text-match fallback via MusicBrainz)
+           → filename corroboration cross-check; reject mis-submitted matches
+           → mutagen tag write-back (artist/title/album/year/genre, cover-art-preserving)
+           → library.set_core_tags (enrich_version stamp)
 
 3. library.scan
       → mutagen metadata + normalize_key dedup    → library.json record
       → (schema_version = 0; fully playable immediately)
 
-4. analyzer (background, serialized)
+4. EnrichmentWorker (background, bounded backfill)
+      → tracks with enrich_version < ENRICH_SCHEMA_VERSION
+      → same AcoustID / text-match pipeline as step 2
+      → enrich_version stamp prevents re-querying already-resolved tracks
+
+5. analyzer (background, serialized)
       → analysis.analyze_file                     → BPM/key/energy/cue → library.json
       → metadata.enrich (MusicBrainz + TheAudioDB + Last.fm, optional)
       → library.set_analysis (allowlist writer)   → schema_version = 1
 
-5. research (background)
+6. research (background)
       → MusicBrainz / Last.fm → consensus+dates  → knowledge.db facts + graph
 
-6. talk director (background, when a break is due)
+7. talk director (background, when a break is due)
       → knowledge.grounding_for_artist (verified facts + hedge flags)
       → llm.generate_talk_script (Claude, HOST_PERSONA, grounded)
       → voice.produce_talk_clip: TTS → WAV → ffmpeg loudnorm → MP3
       → state.set_pending_talk(clip)              → /music/.talk/<id>.mp3
 
-7. server: GET /api/next  (Picker, <1s)
+8. server: GET /api/next  (Picker, <1s)
       → Picker: take pending talk clip if cadence due + clip ready
       → else: library.pick_next (least-recently-played, excluding recent window)
       → build annotate: URI (clean metadata + mix_mode + cue/BPM if analyzed)
 
-8. Liquidsoap plays it; on air → POST /api/airing → ground-truth now-playing
+9. Liquidsoap plays it; on air → POST /api/airing → ground-truth now-playing
 ```
 
-The grounding discipline in step 6 is the heart of "grounded, not fabricated": the host
+The grounding discipline in step 7 is the heart of "grounded, not fabricated": the host
 prompt receives only verified, dated facts, each marked `CERTAIN` (state plainly) or
 `QUALIFIED` (must keep a hedge like "reportedly"). The host may only segue on relationships
 that are real graph edges. Stale facts are gated out before they reach the prompt.
@@ -263,15 +312,19 @@ The brain persists state under `/db` (Docker bind-mounted from the gitignored `d
 
 | Store | File | What it holds |
 |-------|------|---------------|
-| Music library | `library.json` | Catalog + playout source of truth: per-track metadata, play history, and the ANALYSIS-006 feature record (BPM, key/Camelot, energy, cue points, sonic character descriptors). A pre-analysis track (`schema_version = 0`) is fully playable with safe-default transitions. |
+| Music library | `library.json` | Catalog + playout source of truth: per-track metadata, play history, ANALYSIS-006 feature record (BPM, key/Camelot, energy, cue points, sonic character), and ENRICH-012 identity fields (`enrich_version`, corrected artist/title/album/year/genre with provenance). A pre-analysis, pre-enrichment track (`schema_version = 0`) is fully playable with safe-default transitions. |
 | Acquisition attempts | `attempts.json` | Outcome of every acquisition attempt per `normalize_key(artist, title)`. Failures are skipped for a 6-hour cooldown; idempotent across restarts. |
 | Station state | `state.json` | Persisted slice of runtime state (play history) so rotation survives restarts. |
 | Watch manifest | `watch_manifest.json` | `(path → size:mtime)` snapshot used by the stat-only library-watch to detect new files on WSL2 bind mounts (inotify is unreliable there). |
 | Editorial knowledge | `knowledge.db` | **SQLite (WAL).** Dated, sourced artist facts; 7-entity model; relational graph; consensus state; freshness windows. One writer (research daemon) + concurrent readers, guarded by an `RLock` + WAL mode. |
 
-**Storage roadmap:** The music library currently uses a JSON index (`library.json`). A
-migration to SQLite is planned. The editorial knowledge base (KNOWLEDGE-008) is already
-SQLite/WAL.
+**Current storage layer:** JSON files (`library.json`, `attempts.json`, `state.json`,
+`watch_manifest.json`) plus a single SQLite database (`knowledge.db`). This is what
+runs today.
+
+**Storage roadmap (DATASTORE-022):** A planned consolidation into four SQLite files
+(WAL mode) will replace the JSON stores: `knowledge.db` + `brain.db` + `state.db` +
+`events.db`. This is designed but not yet implemented; see `.moai/specs/SPEC-RADIO-DATASTORE-022/`.
 
 All of `data/` (music, databases, logs) and `secrets/` are gitignored and never shipped.
 Talk clips live under `MUSIC_DIR/.talk/` — a dot-directory so the library scan skips
