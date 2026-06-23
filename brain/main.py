@@ -80,6 +80,14 @@ def run() -> int:
     # if disabled or TTS/LLM fails, the station stays pure music. Carries the KNOWLEDGE-008
     # grounding feed (verified facts) when the store is available (REQ-KI-001).
     talk_director = TalkDirector(cfg, library, state, stop_event, knowledge=knowledge)
+    # First-run WELCOME (one-shot opening): arm it only when talk is on, it's enabled, and
+    # the genesis marker is absent — so it plays once at the station's first start and a
+    # later brain restart mid-broadcast does NOT re-welcome. The TalkDirector prepares it
+    # before the first song; the picker force-serves it ahead of the cadence, then persists
+    # the marker. Best-effort throughout: if it can't be made, the station just plays music.
+    if cfg.talk_enabled and cfg.welcome_enabled and not os.path.exists(cfg.welcome_marker_path):
+        state.arm_welcome()
+        log_event(log, "main.welcome_armed")
     # ANALYSIS-006: background, serialized, non-blocking track-intelligence worker.
     # Best-effort - if disabled or the audio stack is absent, every track still plays
     # with safe-default transitions. NEVER on the <1s /api/next pull path.

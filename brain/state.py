@@ -42,6 +42,12 @@ class StationState:
         # Songs played since the last talk break - drives talk cadence. The picker
         # bumps it on each music commit and zeroes it when a talk clip is served.
         self._songs_since_talk: int = 0
+        # First-run WELCOME (one-shot opening, ahead of the normal cadence). _welcome_owed
+        # is armed once at startup (main.run) when enabled AND the genesis marker is absent.
+        # _pending_is_welcome flags that the parked talk clip is the welcome, so the picker
+        # force-serves it BEFORE the first song instead of waiting for songs_since_talk.
+        self._welcome_owed: bool = False
+        self._pending_is_welcome: bool = False
 
     # -- commit bookkeeping (hand-out time) --------------------------------------
 
@@ -62,7 +68,8 @@ class StationState:
 
     # -- now playing / recent (GROUND TRUTH from air) -----------------------------
 
-    def set_on_air(self, artist: str, title: str, kind: str = "music", path: str = "") -> bool:
+    def set_on_air(self, artist: str, title: str, kind: str = "music", path: str = "",
+                   album: str = "") -> bool:
         """Set the now-playing to what Liquidsoap reports is airing RIGHT NOW.
 
         Called by POST /api/airing the instant a new item starts on air. Pushes the
@@ -87,6 +94,7 @@ class StationState:
             self._now_playing = {
                 "artist": artist,
                 "title": title,
+                "album": album,
                 "path": path,
                 "kind": kind,
                 "started_at": time.time(),
@@ -151,14 +159,23 @@ class StationState:
         with self._lock:
             return self._songs_since_talk
 
-    def set_pending_talk(self, clip: Any) -> None:
-        """TalkDirector parks a finished talk clip here for the picker to serve."""
+    def set_pending_talk(self, clip: Any, is_welcome: bool = False) -> None:
+        """TalkDirector parks a finished talk clip here for the picker to serve. When
+        is_welcome is True the clip is the one-shot first-run welcome, which the picker
+        force-serves ahead of the normal cadence (see pending_is_welcome)."""
         with self._lock:
             self._pending_talk = clip
+            self._pending_is_welcome = is_welcome
 
     def has_pending_talk(self) -> bool:
         with self._lock:
             return self._pending_talk is not None
+
+    def pending_is_welcome(self) -> bool:
+        """True when the parked clip is the first-run welcome and so should be served
+        before the first song, regardless of the songs-since-talk cadence."""
+        with self._lock:
+            return self._pending_talk is not None and self._pending_is_welcome
 
     def take_pending_talk(self) -> Optional[Any]:
         """Atomically remove and return the pending clip, and reset the cadence counter.
@@ -166,9 +183,28 @@ class StationState:
         with self._lock:
             clip = self._pending_talk
             self._pending_talk = None
+            self._pending_is_welcome = False
             if clip is not None:
                 self._songs_since_talk = 0
             return clip
+
+    # -- first-run welcome (one-shot opening) ------------------------------------
+
+    def arm_welcome(self) -> None:
+        """Owe a first-run welcome. Called once at startup when enabled and the genesis
+        marker is absent; the TalkDirector then prepares the welcome before any song."""
+        with self._lock:
+            self._welcome_owed = True
+
+    def welcome_owed(self) -> bool:
+        with self._lock:
+            return self._welcome_owed
+
+    def note_welcome_served(self) -> None:
+        """Clear the welcome debt once the welcome clip has been served. The picker also
+        persists the genesis marker so it stays cleared across brain restarts."""
+        with self._lock:
+            self._welcome_owed = False
 
     def defer_talk(self) -> None:
         """Back off after a failed talk attempt: reset the counter so the TalkDirector

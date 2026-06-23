@@ -73,10 +73,21 @@ def transition(old, new) =
     # which is exactly the sharp cut-off the user banned. Instead we ALWAYS fade the
     # outgoing tail out and the incoming head in and overlap them — so a music->music
     # segue can NEVER hard-cut; there is always at least a 3s gentle fade.
-    add(
+    # [HARD] METADATA-THROUGH-CROSSFADE. A crossfade overlaps the OUTGOING (fading-out) and
+    # INCOMING (fading-in) tracks. cross() CONSUMES the incoming track's metadata during its
+    # look-ahead to build this transition, so neither the ICY StreamTitle nor on_metadata
+    # ever see the new song — the reported track "sticks" on the one fading OUT until the
+    # next clean (talk/sequence) boundary. Fix: explicitly re-insert the INCOMING track's
+    # metadata onto the crossfaded output so players + the brain grab what's fading IN.
+    faded = add(
       normalize=false,
       [fade.out(duration=3.0, old.source), fade.in(duration=3.0, new.source)]
     )
+    faded = insert_metadata(faded)
+    # Guard against stamping an empty packet (e.g. a placeholder when the source momentarily
+    # has nothing queued); only re-stamp when the incoming track actually has a title.
+    if new.metadata["title"] != "" then faded.insert_metadata(new.metadata) end
+    faded
   end
 end
 
@@ -94,11 +105,13 @@ radio = cross(duration=4.0, width=2.0, transition, source)
 def report_airing(m) =
   artist = m["artist"]
   title = m["title"]
+  album = m["album"]
   mix_mode = m["mix_mode"]
   kind = if mix_mode == "talk" then "talk" else "music" end
-  # url-encode the values for a safe x-www-form-urlencoded body.
+  # url-encode the values for a safe x-www-form-urlencoded body. album (from id3 tags)
+  # is reported alongside artist/title so the brain's now_playing + website show it.
   body =
-    "artist=#{url.encode(artist)}&title=#{url.encode(title)}&kind=#{url.encode(kind)}"
+    "artist=#{url.encode(artist)}&title=#{url.encode(title)}&album=#{url.encode(album)}&kind=#{url.encode(kind)}"
   log("playout: on air -> #{artist} - #{title} (#{kind})")
   thread.run(
     fast=false,
@@ -127,6 +140,22 @@ end
 # source.on_metadata(...) free function hits once the graph is pinned to %mp3 output.
 radio.on_metadata(report_airing)
 radio = mksafe(radio)
+
+# Fold the album (from id3 tags) into the player-facing ICY StreamTitle when present, so
+# listeners' players show "Artist - Title — Album". This runs AFTER report_airing, which
+# already captured the CLEAN artist/title/album separately for the brain/website — so this
+# rewrite is player-only and never pollutes the website's discrete fields. Empty-safe:
+# an untagged track (or a talk break, album="") leaves the title untouched.
+def fold_album(m) =
+  album = m["album"]
+  title = m["title"]
+  if album != "" and title != "" then
+    [("title", "#{title} — #{album}")]
+  else
+    []
+  end
+end
+radio = metadata.map(fold_album, radio)
 
 output.icecast(
   %mp3(bitrate=320),

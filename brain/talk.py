@@ -88,11 +88,20 @@ class TalkDirector:
         # Already have a clip waiting? Nothing to do until the picker consumes it.
         if self.state.has_pending_talk():
             return
+        # Need a library to talk over (and to know what's "next" / the first song).
+        if self.library.count() == 0:
+            return
+
+        # First-run WELCOME takes priority over the normal cadence: prepare it before the
+        # first song so the picker can force-serve it ahead of any music. Best-effort like
+        # every break — on LLM/TTS failure we simply leave the debt armed and retry next tick;
+        # the picker keeps playing music in the meantime (the welcome never blocks playout).
+        if self.state.welcome_owed():
+            self._prepare_welcome_clip()
+            return
+
         # Is a break due? The picker reports songs-since-last-talk via state.
         if self.state.songs_since_talk() < max(1, self.cfg.talk_every_n_tracks):
-            return
-        # Need a library to talk over (and to know what's "next").
-        if self.library.count() == 0:
             return
 
         context = self._build_context()
@@ -113,6 +122,43 @@ class TalkDirector:
         # Park the finished clip; the picker will serve it on the next /api/next.
         self.state.set_pending_talk(clip)
         log_event(log, "talk.clip_ready", path=clip.container_path, chars=len(script))
+
+    def _prepare_welcome_clip(self) -> None:
+        """Generate + render the one-shot first-run welcome and park it as a WELCOME clip.
+
+        Best-effort: on any LLM/TTS failure we log and return WITHOUT clearing the welcome
+        debt, so the next tick retries. The welcome never blocks playout — until a clip is
+        parked the picker just serves music; the welcome simply lands as soon as it can.
+        """
+        context = self._build_welcome_context()
+        script = llm.generate_talk_script(self.cfg.anthropic_model, context)
+        if not script:
+            log_event(log, "talk.welcome_skip_no_script")
+            return
+        clip = voice.produce_talk_clip(self.cfg, self._provider, script)
+        if clip is None:
+            log_event(log, "talk.welcome_skip_no_clip")
+            return
+        self.state.set_pending_talk(clip, is_welcome=True)
+        log_event(log, "talk.welcome_ready", path=clip.container_path, chars=len(script))
+
+    def _build_welcome_context(self) -> dict:
+        """Context for the opening welcome: the station identity + a best-effort look at the
+        FIRST song (so the host can hand into it). No back-announce — nothing has played yet.
+        """
+        context = {
+            "welcome": True,
+            "station_name": self.state.station_name,
+        }
+        try:
+            recent_keys = self.state.recent_keys(normalize_key)
+            upcoming = self.library.pick_next(None, recent_keys)
+            if upcoming is not None:
+                context["next_artist"] = upcoming.artist
+                context["next_title"] = upcoming.title
+        except Exception as exc:  # noqa: BLE001 - first-song lookahead is optional
+            log_event(log, "talk.welcome_lookahead_error", error=str(exc))
+        return context
 
     def _build_context(self) -> dict:
         """Assemble the talk context: the track that just played (back-announce) and a

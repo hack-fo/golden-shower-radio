@@ -288,6 +288,34 @@ def _build_talk_prompt(context: Dict) -> str:
     next_title = str(context.get("next_title") or "").strip()
     station = str(context.get("station_name") or "").strip()
 
+    # First-run WELCOME: a one-shot opening, longer than a normal between-song link. The
+    # listener has just tuned in to a station that just came on air, so there is nothing to
+    # back-announce — open the broadcast, say who you are, explain briefly how it works, then
+    # hand into the first song. The explicit length here overrides the persona's "short link"
+    # default for this single segment.
+    if context.get("welcome"):
+        wparts: List[str] = [
+            "This is the station's OPENING WELCOME — the very first thing listeners hear as "
+            "the station comes on air, NOT a between-song link.",
+            "Speak for about 30 to 60 seconds (roughly 90 to 150 words). Natural spoken "
+            "English, warm and inviting. Output ONLY the words to say — no quotes, no "
+            "markdown, no stage directions, no song metadata formatting.",
+            "Cover, in your own voice and in this order: (1) welcome the listener and name "
+            "the station" + (f" ({station})" if station else "") + "; (2) say who you are — "
+            "the live on-air host; (3) explain briefly how this works: it's an autonomous "
+            "station that finds and plays music around the clock and you pop in between songs "
+            "to talk; (4) then introduce the first song.",
+        ]
+        if next_artist or next_title:
+            wparts.append(f"The first song is: \"{next_title}\" by {next_artist}." if next_artist
+                          else f"The first song is: \"{next_title}\".")
+            wparts.append("Hand into it naturally — name the artist and title so listeners "
+                          "know what they're about to hear.")
+        else:
+            wparts.append("Then hand into the music without naming a specific track.")
+        wparts.append("Keep it genuine and easy to say out loud — an opening, not a sales pitch.")
+        return "\n".join(wparts)
+
     parts: List[str] = [
         "Write a SHORT spoken radio link to say between songs, right now, live on air.",
         "One to three sentences. Natural spoken English. Output ONLY the words to say - "

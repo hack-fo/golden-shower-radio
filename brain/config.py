@@ -65,6 +65,13 @@ class Config:
     talk_enabled: bool = field(default_factory=lambda: _env("BRAIN_TALK_ENABLED", "1") not in ("0", "false", "no"))
     # Insert a host talk break roughly every N songs (the cadence the AI owns).
     talk_every_n_tracks: int = field(default_factory=lambda: int(_env("BRAIN_TALK_EVERY_N", "4")))
+    # First-run WELCOME: a single, longer (~30-60s) opening the very first time the station
+    # starts — welcome the listener, say who the host is, explain briefly how it works, then
+    # intro the first song. Played BEFORE the first track, ahead of the normal cadence. Fires
+    # once per station genesis: a marker file in DB_DIR (see welcome_marker_path) persists the
+    # "already welcomed" fact across brain restarts, so a redeploy mid-broadcast does NOT
+    # re-welcome. Delete the marker (or wipe the db) to re-arm. Requires talk_enabled.
+    welcome_enabled: bool = field(default_factory=lambda: _env("BRAIN_WELCOME_ENABLED", "1") not in ("0", "false", "no"))
     # Active TTS provider. "kokoro" (default) is the higher-quality neural voice; set to
     # "piper" to force the lean fallback. If Kokoro fails to load, brain.voice auto-falls
     # back to Piper at startup so talk never breaks (see voice.make_provider).
@@ -188,6 +195,13 @@ class Config:
         """The KNOWLEDGE-008 SQLite editorial-knowledge store, in /db alongside the JSON
         stores (REQ-KS-001). A NEW relational file; it does NOT fork library.json."""
         return os.path.join(self.db_dir, "knowledge.db")
+
+    @property
+    def welcome_marker_path(self) -> str:
+        """Sentinel file marking that the first-run welcome has already aired. Present ->
+        the welcome is NOT re-armed on the next start (once per station genesis). Lives in
+        DB_DIR so it survives brain restarts; delete it (or wipe the db) to re-arm."""
+        return os.path.join(self.db_dir, "welcomed")
 
     def container_music_path(self, abs_or_rel: str) -> str:
         """Return the ``/music/...`` path Liquidsoap should fetch for a library file.

@@ -59,6 +59,7 @@ def render_website(cfg: Config) -> str:
   h2 {{ font-size: 13px; letter-spacing: .16em; text-transform: uppercase; color: var(--gold-soft); margin: 0 0 12px; }}
   .now-title {{ font-size: clamp(20px, 4vw, 30px); font-weight: 700; }}
   .now-artist {{ color: var(--muted); margin-top: 4px; font-size: 16px; }}
+  .now-album {{ color: var(--muted); margin-top: 2px; font-size: 13px; opacity: 0.85; }}
   ul {{ list-style: none; margin: 0; padding: 0; }}
   li {{ padding: 9px 0; border-bottom: 1px dashed var(--line); display: flex; justify-content: space-between; gap: 16px; }}
   li:last-child {{ border-bottom: none; }}
@@ -89,6 +90,7 @@ def render_website(cfg: Config) -> str:
       <h2>Now Playing</h2>
       <div class="now-title" id="np-title">&hellip;</div>
       <div class="now-artist" id="np-artist"></div>
+      <div class="now-album" id="np-album"></div>
     </div>
 
     <div class="grid">
@@ -127,6 +129,7 @@ def render_website(cfg: Config) -> str:
       var np = d.now_playing;
       document.getElementById("np-title").innerHTML = np ? esc(np.title || "Untitled") : "Silence (filling the library&hellip;)";
       document.getElementById("np-artist").innerHTML = np ? esc(np.artist || "") : "";
+      document.getElementById("np-album").innerHTML = (np && np.album) ? esc(np.album) : "";
       document.getElementById("lib").textContent = d.library != null ? d.library : 0;
       var dl = d.downloading || [];
       document.getElementById("dl").textContent = dl.length;

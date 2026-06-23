@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
@@ -40,6 +41,7 @@ def _annotate_uri(
     mix_mode: str,
     path: str,
     extra: Optional[dict] = None,
+    album: str = "",
 ) -> str:
     """Build a Liquidsoap ``annotate:`` URI carrying the brain's CLEAN metadata.
 
@@ -67,7 +69,12 @@ def _annotate_uri(
         # exactly the token form Liquidsoap's annotate: parser expects for a value.
         return json.dumps(s if s else "", ensure_ascii=False)
 
+    # Album (from id3 tags) is appended as a core annotate field when present, so
+    # radio.liq can fold it into the player ICY StreamTitle and report it to the brain
+    # for the website. Empty-safe: an untagged track omits it and the string is unchanged.
     base = f"artist={q(artist)},title={q(title)},mix_mode={q(mix_mode)}"
+    if album:
+        base += f",album={q(album)}"
     if not extra:
         # AT-006: legacy form, byte-identical to the pre-ANALYSIS-006 string.
         return f"annotate:{base}:{path}"
@@ -124,6 +131,7 @@ class NextItem:
     container_path: str
     artist: str
     title: str
+    album: str = ""  # from id3 tags (mutagen) via Track.album; "" for talk / untagged
     kind: str = "music"  # "music" | "talk"
     track: Optional[Track] = None  # set for music, for play-history commit
 
@@ -147,9 +155,21 @@ class Picker:
         # --- Talk-clip branch: if a break is due AND a clip is pre-rendered, serve it.
         # take_pending_talk() atomically removes the clip and resets the cadence counter,
         # so we never double-serve and never block on generation here.
-        if self.cfg.talk_enabled and self.state.songs_since_talk() >= max(1, self.cfg.talk_every_n_tracks):
+        # The first-run welcome is force-served the instant it is parked, BEFORE the first
+        # song (it does not wait for the songs-since-talk cadence). A normal break is served
+        # when the cadence counter says one is due. Capture is_welcome BEFORE take (take
+        # clears the flag) so we can persist the genesis marker on serve.
+        is_welcome = self.cfg.talk_enabled and self.state.pending_is_welcome()
+        break_due = self.cfg.talk_enabled and \
+            self.state.songs_since_talk() >= max(1, self.cfg.talk_every_n_tracks)
+        if is_welcome or break_due:
             clip = self.state.take_pending_talk()
             if clip is not None:
+                if is_welcome:
+                    # Once-per-genesis: clear the debt and persist the marker so a brain
+                    # restart mid-broadcast never re-welcomes listeners.
+                    self.state.note_welcome_served()
+                    self._mark_welcomed()
                 # Talk clips already carry a container path under /music/.talk.
                 title = clip.text if len(clip.text) <= 80 else clip.text[:77] + "..."
                 return NextItem(
@@ -174,6 +194,7 @@ class Picker:
             container_path=self.cfg.container_music_path(track.path),
             artist=track.artist,
             title=track.title,
+            album=track.album,
             kind="music",
             track=track,
         )
@@ -193,6 +214,18 @@ class Picker:
         # already reset the counter in take_pending_talk, so we only bump on music.)
         if item.kind == "music":
             self.state.note_song_played()
+
+    def _mark_welcomed(self) -> None:
+        """Persist the once-per-genesis welcome marker (DB_DIR/welcomed). Best-effort: a
+        write failure only risks re-welcoming on the next restart, never breaks playout."""
+        try:
+            path = self.cfg.welcome_marker_path
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write("welcomed\n")
+            log_event(log, "picker.welcome_marker_written", path=path)
+        except Exception as exc:  # noqa: BLE001 - marker is best-effort
+            log_event(log, "picker.welcome_marker_error", error=str(exc))
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -275,21 +308,24 @@ class _Handler(BaseHTTPRequestHandler):
             return
         self.picker.commit(item)
         extra = None
+        album = ""
         if item.kind == "talk":
-            # Clean, stable ICY label for a host break - the raw script text would make
-            # a noisy/garbled StreamTitle, so players show the station identity instead.
+            # During a host break players just show the station identity — NOT a noisy
+            # script line and NOT a "— host break" suffix. Just the station name: empty
+            # artist + station name as the title yields a clean "<Station>" StreamTitle.
             mix_mode = "talk"
-            icy_artist = self.state.station_name
-            icy_title = f"{self.state.station_name} — host break"
+            icy_artist = ""
+            icy_title = self.state.station_name
         else:
             mix_mode = "music"
             icy_artist = item.artist
             icy_title = item.title
+            album = item.album
             # ANALYSIS-006 (AT-006): attach transition metadata ONLY when the track has
             # an analysis record (schema_version > 0). An unanalyzed track gets the
             # byte-identical legacy annotate string (no regression, safe defaults).
             extra = _analysis_extra(item.track)
-        uri = _annotate_uri(icy_artist, icy_title, mix_mode, item.container_path, extra)
+        uri = _annotate_uri(icy_artist, icy_title, mix_mode, item.container_path, extra, album=album)
         log_event(
             log, "server.next",
             path=item.container_path, kind=item.kind, title=icy_title, mix_mode=mix_mode,
@@ -327,13 +363,14 @@ class _Handler(BaseHTTPRequestHandler):
 
         artist = first("artist")
         title = first("title")
+        album = first("album")
         kind = first("kind", "music") or "music"
         path = first("path")
         if not artist and not title:
             # Nothing useful (e.g. an empty metadata packet) - ack and ignore.
             self._send(200, b"ignored", "text/plain; charset=utf-8")
             return
-        changed = self.state.set_on_air(artist, title, kind=kind, path=path)
+        changed = self.state.set_on_air(artist, title, kind=kind, path=path, album=album)
         if changed:
             log_event(log, "server.airing", artist=artist, title=title, kind=kind)
         self._send(200, b"ok", "text/plain; charset=utf-8")
