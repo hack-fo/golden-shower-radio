@@ -9,8 +9,19 @@ stays lean. Engine choice is verified to fit 8 GB (see Sources at bottom).
   FlashAttention-2 recommended (−20–25% VRAM, +30–40% speed).
 - **Chatterbox-Turbo** (350M, 22.05 kHz, ~4.5 GB during generation) — comfortable on 8 GB; voice-clone +
   emotion. `pip install chatterbox-tts`; self-host server option: `devnen/Chatterbox-TTS-Server`.
+- **Voxtral-TTS 4B** (Mistral, open-weights, released 2026-03-26; multilingual incl. English; zero/few-shot
+  voice cloning from ~3 s reference audio; streaming, ~70 ms latency). 8 GB CAVEAT: full bf16 (~8 GB weights)
+  is too tight with activations → run **fp8 or int8** (the Ada natively supports fp8); quantized ~4 GB fits
+  comfortably. Resolve the exact TTS repo id from the mistralai/voxtral HF collection. A 4th A/B candidate.
 - Run ONE engine at a time for the A/B (no co-residency needed; both fit individually).
 - Kokoro (current primary) stays the baseline of the A/B; Piper stays the CPU fallback.
+
+## Model storage — F: (/mnt/f, writable, ~37 GB free) [user-directed 2026-06-24]
+Store ALL engine weights (Voxtral-TTS-4B, Qwen3-TTS-0.6B, Chatterbox-Turbo) on F: to keep the ext4 home
+lean. Download target `/mnt/f/gsr-models`, mounted into the tts sidecar as the model-cache volume
+(`HF_HOME=/mnt/f/gsr-models/hf`). CAVEAT: F: is an NTFS Windows mount; the HF hub cache uses blob<->snapshot
+SYMLINKS that NTFS-via-WSL doesn't support → set `HF_HUB_DISABLE_SYMLINKS=1` (HF stores plain copies, a bit
+more space) or `snapshot_download` into a flat dir. ~37 GB free covers all three (~4 + 1.5 + 1 GB).
 
 ## A. Host / deploy-box prerequisites — VERIFIED DONE (2026-06-24)
 All host-side GPU plumbing is already in place and tested in-container:
