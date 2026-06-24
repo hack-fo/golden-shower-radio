@@ -12,16 +12,15 @@ stays lean. Engine choice is verified to fit 8 GB (see Sources at bottom).
 - Run ONE engine at a time for the A/B (no co-residency needed; both fit individually).
 - Kokoro (current primary) stays the baseline of the A/B; Piper stays the CPU fallback.
 
-## A. Host / deploy-box prerequisites (operator)
-1. NVIDIA driver — present (host has the RTX 2000 Ada). On WSL dev box, the GPU is the Windows driver;
-   the DEPLOY box is Linux/Debian/Ubuntu (the real target).
-2. **`nvidia-container-toolkit`** — REQUIRED so Docker can pass the GPU into a container. `nvidia-smi`
-   working on the host does NOT mean Docker can use the GPU.
-   - Install (Debian/Ubuntu): the nvidia-container-toolkit apt repo + `sudo apt-get install
-     nvidia-container-toolkit` + `sudo nvidia-ctk runtime configure --runtime=docker` + restart Docker.
-   - VERIFY: `docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi` shows the Ada.
-3. Disk for model weights (Qwen3-TTS 0.6B + Chatterbox) — cached on a mounted volume so they're not
-   re-downloaded per container rebuild.
+## A. Host / deploy-box prerequisites — VERIFIED DONE (2026-06-24)
+All host-side GPU plumbing is already in place and tested in-container:
+- NVIDIA driver 595.59, CUDA 13.2; GPU = NVIDIA RTX 2000 Ada Generation (Laptop), 8188 MiB / ~8.59 GB.
+- `nvidia-container-toolkit` 1.19.1 installed; Docker 29.1.3 with the `nvidia` runtime + `cdi:
+  nvidia.com/gpu=all` registered.
+- `docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi` → shows the Ada (PASS).
+- `pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime` image already pulled locally → `torch.cuda.is_available()
+  == True`, device "RTX 2000 Ada", 8.59 GB. Use it as the Dockerfile.tts base (CUDA torch already present).
+- Remaining operator task: a model-cache volume so Qwen/Chatterbox weights persist across rebuilds (trivial).
 
 ## B. What gets built (VOICE-002 Phase 1.5)
 1. **`deploy/Dockerfile.tts`** — CUDA base image + CUDA torch + `chatterbox-tts` + qwen3-tts (0.6B) +
