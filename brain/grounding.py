@@ -47,13 +47,21 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set
 
+# Group PC (SPEC-RADIO-PROGRAMMING-007) is the AUTHORITATIVE owner of the REQ-PC-004 banned
+# radio-filler list. This module READS it (single source of truth, no forked copy / drift).
+from . import playbook as _pc
+
 # =====================================================================================
 # REQ-PG-004 — the anti-slop register (TUNABLE config; that it is rejected is the rail).
 # =====================================================================================
 
 # Music-slop phrases + LLM-tells. Matched case-insensitively as substrings/word-boundary
 # tokens. The list is the SPEC's named set plus its siblings; it is config, not a rail.
-BANNED_PHRASES: tuple = (
+# The CLICHE RADIO FILLER half (REQ-PV-006 / REQ-PC-004 firewall) is REFERENCED — not forked —
+# from the Group PC-004 single source (``brain.playbook.BANNED_PHRASES``), so the cheese
+# register has ONE owner (REQ-PC-004 supplies the filler list; this module owns only the
+# music-slop half). The two are merged + de-duplicated below.
+_MUSIC_SLOP_PHRASES: tuple = (
     # music-slop (REQ-PG-004)
     "sonic journey",
     "lush soundscapes",
@@ -66,14 +74,11 @@ BANNED_PHRASES: tuple = (
     "aural journey",
     "tour de force",
     "auditory feast",
-    # cliche radio filler (REQ-PV-006 firewall, referenced here so the register is complete)
-    "stay tuned",
-    "coming up next",
-    "up next",
-    "don't go anywhere",
-    "back-to-back",
-    "all your favourites",
-    "all your favorites",
+)
+
+# REQ-PC-004 cliche radio filler — read from the Group PC single source (no fork).
+BANNED_PHRASES: tuple = _MUSIC_SLOP_PHRASES + tuple(
+    p for p in _pc.BANNED_PHRASES if p not in _MUSIC_SLOP_PHRASES
 )
 
 # LLM-tell single words (matched on word boundaries). "delve/leverage/elevate" are the

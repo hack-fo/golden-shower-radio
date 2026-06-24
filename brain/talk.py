@@ -101,6 +101,14 @@ class TalkDirector:
         self._thread: Optional[threading.Thread] = None
         self._provider = voice.make_provider(cfg)
         self._last_prune = 0.0
+        # SPEC-RADIO-PROGRAMMING-007 Group PC craft state (REQ-PC-007/009). Cross-break rotation
+        # memory: the LAST say-category used (so the next never repeats it, REQ-PC-007) and the
+        # count of breaks since the last in-link re-ID (so a re-ID re-orients new tuners on the
+        # PC-009 cadence). Both are inert when craft_playbook_enabled is OFF (the default), so the
+        # talk path stays byte-identical. The durable cross-break ledger is the OPS-004 store's
+        # (REQ-OD-007); this in-process state is the PC-owned half until that lands.
+        self._last_say_category = ""
+        self._breaks_since_reid = 0
 
     def start(self) -> None:
         if not self.cfg.talk_enabled:
@@ -264,6 +272,26 @@ class TalkDirector:
             context["pv_voice"] = True
             context["daypart"] = self._current_daypart()
 
+        # SPEC-RADIO-PROGRAMMING-007 Group PC — RADIO-CRAFT enrichment, OFF by default. When
+        # cfg.craft_playbook_enabled is set, flag the context so _build_talk_prompt injects the
+        # talk-break ANATOMY (Hook->Body->Exit + backsell-default/frontsell-by-feeling REQ-PC-001),
+        # this break's ROTATED say-category (never the same twice running, REQ-PC-007), and a
+        # periodic in-link RE-ID (REQ-PC-009). With the flag OFF the keys are absent and the prompt
+        # is byte-identical. The rotation state advances ONLY on this enabled path so the OFF path
+        # never mutates the cross-break counters.
+        if getattr(self.cfg, "craft_playbook_enabled", False):
+            from . import playbook
+            context["craft"] = True
+            context.setdefault("daypart", self._current_daypart())
+            category = playbook.next_say_category(self._last_say_category)
+            context["say_category"] = category
+            self._last_say_category = category
+            if playbook.should_reid(self._breaks_since_reid):
+                context["reid"] = True
+                self._breaks_since_reid = 0
+            else:
+                self._breaks_since_reid += 1
+
         # KNOWLEDGE-008 GROUNDING FEED (REQ-KI-001): inject dated, sourced, FRESH, consensus-
         # marked facts + real graph edges for the artists in this break, all through the
         # freshness gate (REQ-KF-003). The LLM speaks ONLY from these — certain facts plainly,
@@ -300,24 +328,19 @@ class TalkDirector:
     def _current_daypart(self) -> str:
         """The current daypart NAME for the energy band (SPEC-RADIO-PROGRAMMING-007 REQ-PV-003).
 
-        The authoritative daypart presets are owned by Group PC-005 (referenced, not re-owned);
-        until that lands in code this maps Faroe-local wall-clock hour onto the five-band
-        DAYPART_ORDER (morning/midday/afternoon/evening/overnight). Best-effort: any clock fault
-        falls back to 'midday' (the steady default) so the band is always resolvable."""
+        The authoritative daypart presets are owned by Group PC-005 (``brain.playbook``) — the
+        SINGLE SOURCE OF TRUTH for the daypart boundaries (no fork / drift). This reads the
+        Faroe-local wall-clock hour and maps it through ``playbook.daypart_for_hour``. Best-effort:
+        any clock fault falls back to 'midday' (the steady default) so the band is always
+        resolvable (the continuous-operation rail)."""
         try:
             import datetime
+
+            from . import playbook
             hour = datetime.datetime.now().hour
+            return playbook.daypart_for_hour(hour)
         except Exception:  # noqa: BLE001 - the band must always resolve
             return "midday"
-        if 6 <= hour < 11:
-            return "morning"
-        if 11 <= hour < 15:
-            return "midday"
-        if 15 <= hour < 19:
-            return "afternoon"
-        if 19 <= hour < 23:
-            return "evening"
-        return "overnight"
 
     def _pv_lint_context(self, persona, context: dict):
         """Build the Group PV Tier-1/Tier-2 lint context (REQ-PV-010/012/016/017) that rides

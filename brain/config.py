@@ -404,6 +404,17 @@ class Config:
     # ON, the host speaks in the positive register and the delivery-craft lints are enforced.
     host_voice_pv_enabled: bool = field(default_factory=lambda: _env("BRAIN_HOST_VOICE_PV_ENABLED", "0") not in ("0", "false", "no"))
 
+    # --- PROGRAMMING-007 Group PC: radio-craft playbook content + talk-generation rules ---
+    # Master switch for the PC craft layer injected into the talk prompt (the talk-break ANATOMY
+    # Hook->Body->Exit + backsell-default/frontsell-by-feeling REQ-PC-001, the rotating
+    # what-hosts-SAY category REQ-PC-007, the periodic in-link RE-ID REQ-PC-009). OFF by default
+    # so the talk path stays BYTE-IDENTICAL to before this SPEC: with craft off, _build_talk_prompt
+    # carries no craft blocks and the prompt is unchanged. The PC daypart presets (REQ-PC-005),
+    # the banned-filler firewall (REQ-PC-004), and the backtiming math (REQ-PC-003) are the SINGLE
+    # SOURCE OF TRUTH read by PV/grounding/talk regardless of this flag (they replace forks, they
+    # do not gate behaviour). When ON, the host's links follow the explicit craft anatomy + rotation.
+    craft_playbook_enabled: bool = field(default_factory=lambda: _env("BRAIN_CRAFT_PLAYBOOK_ENABLED", "0") not in ("0", "false", "no"))
+
     @property
     def attempts_path(self) -> str:
         return os.path.join(self.db_dir, "attempts.json")

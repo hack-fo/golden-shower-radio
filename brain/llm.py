@@ -388,6 +388,30 @@ _EAR_WRITING_RAILS = (
 )
 
 
+def _craft_prompt_blocks(context: Dict) -> List[str]:
+    """The Group PC radio-craft prompt blocks (REQ-PC-001/007/009/010).
+
+    Carried in the live prompt ONLY when context["craft"] is set. Composes:
+      * the talk-break ANATOMY (REQ-PC-001) — Hook -> Body -> Exit, BACKSELL default, FRONTSELL
+        by feeling (never the banned filler), plus this break's ROTATED say-category (REQ-PC-007,
+        from context["say_category"]) and the periodic in-link RE-ID (REQ-PC-009, when
+        context["reid"] is set);
+      * for an OPENING (context["welcome"]/["opening"]), the open-on-the-strongest-hook rule
+        (REQ-PC-010).
+    The rules are PC-owned editorial knowledge (REQ-PC-008); the copy stays AI-authored. Drawn
+    from the single-source playbook (no fork)."""
+    from . import playbook
+    blocks: List[str] = []
+    if context.get("opening") or context.get("welcome"):
+        blocks.extend(playbook.open_strongest_block())
+    blocks.extend(playbook.talk_anatomy_blocks(
+        say_category=str(context.get("say_category") or "").strip(),
+        include_reid=bool(context.get("reid")),
+        station_name=str(context.get("station_name") or "").strip(),
+    ))
+    return blocks
+
+
 def _pv_prompt_blocks(context: Dict, persona=None) -> List[str]:
     """The Group PV delivery-craft prompt blocks (REQ-PV-002/004/005/006/009/015/019).
 
@@ -539,6 +563,13 @@ def _build_talk_prompt(context: Dict, persona=None) -> str:
     # ban->positive-twin pairings, the form-not-content exemplars, and the long-form arc-phase.
     if context.get("pv_voice"):
         parts.extend(_pv_prompt_blocks(context, persona))
+    # SPEC-RADIO-PROGRAMMING-007 Group PC — GATED radio-craft enrichment (REQ-PC-001/007/009/010).
+    # Injected ONLY when context["craft"] is set (talk.py sets it when cfg.craft_playbook_enabled).
+    # Absent => byte-identical pre-PC prompt. Carries the talk-break ANATOMY (Hook->Body->Exit +
+    # backsell-default + frontsell-by-feeling), this break's ROTATED say-category, the periodic
+    # in-link RE-ID, and (for an opening) the open-on-the-strongest-hook rule.
+    if context.get("craft"):
+        parts.extend(_craft_prompt_blocks(context))
     if last_artist or last_title:
         parts.append(f"You just played: \"{last_title}\" by {last_artist}." if last_artist
                      else f"You just played: \"{last_title}\".")

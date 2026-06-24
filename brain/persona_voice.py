@@ -65,27 +65,25 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 # the frozen guard defers its anchor-field half to persona_identity.is_anchor_field, and the
 # VoiceCard frozen core is assembled by persona_identity.AnchorBlock.for_persona.
 from . import persona_identity as _pi
+from . import playbook as _pc
 
 # =====================================================================================
 # REQ-PV-003 — the per-daypart ENERGY BAND (energy as a WRITING property; TUNABLE).
 # =====================================================================================
 
-# The daypart NAMES come from the Group PC-005 daypart presets (referenced, not re-owned).
-# This is the sane default band: morning bright -> overnight intimate. Each value is a
-# DELIVERY-energy phrasing (rhythm / specificity / block length), NEVER an exclamation or a
-# hype word — energy is a writing property the flat local TTS still carries (R-P-2).
-DEFAULT_ENERGY_BAND: Dict[str, str] = {
-    "morning": "bright and awake — short clean blocks, a brisk forward pace, plain specifics",
-    "midday": "steady and easy — even pacing, room to breathe, one concrete detail",
-    "afternoon": "warm and leaning in — tighter blocks, more specifics, a touch more drive",
-    "evening": "deeper and unhurried — longer beats, a settled rhythm, fewer words doing more",
-    "overnight": "intimate and close — spacious, near-whisper pacing, long pauses, very few words",
-}
+# The daypart NAMES + the energy-band phrasings come from the Group PC-005 daypart presets
+# (``brain.playbook.ENERGY_BAND``) — the SINGLE SOURCE OF TRUTH (the Group PI single-source
+# pattern). This module no longer forks the band: ``DEFAULT_ENERGY_BAND`` IS the playbook's
+# table (no drift). Each value is a DELIVERY-energy phrasing (rhythm / specificity / block
+# length), NEVER an exclamation or a hype word — energy is a writing property the flat local
+# TTS still carries (R-P-2).
+DEFAULT_ENERGY_BAND: Dict[str, str] = dict(_pc.ENERGY_BAND)
 
 # The ordered daypart sequence (low -> high -> low energy) used for the profanity gradient
 # ceiling (REQ-PV-013): none in morning -> mild ceiling midday -> card tier afternoon/evening
-# -> freest overnight. TUNABLE; the ceiling-only-lowers rail is fixed.
-DAYPART_ORDER: Tuple[str, ...] = ("morning", "midday", "afternoon", "evening", "overnight")
+# -> freest overnight. Read from the Group PC-005 daypart order (single source). TUNABLE; the
+# ceiling-only-lowers rail is fixed.
+DAYPART_ORDER: Tuple[str, ...] = _pc.DAYPART_ORDER
 
 # REQ-PV-013 profanity tiers, ordered weakest -> strongest. The card tier is a CEILING the
 # daypart only LOWERS, never raises. TUNABLE membership; the ordering + ceiling rail is fixed.
@@ -105,8 +103,11 @@ _DAYPART_PROFANITY_CEILING: Dict[str, str] = {
 
 
 def energy_band_for_daypart(daypart: str, band: Optional[Dict[str, str]] = None) -> str:
-    """The delivery energy phrasing for ``daypart`` (REQ-PV-003). Falls back to a steady
-    midday band for an unknown/empty daypart so the rail never produces an empty instruction."""
+    """The delivery energy phrasing for ``daypart`` (REQ-PV-003), keyed off the Group PC-005
+    daypart presets (``DEFAULT_ENERGY_BAND`` IS ``brain.playbook.ENERGY_BAND``). A caller may pass
+    a custom ``band`` (the persona's evolvable card band); otherwise the PC-005 source is read.
+    Falls back to a steady midday band for an unknown/empty daypart so the rail never produces an
+    empty instruction."""
     table = band or DEFAULT_ENERGY_BAND
     key = str(daypart or "").strip().lower()
     return table.get(key) or table.get("midday") or "steady and easy"
