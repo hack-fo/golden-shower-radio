@@ -392,6 +392,18 @@ class Config:
     # check. The Tier-1 forbidden-fact scan is the mechanical never-ship-a-wrong-year guard.
     quality_gate_adversarial: bool = field(default_factory=lambda: _env("BRAIN_QUALITY_GATE_ADVERSARIAL", "0") not in ("0", "false", "no"))
 
+    # --- PROGRAMMING-007 Group PV: host-voice persona-awareness & delivery craft ---
+    # Master switch for the PV delivery-craft layer (the positive music-journalist register
+    # REQ-PV-001/015, the ear-writing rails + DO-set REQ-PV-002/004, the ban->twin pairings +
+    # form-not-content exemplars REQ-PV-006/015, the extended per-persona voice card with the
+    # per-daypart energy band REQ-PV-003/009, and the PV Tier-1/Tier-2 lints REQ-PV-010/012/
+    # 016/017 that ride the PG-005 gate). OFF by default so the talk path is BYTE-IDENTICAL to
+    # before this SPEC: with PV off, _build_talk_prompt + the host system prompt are unchanged
+    # (the ONE exception is the unconditional REQ-PV-008 frontsell code-fix that removed the
+    # currently-airing "Coming up next: {title} by {artist}" banned-phrase regression). When
+    # ON, the host speaks in the positive register and the delivery-craft lints are enforced.
+    host_voice_pv_enabled: bool = field(default_factory=lambda: _env("BRAIN_HOST_VOICE_PV_ENABLED", "0") not in ("0", "false", "no"))
+
     @property
     def attempts_path(self) -> str:
         return os.path.join(self.db_dir, "attempts.json")

@@ -321,12 +321,153 @@ HOST_PERSONA = (
 )
 
 
+# =====================================================================================
+# Group PV (SPEC-RADIO-PROGRAMMING-007 Section 9c): host-voice persona-awareness +
+# delivery craft. ALL of the following PV prompt enrichment is GATED behind the context
+# key ``pv_voice`` (set by talk.py only when cfg.host_voice_pv_enabled is ON). With the
+# key ABSENT (the default), _build_talk_prompt + the host system prompt are BYTE-IDENTICAL
+# to the pre-PV form, EXCEPT the REQ-PV-008 frontsell code-fix which is UNCONDITIONAL (the
+# "Coming up next" name block was a currently-airing banned-phrase regression).
+# =====================================================================================
+
+# REQ-PV-001 / REQ-PV-015 — the POSITIVE-IDENTITY host persona that REPLACES the negation-
+# based HOST_PERSONA ("not a corporate announcer / not a chirpy AI"). A concrete music-
+# journalist register lineage + a one-to-one addressee frame steers the model off the
+# flowery-press-release default. A DELIVERY stance ONLY — the host never SAYS it is a
+# journalist, never claims to be live/real/an AI/a script, never breaks the fourth wall.
+# Grounding (REQ-PG-002) is UNTOUCHED: self-awareness adds warmth, not claim-making latitude.
+POSITIVE_HOST_PERSONA = (
+    "You are a live human radio host — one person, one microphone, talking to one listener. "
+    "You sound like a BBC 6 Music / NTS / KEXP presenter: a working music head who genuinely "
+    "loves this stuff, knowledgeable, dry, and funny, who says plainly when something rules and "
+    "plainly when it doesn't. Talk like you're texting one smart, slightly-impatient friend "
+    "about this song — present tense, second person, warmth carried in rhythm and timing. Never "
+    "say you are live, real, an AI, a script, or a journalist, and never break the fourth wall. "
+    "Speak ONLY from verified facts; being a real human adds warmth of delivery, not new claims. "
+    "Your spoken links are short, easy to say out loud, and use no stage directions, emojis, "
+    "markdown, or quotation marks — just the words you would say into the mic."
+)
+
+# REQ-PV-006 — the ban -> positive "say this instead" TWIN pairings carried IN the prompt to
+# fill the vacuum the bans leave (the diagnosed pink-elephant retreat). The bans stay the
+# Tier-1 firewall (enforced in grounding.py); the twins steer FORM only — the fact contract
+# still supplies all CONTENT. TUNABLE wording; that twins are carried is the rail.
+_BAN_TWINS = (
+    "When you'd reach for \"transports you\", say what the song actually does to you in plain "
+    "words.",
+    "When you'd reach for \"an infectious banger\", just say it goes, or it rules, or it kicks.",
+    "When you'd reach for \"a sonic journey\", name one thing you can actually hear.",
+    "Never say \"coming up\", \"up next\", \"stay tuned\", or \"don't go anywhere\".",
+)
+
+# REQ-PV-015 — 2-4 ROTATED GOOD-vs-BAD exemplar pairs using GENERIC/placeholder tracks (never
+# the real upcoming track), labelled "the VOICE to hit, NOT lines to reuse". HAND-AUTHORED
+# anchors (no-self-imitation REQ-OC-006 holds — never fed-back station scripts). TUNABLE set.
+_VOICE_EXEMPLARS = (
+    ("a captivating sonic journey that effortlessly transports you",
+     "that synth line just will not sit still — love it"),
+    ("an anthemic, infectious banger for all your favourites",
+     "this one rules; the drums do not let up once"),
+    ("a lush, hypnotic soundscape that needs no introduction",
+     "play this loud — the bass is the whole point"),
+    ("a timeless masterpiece, truly a testament to the era",
+     "still sounds enormous; that chorus earns it"),
+)
+
+# REQ-PV-002 / REQ-PV-004 — the ear-writing rails + the calibrated delivery DO-set carried IN
+# the live prompt. The blank-line block instruction is the REQ-PS-004 coordination contract
+# (VOICE-002 chunks at the blank lines) — it MUST be present and not broken. TUNABLE wording.
+_EAR_WRITING_RAILS = (
+    "Always use contractions. One thought per sentence, about twenty words or fewer. "
+    "Punctuate for breath — commas for short pauses, an em-dash for a beat, an ellipsis for a "
+    "longer one — and vary your sentence length. Spell numbers and dates as you'd say them. "
+    "Structure the script as one- or two-sentence blocks separated by blank lines.",
+    "Lead with one plain, owned reaction, then one concrete grounded detail you can actually "
+    "point to — a flat true sentence beats an impressive one. At most one vivid detail; never "
+    "an adjective pile. Talk to one listener, never a crowd. Hook, then body, then a clean exit.",
+)
+
+
+def _pv_prompt_blocks(context: Dict, persona=None) -> List[str]:
+    """The Group PV delivery-craft prompt blocks (REQ-PV-002/004/005/006/009/015/019).
+
+    Carried in the live prompt ONLY when context["pv_voice"] is set. Composes:
+      * the extended per-persona VOICE CARD (REQ-PV-009) via grounding.pv_voice_card_for,
+        including the per-daypart energy band (REQ-PV-003);
+      * the warmth-in-delivery / restraint-in-content spine (REQ-PV-005);
+      * the ear-writing rails + the calibrated delivery DO-set (REQ-PV-002/004);
+      * the ban -> positive-twin pairings (REQ-PV-006) + form-not-content exemplars (REQ-PV-015);
+      * the long-form ARC-PHASE, when threading a multi-segment episode (REQ-PV-019).
+    Drawn from authored fields + hand-authored anchors only (no-self-imitation REQ-OC-006)."""
+    from . import grounding
+    blocks: List[str] = []
+    daypart = str(context.get("daypart") or "").strip()
+    # The extended voice card (REQ-PV-009) — delivery shape + opinion-about-the-audible only,
+    # never a fact. Composes the PG-006 base card with the PV energy band / pacing / register /
+    # disjoint tic bank.
+    blocks.append(grounding.pv_voice_card_for(persona, daypart))
+    # REQ-PV-005 — the governing spine.
+    blocks.append(
+        "Warmth and energy in DELIVERY; restraint in CONTENT. Turn the warmth, energy, "
+        "bluntness and humour up — but state no fact you cannot point to, pile no adjectives, "
+        "and never reach for hype. Energy is a writing property, not exclamation marks."
+    )
+    # REQ-PV-002 / REQ-PV-004 — the ear-writing rails + the DO-set.
+    blocks.extend(_EAR_WRITING_RAILS)
+    # REQ-PV-006 — the ban -> positive twin pairings.
+    blocks.append("Say it like a person, not a press release:")
+    blocks.extend(f"- {t}" for t in _BAN_TWINS)
+    # REQ-PV-015 — 2-4 form-not-content exemplars (rotated by a stable per-persona offset so a
+    # given persona sees a consistent subset; generic placeholder tracks, never the real one).
+    exemplars = _rotated_exemplars(persona)
+    if exemplars:
+        blocks.append("These show the VOICE to hit, NOT lines to reuse:")
+        for bad, good in exemplars:
+            blocks.append(f"- not \"{bad}\" — rather \"{good}\"")
+    # REQ-PV-019 — long-form arc-phase (when present): inject the current beat so per-segment
+    # delivery is phase-aware WITHOUT changing WHO the persona is (the frozen anchor is carried
+    # by the voice card above). The arc-phase taxonomy is the conceived format's (referenced).
+    arc_phase = str(context.get("arc_phase") or "").strip()
+    if arc_phase:
+        blocks.append(
+            f"This is the \"{arc_phase}\" beat of a longer episode. Let the delivery reflect "
+            "that beat (an open reads differently from a reflective close) while staying the "
+            "exact same person — same temperament, same voice signature, start to finish."
+        )
+    return blocks
+
+
+def _rotated_exemplars(persona, count: int = 2):
+    """Pick a stable subset of ``count`` GOOD-vs-BAD exemplar pairs (REQ-PV-015). The offset is
+    derived deterministically from the persona id so a given persona sees a consistent rotation
+    (and the unhosted/house path a fixed default), per the "rotated, hand-authored anchors" rail."""
+    if not _VOICE_EXEMPLARS:
+        return []
+    n = len(_VOICE_EXEMPLARS)
+    pid = str(getattr(persona, "id", "") or "") if persona is not None else ""
+    off = (sum(ord(c) for c in pid) % n) if pid else 0
+    return [_VOICE_EXEMPLARS[(off + i) % n] for i in range(min(count, n))]
+
+
 def _build_talk_prompt(context: Dict, persona=None) -> str:
     """Turn a talk context dict into a single one-shot prompt for the host persona.
 
     Recognised keys (all optional):
       last_artist / last_title  - the track that just finished (for a back-announce)
-      next_artist / next_title  - the upcoming track (for an intro)
+      next_mood                 - SPEC-RADIO-PROGRAMMING-007 REQ-PV-007/008: a MOOD/energy
+                                  hint for the NEXT track (NEVER its name) for a tease-by-
+                                  feeling frontsell. The next track's artist/title NAME is
+                                  NEVER passed for a between-song break (the name is reserved
+                                  for the FOLLOWING break's backsell, REQ-PC-001).
+      next_artist / next_title  - the WELCOME path's FIRST song (opening intro only; a
+                                  between-song break never carries the next track's name).
+      pv_voice                  - REQ-PV: when truthy, inject the Group PV delivery-craft
+                                  enrichment (positive register, ear-writing rails, ban-twins,
+                                  exemplars, the extended voice card, daypart energy band, the
+                                  long-form arc-phase). Absent => byte-identical pre-PV prompt.
+      daypart                   - REQ-PV-003: the current daypart name (for the energy band).
+      arc_phase                 - REQ-PV-019: the long-form episode's current arc beat (injected
+                                  into the per-segment voice-card call so delivery is phase-aware).
       station_name              - station identity, for the occasional ident
       last_year / last_album    - SPEC-RADIO-HOSTCTX-016 (Group HY): the VERIFIED release
                                   year + album of the JUST-PLAYED track (read from the
@@ -391,6 +532,13 @@ def _build_talk_prompt(context: Dict, persona=None) -> str:
         "One to three sentences. Natural spoken English. Output ONLY the words to say - "
         "no quotes, no markdown, no stage directions, no song metadata formatting.",
     ]
+    # SPEC-RADIO-PROGRAMMING-007 Group PV — GATED delivery-craft enrichment (REQ-PV-002/004/
+    # 005/006/009/015/019). Injected ONLY when context["pv_voice"] is truthy (talk.py sets it
+    # when cfg.host_voice_pv_enabled). Absent => byte-identical pre-PV prompt. The enrichment
+    # carries the extended voice card, the ear-writing rails, the warmth/restraint spine, the
+    # ban->positive-twin pairings, the form-not-content exemplars, and the long-form arc-phase.
+    if context.get("pv_voice"):
+        parts.extend(_pv_prompt_blocks(context, persona))
     if last_artist or last_title:
         parts.append(f"You just played: \"{last_title}\" by {last_artist}." if last_artist
                      else f"You just played: \"{last_title}\".")
@@ -406,10 +554,20 @@ def _build_talk_prompt(context: Dict, persona=None) -> str:
         if year_album:
             parts.extend(year_album)
             parts.append(_year_album_cadence_line(persona))
-    if next_artist or next_title:
-        parts.append(f"Coming up next: \"{next_title}\" by {next_artist}." if next_artist
-                     else f"Coming up next: \"{next_title}\".")
-        parts.append("Intro it naturally - name the artist and title so listeners know what they're hearing.")
+    # SPEC-RADIO-PROGRAMMING-007 REQ-PV-007/008 — TEASE-BY-FEELING FRONTSELL (the mandatory
+    # code-fix). The OLD code emitted `Coming up next: "{title}" by {artist}.` + "name the
+    # artist and title" — a currently-airing banned-phrase regression (REQ-PC-004/REQ-PV-006)
+    # that named the upcoming track. It is REMOVED unconditionally. The next track is now
+    # supplied as a MOOD hint only (``next_mood``, derived from ANALYSIS-006 features), never a
+    # name; the host MAY tease ONLY its feeling/energy shift and MUST NOT name it or use the
+    # banned filler. The artist+title NAME is reserved for the FOLLOWING break's backsell.
+    next_mood = str(context.get("next_mood") or "").strip()
+    if next_mood:
+        parts.append(
+            f"The next track feels: {next_mood}. You MAY tease ONLY that shift in mood or "
+            "energy (\"the next one sits lower, slower\") — do NOT name the artist or title, "
+            "and do NOT say \"coming up\", \"up next\", or \"stay tuned\"."
+        )
     if station:
         parts.append(f"You may occasionally (not every time) drop the station name: {station}.")
 
@@ -660,20 +818,26 @@ def _clean_talk_text(text: str) -> str:
     return t
 
 
-def _persona_host_prompt(persona) -> str:
+def _persona_host_prompt(persona, pv_voice: bool = False) -> str:
     """The on-air HOST system prompt, optionally specialized to an ACTIVE persona's POV +
     identity (SPEC-RADIO-PROGRAMMING-007 Group PR, REQ-PR-005/PR-014).
 
-    Returns the byte-identical house HOST_PERSONA when ``persona`` is None or carries no POV,
-    so the single-default-persona talk path is unchanged. With an active persona the host
-    speaks as that named, persistent person (its POV seed) while keeping the house voice
-    rules (short, natural, no slop)."""
+    Returns the byte-identical house HOST_PERSONA when ``persona`` is None or carries no POV
+    (and PV is off), so the single-default-persona talk path is unchanged. With an active
+    persona the host speaks as that named, persistent person (its POV seed) while keeping the
+    house voice rules (short, natural, no slop).
+
+    ``pv_voice`` (SPEC-RADIO-PROGRAMMING-007 REQ-PV-001/015) is OPTIONAL and DEFAULTS to False
+    so the system prompt is byte-identical to the pre-PV form. When True the host's base
+    identity is the POSITIVE-IDENTITY music-journalist register (``POSITIVE_HOST_PERSONA``)
+    that REPLACES the negation-based HOST_PERSONA — the diagnosed wiring fix (REQ-PV-015)."""
+    base = POSITIVE_HOST_PERSONA if pv_voice else HOST_PERSONA
     if persona is None:
-        return HOST_PERSONA
+        return base
     name = str(getattr(persona, "display_name", "") or "").strip()
     pov = str(getattr(persona, "pov_seed", "") or "").strip()
     if not name and not pov:
-        return HOST_PERSONA
+        return base
     extra = " You are the host persona"
     if name:
         extra += f" \"{name}\""
@@ -681,7 +845,7 @@ def _persona_host_prompt(persona) -> str:
     if pov:
         extra += f" Your persistent point of view: {pov}"
     extra += " Stay consistently this same returning person."
-    return HOST_PERSONA + extra
+    return base + extra
 
 
 def generate_talk_script(model: str, context: Dict, persona=None) -> str:
@@ -696,7 +860,9 @@ def generate_talk_script(model: str, context: Dict, persona=None) -> str:
     active persona is supplied the host speaks as that named, persistent person (REQ-PR-014).
     """
     prompt = _build_talk_prompt(context, persona)
-    system_prompt = _persona_host_prompt(persona)
+    # REQ-PV-001/015: when PV delivery-craft is on (context["pv_voice"]), the host's base
+    # system identity becomes the positive music-journalist register. Off => byte-identical.
+    system_prompt = _persona_host_prompt(persona, bool(context.get("pv_voice")))
     try:
         text = asyncio.run(_query_text(prompt, model, system_prompt=system_prompt))
         spoken = _clean_talk_text(text)

@@ -497,15 +497,27 @@ def _quote_is_sourced(quote: str, contract: FactContract) -> bool:
 # REQ-PG-005 Tier-1 — the deterministic lint (aggregate).
 # =====================================================================================
 
-def tier1_lint(script: str, contract: FactContract) -> GateResult:
+def tier1_lint(script: str, contract: FactContract, pv_ctx: Any = None) -> GateResult:
     """Run the full Tier-1 deterministic lint (REQ-PG-005): anti-slop (REQ-PG-004) +
     forbidden-fact (REQ-PG-002) + comparison-grounding (REQ-PG-003) + quote-sourcing
-    (REQ-PG-008). LLM-free and fully testable. PASS == every sub-scan clean."""
+    (REQ-PG-008). LLM-free and fully testable. PASS == every sub-scan clean.
+
+    ``pv_ctx`` (SPEC-RADIO-PROGRAMMING-007 Group PV) is OPTIONAL and DEFAULTS to None. When
+    None the lint is BYTE-IDENTICAL to the Group PG form (the PV delivery-craft lints do not
+    run). When a ``persona_voice.PVLintContext`` is supplied (the host-voice path with PV on)
+    the Group PV Tier-1 lints RIDE this gate: the warmth-transition crutch check
+    (REQ-PV-010), the blunt-praise validity check (REQ-PV-012/016), and the dated/try-hard-
+    slang check (REQ-PV-017). PROGRAMMING owns these checks; OPS-004 owns the base engine."""
     violations: List[str] = []
     violations += scan_anti_slop(script)
     violations += scan_forbidden_facts(script, contract)
     violations += scan_comparisons(script, contract)
     violations += scan_quotes(script, contract)
+    if pv_ctx is not None:
+        # The PV delivery-craft lints ride the PG-005 Tier-1 gate (REQ-PV-010/012/016/017).
+        # Imported lazily so grounding.py carries no hard dependency on the PV module.
+        from . import persona_voice as _pv
+        violations += _pv.pv_tier1_lint(script, pv_ctx)
     return GateResult(passed=not violations, violations=violations, tier="tier1")
 
 
@@ -553,6 +565,7 @@ def run_gate(
     regenerate: Optional[Callable[[List[str]], str]] = None,
     adversarial: Optional[AdversarialChecker] = None,
     max_attempts: int = MAX_REGENERATE_ATTEMPTS,
+    pv_ctx: Any = None,
 ) -> "GateOutcome":
     """The two-tier quality gate with regenerate-once-then-skip (REQ-PG-005).
 
@@ -571,7 +584,7 @@ def run_gate(
     #   would air a confident wrong fact — the exact failure mode the whole group prevents.
     attempts = 0
     current = script
-    last_result = _check_once(current, contract, adversarial)
+    last_result = _check_once(current, contract, adversarial, pv_ctx)
     while not last_result.passed and regenerate is not None and attempts < max_attempts:
         attempts += 1
         fresh = regenerate(list(last_result.violations))
@@ -579,7 +592,7 @@ def run_gate(
             # Regeneration itself produced nothing -> skip (cannot ship a FAIL).
             return GateOutcome(script=None, result=last_result, attempts=attempts, skipped=True)
         current = fresh
-        last_result = _check_once(current, contract, adversarial)
+        last_result = _check_once(current, contract, adversarial, pv_ctx)
     if last_result.passed:
         return GateOutcome(script=current, result=last_result, attempts=attempts, skipped=False)
     # Still failing after the bounded retries -> SKIP (never ship a FAIL).
@@ -587,12 +600,25 @@ def run_gate(
 
 
 def _check_once(script: str, contract: FactContract,
-                adversarial: Optional[AdversarialChecker]) -> GateResult:
-    """One pass of both tiers; the aggregate FAILS if either tier fails."""
-    t1 = tier1_lint(script, contract)
+                adversarial: Optional[AdversarialChecker],
+                pv_ctx: Any = None) -> GateResult:
+    """One pass of both tiers; the aggregate FAILS if any tier fails. With ``pv_ctx`` the
+    Group PV Tier-1 lints ride Tier-1 and the PV deterministic Tier-2 smuggled-token scan
+    (REQ-PV-016) rides Tier-2 (it runs LLM-free, alongside the adversarial pass)."""
+    t1 = tier1_lint(script, contract, pv_ctx)
     if not t1.passed:
         return t1
-    return tier2_adversarial(script, contract, adversarial)
+    t2 = tier2_adversarial(script, contract, adversarial)
+    if not t2.passed:
+        return t2
+    if pv_ctx is not None:
+        from . import persona_voice as _pv
+        smuggled = _pv.pv_tier2_lint(script, pv_ctx)
+        if smuggled:
+            return GateResult(passed=False,
+                              violations=[f"unsupported-claim: {s}" for s in smuggled],
+                              tier="tier2")
+    return t2
 
 
 @dataclass
@@ -643,6 +669,46 @@ def voice_card_for(persona: Any = None) -> str:
             extra += f" Your standing point of view: {pov}"
         card = (card + extra).strip()
     return _cap_length(card, VOICE_CARD_MAX_CHARS)
+
+
+# REQ-PV-009 extended-card length cap: the PV delivery-craft card carries more (energy band,
+# pacing, register, tics, banter fields) so it gets a larger cap than the bare PG-006 card —
+# but still HARD-capped (over-explaining is itself slop). TUNABLE.
+PV_VOICE_CARD_MAX_CHARS = 900
+
+
+def pv_voice_card_for(persona: Any = None, daypart: str = "") -> str:
+    """The EXTENDED per-persona voice card (SPEC-RADIO-PROGRAMMING-007 REQ-PV-009).
+
+    COMPOSES the Group PG-006 ``voice_card_for`` (the base knowledgeable/dry/understated card)
+    with the Group PV delivery-craft fields — the per-daypart ENERGY BAND (REQ-PV-003), the
+    PACING SIGNATURE, the REGISTER, and the disjoint VERBAL-TIC BANK (used sparingly) — drawn
+    ONLY from the persona's authored VoiceCard (never fabricated). With ``persona`` None it
+    returns the bare PG-006 house card unchanged, so the unhosted path is byte-identical to
+    Group PG. Identical each call for consistency; HARD length-capped (over-explaining is slop).
+    The card supplies delivery SHAPE + opinion-about-the-audible only — never a fact, never new
+    claim-making latitude (grounding REQ-PG-002 untouched)."""
+    base = voice_card_for(persona)
+    from . import persona_voice as _pv
+    card = _pv.card_for(persona)
+    parts: List[str] = [base]
+    # The per-daypart energy band (REQ-PV-003) is a delivery-craft rail that applies even on
+    # the unhosted/house path (it is daypart-calibrated, not persona-specific) — so it is
+    # injected whenever PV is on, persona or not. The persona-specific lines (pacing, register,
+    # tics) below only render for an active persona.
+    band = _pv.energy_band_for_daypart(daypart or "midday", card.energy_band)
+    if band:
+        parts.append(f"Delivery energy now ({daypart or 'midday'}): {band} — energy is a "
+                     "WRITING property (rhythm, specifics, block length), never exclamation or hype.")
+    if card.pacing_signature:
+        parts.append(f"Pacing signature: {card.pacing_signature}.")
+    if card.register:
+        parts.append(f"Register: {card.register}.")
+    tics = [t for t in card.verbal_tic_bank if t.strip()]
+    if tics:
+        parts.append("Your signature warmth-transitions (use AT MOST ONE per break, never the "
+                     "same one two breaks running): " + "; ".join(tics) + ".")
+    return _cap_length(" ".join(parts), PV_VOICE_CARD_MAX_CHARS)
 
 
 def _cap_length(text: str, max_chars: int) -> str:

@@ -27,7 +27,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Optional
+from typing import List, Optional
 
 from .config import Config
 from .library import Library, normalize_key
@@ -35,6 +35,38 @@ from . import grounding, llm, voice
 from .logging_setup import log_event
 
 log = logging.getLogger("brain.talk")
+
+
+def _derive_next_mood(track) -> str:
+    """Derive a SHORT mood/energy HINT for the next track from its ANALYSIS-006 features
+    (SPEC-RADIO-PROGRAMMING-007 REQ-PV-007/008). NEVER the track's name — a feeling only.
+
+    Reads energy (0..1), bpm, and the descriptive mood string off the Track record and folds
+    them into a short phrase like "lower, slower, late-night". Best-effort: a track with no
+    usable features yields "" (the host then simply doesn't tease — graceful omission). The
+    hint is perceptual (how it FEELS), never a fact token, so it carries no grounding load."""
+    if track is None:
+        return ""
+    bits: List[str] = []
+    try:
+        energy = float(getattr(track, "energy", 0.0) or 0.0)
+        if energy > 0.0:
+            bits.append("higher-energy" if energy >= 0.6 else "lower, calmer")
+    except (TypeError, ValueError):
+        pass
+    try:
+        bpm = float(getattr(track, "bpm", 0.0) or 0.0)
+        if bpm > 0.0:
+            bits.append("faster" if bpm >= 110 else "slower")
+    except (TypeError, ValueError):
+        pass
+    mood = str(getattr(track, "mood", "") or "").strip()
+    if mood:
+        bits.append(mood)
+    # De-dupe while preserving order; keep it short (a tease, not a description).
+    seen: set = set()
+    out = [b for b in bits if not (b.lower() in seen or seen.add(b.lower()))]
+    return ", ".join(out[:3])
 
 
 class TalkDirector:
@@ -210,10 +242,27 @@ class TalkDirector:
             recent_keys = self.state.recent_keys(normalize_key)
             upcoming = self.library.pick_next(exclude_path, recent_keys)
             if upcoming is not None:
-                context["next_artist"] = upcoming.artist
-                context["next_title"] = upcoming.title
-        except Exception as exc:  # noqa: BLE001 - intro context is optional
+                # SPEC-RADIO-PROGRAMMING-007 REQ-PV-007/008 — the mandatory frontsell code-fix.
+                # The upcoming track is supplied as a MOOD/energy HINT only, NEVER its name: we
+                # no longer set next_artist/next_title for a between-song break (that was the
+                # currently-airing "Coming up next: {title} by {artist}" banned-phrase
+                # regression). The name is reserved for the FOLLOWING break's backsell. The hint
+                # is derived from the ANALYSIS-006 features (energy/bpm/mood); a track with no
+                # usable features simply yields no hint (graceful — the host just doesn't tease).
+                hint = _derive_next_mood(upcoming)
+                if hint:
+                    context["next_mood"] = hint
+        except Exception as exc:  # noqa: BLE001 - frontsell hint is optional
             log_event(log, "talk.next_lookahead_error", error=str(exc))
+
+        # SPEC-RADIO-PROGRAMMING-007 Group PV — DELIVERY-CRAFT enrichment, OFF by default.
+        # When cfg.host_voice_pv_enabled is set, flag the context so _build_talk_prompt injects
+        # the positive register + ear-writing rails + ban-twins + exemplars + the extended voice
+        # card, calibrated to the current daypart energy band (REQ-PV-001..009/015). With the
+        # flag OFF the keys are absent and the prompt is byte-identical (minus the PV-008 fix).
+        if getattr(self.cfg, "host_voice_pv_enabled", False):
+            context["pv_voice"] = True
+            context["daypart"] = self._current_daypart()
 
         # KNOWLEDGE-008 GROUNDING FEED (REQ-KI-001): inject dated, sourced, FRESH, consensus-
         # marked facts + real graph edges for the artists in this break, all through the
@@ -248,6 +297,51 @@ class TalkDirector:
             log_event(log, "talk.persona_resolve_error", error=str(exc))
             return None
 
+    def _current_daypart(self) -> str:
+        """The current daypart NAME for the energy band (SPEC-RADIO-PROGRAMMING-007 REQ-PV-003).
+
+        The authoritative daypart presets are owned by Group PC-005 (referenced, not re-owned);
+        until that lands in code this maps Faroe-local wall-clock hour onto the five-band
+        DAYPART_ORDER (morning/midday/afternoon/evening/overnight). Best-effort: any clock fault
+        falls back to 'midday' (the steady default) so the band is always resolvable."""
+        try:
+            import datetime
+            hour = datetime.datetime.now().hour
+        except Exception:  # noqa: BLE001 - the band must always resolve
+            return "midday"
+        if 6 <= hour < 11:
+            return "morning"
+        if 11 <= hour < 15:
+            return "midday"
+        if 15 <= hour < 19:
+            return "afternoon"
+        if 19 <= hour < 23:
+            return "evening"
+        return "overnight"
+
+    def _pv_lint_context(self, persona, context: dict):
+        """Build the Group PV Tier-1/Tier-2 lint context (REQ-PV-010/012/016/017) that rides
+        the PG-005 gate, or ``None`` when PV is OFF (so the gate is byte-identical to Group PG).
+
+        Carries the active persona's verbal-tic bank (for the warmth-crutch lint) and the
+        contract's allowed fact tokens (for the smuggled-token Tier-2 scan). The prev-tic
+        signal (REQ-PV-010 'never the same tic two breaks running') is a cross-break state the
+        OPS-004 ledger owns; until that lands it is left empty (the per-break cap still holds)."""
+        if not getattr(self.cfg, "host_voice_pv_enabled", False):
+            return None
+        try:
+            from . import persona_voice
+            card = persona_voice.card_for(persona)
+            contract = grounding.FactContract.from_context(context)
+            return persona_voice.PVLintContext(
+                tic_bank=list(card.verbal_tic_bank),
+                prev_tic="",  # cross-break tic memory is the OPS-004 ledger's (deferred sibling)
+                allowed_tokens=contract.fact_tokens() | contract.year_tokens(),
+            )
+        except Exception as exc:  # noqa: BLE001 - PV lint context is best-effort, never blocks talk
+            log_event(log, "talk.pv_lint_ctx_error", error=str(exc))
+            return None
+
     def _apply_quality_gate(self, context: dict, persona, script: str) -> Optional[str]:
         """Run the generated break through the Group PG two-tier quality gate (REQ-PG-005).
 
@@ -274,8 +368,13 @@ class TalkDirector:
             if getattr(self.cfg, "quality_gate_adversarial", False):
                 adversarial = self._adversarial_checker(persona)
 
+            # SPEC-RADIO-PROGRAMMING-007 Group PV (REQ-PV-010/012/016/017): the PV delivery-craft
+            # lints ride the SAME PG-005 gate. pv_ctx is None when PV is off => byte-identical.
+            pv_ctx = self._pv_lint_context(persona, context)
+
             outcome = grounding.run_gate(
-                script, contract, regenerate=_regenerate, adversarial=adversarial
+                script, contract, regenerate=_regenerate, adversarial=adversarial,
+                pv_ctx=pv_ctx,
             )
             if outcome.skipped:
                 log_event(log, "talk.gate_skip",
