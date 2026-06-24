@@ -447,6 +447,23 @@ class Config:
     taste_evolution_max_rate: float = field(default_factory=lambda: float(_env("BRAIN_TASTE_EVOLUTION_MAX_RATE", "0.25")))
     taste_evolution_cooldown_seconds: float = field(default_factory=lambda: float(_env("BRAIN_TASTE_EVOLUTION_COOLDOWN_SEC", "86400")))
 
+    # --- PROGRAMMING-007 Group CL: per-persona DJ-craft learning ---
+    # Master switch for the craft-learning loop (brain/craft.py): the per-persona sequencing
+    # journal (REQ-CL-001), the human-DJ sequence observation (REQ-CL-002), the anchor-lensed
+    # extraction (REQ-CL-003), the theme-affinity / genre-fit learning (REQ-CL-004/005), and the
+    # conservative measured craft evolution (REQ-CL-006). [HARD] OFF by default so the director
+    # tick + the talk path stay BYTE-IDENTICAL: with it off the journal is never written, no
+    # candidates are observed, no profile is craft-evolved, and the REQ-CL-007 show-design intent
+    # is never folded into a grab reason. The craft engine is a bounded BACKGROUND job that only
+    # engages when the director wires it (NFR-P-11) — it never blocks playout/acquisition.
+    craft_learning_enabled: bool = field(default_factory=lambda: _env("BRAIN_CRAFT_LEARNING_ENABLED", "0") not in ("0", "false", "no"))
+    # REQ-CL-006 conservative-gate rails: max applied evolutions per rolling week + the cooldown
+    # seconds between applied changes + the canary re-score window (the last N sets). TUNABLE; the
+    # RULE-tier gate + rate-limit + cooldown + canary + DON'T-NARROW guard are the fixed rails.
+    craft_max_evolutions_per_week: int = field(default_factory=lambda: int(_env("BRAIN_CRAFT_MAX_EVOLUTIONS_PER_WEEK", "3")))
+    craft_evolution_cooldown_seconds: float = field(default_factory=lambda: float(_env("BRAIN_CRAFT_EVOLUTION_COOLDOWN_SEC", "86400")))
+    craft_canary_window: int = field(default_factory=lambda: int(_env("BRAIN_CRAFT_CANARY_WINDOW", "10")))
+
     @property
     def attempts_path(self) -> str:
         return os.path.join(self.db_dir, "attempts.json")
