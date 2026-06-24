@@ -31,7 +31,11 @@ Build the 8 unbuilt groups, dependency order. Each FULL.
 Note: PG/PV/PI/PC carry the FROZEN invariant set (never-ship-a-FAIL, grounding/fact-contract,
 anti-convergence firewall, banned-phrase firewall, persona anchor block, craft-learning honesty rails).
 
-## PHASE 1.5 — VOICE-002 (Qwen-TTS + Chatterbox providers + A/B) [user-placed 2026-06-24]
+## PHASE 1.5 — VOICE-002 — DEFERRED (user 2026-06-24: shifted priority to the OPS-004/ORCH-005 keystone)
+DEFERRED: fully PREPPED (5 engines downloaded to /mnt/f/gsr-models, GPU verified) — build the sidecar +
+providers + A/B harness AFTER OPS-004 + ORCH-005, or as a parallel pass when convenient. The listen test
+isn't blocking; OPS-004's ledger/scheduler is what unlocks the dormant capability layer, so it goes first.
+Original placement note follows:
 The render layer (speaks what PROGRAMMING-007 writes). Add QWEN-TTS (24 kHz) + CHATTERBOX (22.05 kHz)
 provider classes behind the EXISTING pluggable TTSProvider interface (brain/voice.py; Kokoro primary + Piper
 fallback + teldutala.fo Faroese already there), plus an A/B harness that renders identical sample scripts
