@@ -622,3 +622,81 @@ def test_build_show_lens_biases_block_ordering(tmp_path):
     # all tracks still grounded + in-territory; none fabricated or dropped vs the plain block.
     plain = shows.build_show(persona, lib, format="music_block")
     assert sorted(t.key for t in block.tracks) == sorted(t.key for t in plain.tracks)
+
+
+# =========================================================================== #
+# PROGRAMMING-007 Group PT — recurring-show FORMAT layer (REQ-PT-001..003)
+# =========================================================================== #
+
+def test_pt001_format_spec_has_name_slot_skeleton_ritual():
+    spec = shows.FormatSpec(
+        name="Harbour Lights", ordering_format="deep_dive",
+        skeleton=("intro", "host pick", "deep cut", "outro"),
+        open_ritual="Evening, you're with Harbour Lights.",
+        close_ritual="Until next week — keep the lamp on.",
+        slot_ref="thu-21:00",
+    )
+    assert spec.is_valid_name()  # AI-invented, not a reference-station trademark
+    assert spec.slot_ref == "thu-21:00"
+    assert spec.skeleton[0] == "intro"
+    assert spec.open_ritual and spec.close_ritual
+    # ordering policy is COMPOSED from the existing FORMATS knob, not forked.
+    assert spec.ordering() is shows.FORMATS["deep_dive"]
+
+
+def test_pt001_reference_station_trademark_name_rejected():
+    assert shows.FormatSpec(name="Desert Island Discs").is_valid_name() is False
+    assert shows.FormatSpec(name="Essential Mix").is_valid_name() is False
+    assert shows.is_invented_name("Harbour Lights") is True
+    assert shows.is_invented_name("") is False
+
+
+def test_pt001_recognizable_same_show_each_time():
+    a = shows.FormatSpec(name="Harbour Lights", skeleton=("intro", "outro"),
+                         open_ritual="Evening.", close_ritual="Night.", slot_ref="thu-21:00")
+    # Same identity, different week (the CONTENT within the skeleton differs, identity holds).
+    b = shows.FormatSpec(name="Harbour Lights", skeleton=("intro", "outro"),
+                         open_ritual="Evening.", close_ritual="Night.", slot_ref="thu-21:00")
+    assert a.is_recognizable(b) is True
+    # A different slot or ritual breaks recognizability.
+    c = shows.FormatSpec(name="Harbour Lights", skeleton=("intro", "outro"),
+                         open_ritual="Hello.", close_ritual="Night.", slot_ref="thu-21:00")
+    assert a.is_recognizable(c) is False
+
+
+def test_pt001_unknown_ordering_format_falls_back_not_forks():
+    spec = shows.FormatSpec(name="Harbour Lights", ordering_format="nonexistent")
+    assert spec.ordering() is shows.FORMATS[shows.DEFAULT_FORMAT]
+
+
+def test_pt002_open_on_strongest_is_recorded_and_references_playbook():
+    from brain import playbook
+    spec = shows.FormatSpec(name="Harbour Lights")
+    assert spec.open_on_strongest is True  # REQ-PT-002 editorial rule
+    # the open-strongest PROMPT lines are playbook's (referenced, not re-owned here).
+    lines = playbook.open_strongest_block()
+    assert lines and any("STRONGEST" in ln for ln in lines)
+
+
+def test_pt003_segment_roster_define_run_evolve_retire():
+    roster = shows.SegmentRoster()
+    seg = roster.define("Local First", "newest local-artist add")
+    assert seg is not None and seg.status == shows.SEGMENT_PROPOSED
+    assert roster.run("Local First") is True
+    assert roster.active() and roster.active()[0].name == "Local First"
+    assert roster.evolve("Local First", "newest local-artist add this month") is True
+    assert roster._find("Local First").selection_rule.endswith("this month")
+    assert roster.retire("Local First") is True
+    assert roster.active() == []  # retired -> no longer a live landmark
+
+
+def test_pt003_segment_roster_rejects_trademark_and_duplicate_names():
+    roster = shows.SegmentRoster()
+    assert roster.define("Desert Island Discs") is None  # reference-station trademark
+    assert roster.define("Host Pick") is not None
+    assert roster.define("host pick") is None  # duplicate (case-insensitive)
+    # a retired segment cannot be evolved/run.
+    roster.define("Throwback")
+    roster.retire("Throwback")
+    assert roster.run("Throwback") is False
+    assert roster.evolve("Throwback", "x") is False

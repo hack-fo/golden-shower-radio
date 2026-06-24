@@ -112,6 +112,159 @@ DEFAULT_MAX_TRACKS = 12
 
 
 # --------------------------------------------------------------------------- #
+# PROGRAMMING-007 Group PT — the RECURRING-SHOW FORMAT layer (REQ-PT-001..003).
+#
+# This is the single home for "what a recurring show IS": its appointment-listening IDENTITY.
+# A FormatSpec COMPOSES the tiny ordering ``Format`` above (the track/talk ratio knob) with the
+# PT-001 identity — a NAME, a fixed SLOT reference, a STABLE skeleton, and an open/close RITUAL —
+# so a recurring show is RECOGNIZABLY the same each time. It does NOT fork the ordering policy
+# (it references it by key) and it does NOT own slot placement (OPS-004/ORCH scheduling owns
+# WHEN it airs; this owns the recurring FORMAT CONTENT). Names are AI-invented (no reference-
+# station trademark, OPS-004 REQ-OB-004). The durable persistence of these definitions is the
+# OPS-004 segment-type registry (a view over the REQ-OD-007 ledger — UNBUILT, the stated
+# dependency); until it exists these in-code specs are the live definitions, not a faked store.
+# --------------------------------------------------------------------------- #
+
+
+# Reference-station trademarked names the AI must never reuse for a show / segment (REQ-PT-001 /
+# REQ-PT-003 / OPS-004 REQ-OB-004). A small illustrative guard set (TUNABLE); the rail is that a
+# recurring show's name is the AI's own invention, not a real station's mark.
+RESERVED_FORMAT_NAMES: Tuple[str, ...] = (
+    "all songs considered", "morning edition", "desert island discs", "the breakfast show",
+    "essential mix", "worldwide", "sommar i p1", "private passions", "later",
+)
+
+
+def is_invented_name(name: str) -> bool:
+    """True when ``name`` is a usable AI-invented show/segment name (REQ-PT-001/003): non-empty
+    and NOT a reference-station trademark. The check is case/space-insensitive."""
+    n = _norm(name)
+    return bool(n) and n not in {_norm(r) for r in RESERVED_FORMAT_NAMES}
+
+
+# A recurring named segment's lifecycle (REQ-PT-003) — define -> active, evolve in place,
+# retire. Mirrors the Show status lifecycle so the roster reads consistently.
+SEGMENT_PROPOSED = "proposed"
+SEGMENT_ACTIVE = "active"
+SEGMENT_RETIRED = "retired"
+
+
+@dataclass
+class RecurringSegment:
+    """A recurring NAMED segment within a show skeleton (REQ-PT-003): an AI-invented ``name`` +
+    an AI-chosen ``selection_rule`` (e.g. "newest local-artist add", "host pick of the week"),
+    with a status lifecycle the AI grows. This is the segment CONTENT layer over OPS-004's
+    segment mechanism (REQ-OB-004) — the durable persistence is OPS-004's registry (UNBUILT,
+    stated); these objects are the live roster. The name MUST be AI-invented (no reference-
+    station trademark)."""
+
+    name: str
+    selection_rule: str = ""
+    status: str = SEGMENT_PROPOSED
+
+
+@dataclass
+class SegmentRoster:
+    """A show's grow-able roster of recurring named segments (REQ-PT-003). The AI may DEFINE,
+    RUN (activate), EVOLVE (re-rule in place), and RETIRE its own segments so a show has
+    familiar internal landmarks. Rejects a reference-station trademarked or duplicate name. The
+    roster is the AI's to grow; this owns the CONTENT lifecycle, not the OPS-004 scheduling."""
+
+    segments: List[RecurringSegment] = field(default_factory=list)
+
+    def define(self, name: str, selection_rule: str = "") -> Optional[RecurringSegment]:
+        """Define a new recurring segment (REQ-PT-003). Returns the segment, or None when the
+        name is a reference-station trademark or already on the roster."""
+        if not is_invented_name(name) or self._find(name) is not None:
+            log_event(log, "shows.segment_define_rejected", name=name)
+            return None
+        seg = RecurringSegment(name=name.strip(), selection_rule=selection_rule)
+        self.segments.append(seg)
+        return seg
+
+    def run(self, name: str) -> bool:
+        """Activate (RUN) a defined segment (REQ-PT-003). True when it transitioned to active."""
+        seg = self._find(name)
+        if seg is None or seg.status == SEGMENT_RETIRED:
+            return False
+        seg.status = SEGMENT_ACTIVE
+        return True
+
+    def evolve(self, name: str, selection_rule: str) -> bool:
+        """EVOLVE a segment's selection rule in place (REQ-PT-003) — the same named landmark
+        with a refreshed rule. True when applied (a retired segment cannot be evolved)."""
+        seg = self._find(name)
+        if seg is None or seg.status == SEGMENT_RETIRED:
+            return False
+        seg.selection_rule = selection_rule
+        return True
+
+    def retire(self, name: str) -> bool:
+        """RETIRE a segment (REQ-PT-003) — it stops running but the name is not reused. True
+        when retired."""
+        seg = self._find(name)
+        if seg is None:
+            return False
+        seg.status = SEGMENT_RETIRED
+        return True
+
+    def active(self) -> List[RecurringSegment]:
+        """The currently-running segments, the show's live internal landmarks."""
+        return [s for s in self.segments if s.status == SEGMENT_ACTIVE]
+
+    def _find(self, name: str) -> Optional[RecurringSegment]:
+        n = _norm(name)
+        for s in self.segments:
+            if _norm(s.name) == n:
+                return s
+        return None
+
+
+@dataclass
+class FormatSpec:
+    """A recurring show's FORMAT SPEC (REQ-PT-001): its appointment-listening IDENTITY.
+
+    ``name`` is the AI-invented show name (no reference-station trademark). ``ordering_format``
+    references a ``FORMATS`` key (the track/talk ratio knob — composed, not forked).
+    ``skeleton`` is the stable ordered shape of the show's named segments. ``open_ritual`` /
+    ``close_ritual`` are the consistent opening line and sign-off. ``slot_ref`` is an OPAQUE
+    handle to the OPS-004/ORCH-scheduled slot (placement is THEIRS; this carries the reference,
+    not the schedule). ``open_on_strongest`` records the REQ-PT-002 editorial rule that the open
+    front-loads its strongest hook (the prompt lines are ``playbook.open_strongest_block`` —
+    referenced). A recurring show is the SAME show each time iff its name/slot/skeleton/ritual
+    are stable (``is_recognizable``)."""
+
+    name: str
+    ordering_format: str = DEFAULT_FORMAT
+    skeleton: Tuple[str, ...] = ()
+    open_ritual: str = ""
+    close_ritual: str = ""
+    slot_ref: str = ""
+    open_on_strongest: bool = True
+
+    def is_valid_name(self) -> bool:
+        """True when the show name is AI-invented (REQ-PT-001 / OPS-004 REQ-OB-004)."""
+        return is_invented_name(self.name)
+
+    def ordering(self) -> Format:
+        """The composed ordering policy (the existing ``Format`` knob); an unknown key falls
+        back to the default — never a fork of the ratio policy."""
+        return FORMATS.get(self.ordering_format) or FORMATS[DEFAULT_FORMAT]
+
+    def is_recognizable(self, other: "FormatSpec") -> bool:
+        """True when ``other`` is the SAME recurring show as this (REQ-PT-001) — same name,
+        slot, skeleton, and open/close ritual. The week-to-week CONTENT within the skeleton
+        differs (the AI's); the IDENTITY does not. This is the appointment-listening rail."""
+        return (
+            _norm(self.name) == _norm(other.name)
+            and _norm(self.slot_ref) == _norm(other.slot_ref)
+            and tuple(_norm(s) for s in self.skeleton) == tuple(_norm(s) for s in other.skeleton)
+            and _norm(self.open_ritual) == _norm(other.open_ritual)
+            and _norm(self.close_ritual) == _norm(other.close_ritual)
+        )
+
+
+# --------------------------------------------------------------------------- #
 # Segments — the ordered units of a built show.
 # --------------------------------------------------------------------------- #
 
