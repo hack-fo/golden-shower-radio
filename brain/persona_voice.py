@@ -59,6 +59,13 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
+# Group PI (SPEC-RADIO-PROGRAMMING-007) is the AUTHORITATIVE owner of the per-persona FROZEN
+# anchor block + the anchor-field predicate. This module READS from it (single source of truth,
+# no forked copy / drift): the VoiceCard frozen-core field names ARE persona_identity.ANCHOR_FIELDS,
+# the frozen guard defers its anchor-field half to persona_identity.is_anchor_field, and the
+# VoiceCard frozen core is assembled by persona_identity.AnchorBlock.for_persona.
+from . import persona_identity as _pi
+
 # =====================================================================================
 # REQ-PV-003 — the per-daypart ENERGY BAND (energy as a WRITING property; TUNABLE).
 # =====================================================================================
@@ -162,10 +169,10 @@ class VoiceCard:
     self_disclosure_freq: str = "rare"  # rare | occasional
     blunt_praise_starters: List[str] = field(default_factory=list)
 
-    # The exact field names belonging to each zone (REQ-PV-011 loop guard reads these).
-    FROZEN_FIELDS: Tuple[str, ...] = (
-        "anchor_focuses", "core_temperament", "voice_signature", "pacing_signature",
-    )
+    # The exact field names belonging to each zone (REQ-PV-011 loop guard reads these). The
+    # FROZEN-core field names are OWNED by Group PI (REQ-PI-001/002) — bound to its canonical
+    # ``ANCHOR_FIELDS`` so the frozen-core field set has ONE definition (no drift).
+    FROZEN_FIELDS: Tuple[str, ...] = _pi.ANCHOR_FIELDS
     EVOLVABLE_FIELDS: Tuple[str, ...] = (
         "energy_band", "register", "verbal_tic_bank", "profanity_tier", "humour_mode",
         "self_disclosure_slice", "self_disclosure_freq", "blunt_praise_starters",
@@ -195,21 +202,18 @@ def card_for(persona: Any = None) -> VoiceCard:
     default."""
     if persona is None:
         return VoiceCard()
-    ch = getattr(persona, "charter", None)
-    anchors = list(getattr(persona, "anchors", []) or [])
-    primary = str(getattr(ch, "primary_territory", "") or "").strip() if ch else ""
-    if primary and primary not in anchors:
-        anchors = [primary] + anchors
-    pov = str(getattr(persona, "pov_seed", "") or "").strip()
+    # The FROZEN core (anchor block) is OWNED + assembled by Group PI (REQ-PI-001) — this is
+    # the single source of truth; ``card_for`` READS it rather than re-deriving the lift.
+    block = _pi.AnchorBlock.for_persona(persona)
     # The persona MAY carry an authored VoiceCard-shaped dict in ``voice_card`` (the loop's
-    # persisted write-set); honour it for the evolvable fields, else fall back to defaults.
+    # persisted write-set); honour it for the EVOLVABLE fields, else fall back to defaults.
     vc_src = getattr(persona, "voice_card", None)
     vc_src = vc_src if isinstance(vc_src, dict) else {}
     return VoiceCard(
-        anchor_focuses=anchors,
-        core_temperament=str(vc_src.get("core_temperament") or pov),
-        voice_signature=str(vc_src.get("voice_signature") or pov),
-        pacing_signature=str(vc_src.get("pacing_signature") or ""),
+        anchor_focuses=list(block.anchor_focuses),
+        core_temperament=block.core_temperament,
+        voice_signature=block.voice_signature,
+        pacing_signature=block.pacing_signature,
         energy_band=dict(vc_src.get("energy_band") or DEFAULT_ENERGY_BAND),
         register=str(vc_src.get("register") or ""),
         verbal_tic_bank=[str(t) for t in (vc_src.get("verbal_tic_bank") or []) if str(t).strip()],
@@ -587,10 +591,14 @@ def classify_loop_target(field_name: str) -> str:
 
     Returns ZONE_FROZEN for a VoiceCard FROZEN-core field or a named FROZEN invariant (the
     loop may never write it), else ZONE_EVOLVABLE. The guard is at the FRONT of the loop
-    protocol — a frozen-targeting proposal is blocked at intake, before any canary."""
-    name = _norm(field_name).replace("_", "-")
-    if name in {_norm(f).replace("_", "-") for f in VoiceCard.FROZEN_FIELDS}:
+    protocol — a frozen-targeting proposal is blocked at intake, before any canary.
+
+    The ANCHOR-FIELD half is classified by Group PI (REQ-PI-002/003 ``is_anchor_field``, the
+    authoritative predicate); this function composes that with the STATION-WIDE invariant set
+    it owns (never-ship-a-fail, grounding, anti-convergence-firewall, ...)."""
+    if _pi.is_anchor_field(field_name):
         return ZONE_FROZEN
+    name = _norm(field_name).replace("_", "-")
     if name in {_norm(i) for i in FROZEN_INVARIANTS}:
         return ZONE_FROZEN
     return ZONE_EVOLVABLE

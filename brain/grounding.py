@@ -690,8 +690,22 @@ def pv_voice_card_for(persona: Any = None, daypart: str = "") -> str:
     claim-making latitude (grounding REQ-PG-002 untouched)."""
     base = voice_card_for(persona)
     from . import persona_voice as _pv
+    from . import persona_identity as _pi
     card = _pv.card_for(persona)
     parts: List[str] = [base]
+    # The FROZEN ANCHOR BLOCK (SPEC-RADIO-PROGRAMMING-007 REQ-PI-001): the persona's immutable
+    # identity anchors, stated IDENTICALLY each call (consistency is the rail) so the host stays
+    # recognizably ITSELF while the evolvable delivery below tunes within the distinctness rails.
+    # Only renders for an active persona (the unhosted/house path carries no distinct anchors),
+    # so the persona=None path stays byte-identical to Group PG.
+    if persona is not None:
+        block = _pi.AnchorBlock.for_persona(persona)
+        focuses = [a for a in block.anchor_focuses if str(a).strip()]
+        if focuses:
+            parts.append("Your permanent identity anchors (these never change, every show): "
+                         + "; ".join(focuses) + ".")
+        if block.core_temperament and block.core_temperament not in base:
+            parts.append(f"Core temperament: {block.core_temperament}.")
     # The per-daypart energy band (REQ-PV-003) is a delivery-craft rail that applies even on
     # the unhosted/house path (it is daypart-calibrated, not persona-specific) — so it is
     # injected whenever PV is on, persona or not. The persona-specific lines (pacing, register,
