@@ -571,6 +571,34 @@ class Config:
     # showprep_enabled is ON, so a deploy can enable grounded prep WITHOUT spending web-tool quota.
     showprep_mode_b_enabled: bool = field(default_factory=lambda: _env("BRAIN_SHOWPREP_MODE_B_ENABLED", "0") not in ("0", "false", "no"))
 
+    # --- SPEC-RADIO-OPS-004 Group OG: News & Newscasting -------------------------------------
+    # [HARD] OFF by default. With it off NOTHING constructs the news subsystem: main.py builds no
+    # NewscastProducer, the director never produces a newscast, and the picker/playout path is
+    # BYTE-IDENTICAL to before this SPEC (REQ-OG-009 behaviour preservation). Flipping it ON lets
+    # the director run REGULAR scheduled newscasts at its OWN-chosen cadence (REQ-OG-001) off the
+    # playout path: aggregate trusted RSS/Atom feeds + APIs (REQ-OG-003), air only items grounded
+    # in fetched source content + attributed + apolitical (REQ-OG-005), through the SAME TTS +
+    # loudnorm pipeline as talk (REQ-OG-007). Every stage is BOUNDED + never-block: on
+    # slow/errored/unavailable news the slot is SKIPPED + logged, never silencing the stream
+    # (REQ-OG-009 [HARD]).
+    newscasting_enabled: bool = field(default_factory=lambda: _env("BRAIN_NEWSCASTING_ENABLED", "0") not in ("0", "false", "no"))
+    # REQ-OG-008 (OPTIONAL) — whether out-of-cadence breaking news may interject at a SAFE
+    # boundary (end of song, never mid-vocal). OFF by default keeps newscasting to the scheduled
+    # cadence only even when newscasting_enabled is ON.
+    news_mode_b_enabled: bool = field(default_factory=lambda: _env("BRAIN_NEWS_BREAKING_ENABLED", "0") not in ("0", "false", "no"))
+    # REQ-OG-001 default cadence (seconds) between scheduled newscasts. The AI may override this at
+    # its own discretion; this is the default rhythm, NOT a hardcoded fixed schedule. TUNABLE.
+    news_cadence_seconds: float = field(default_factory=lambda: float(_env("BRAIN_NEWS_CADENCE_SEC", "1800")))
+    # REQ-OG-009 / NFR-O bounded news budget (seconds): aggregation + production NEVER exceed this
+    # before the slot is abandoned (skipped). TUNABLE; the bound itself is the FIXED rail.
+    news_fetch_timeout_seconds: float = field(default_factory=lambda: float(_env("BRAIN_NEWS_TIMEOUT_SEC", "12")))
+    # The newscast length bound (max items read in one cast). Length is the AI's discretion; this
+    # is a sane upper bound. TUNABLE.
+    news_max_items: int = field(default_factory=lambda: int(_env("BRAIN_NEWS_MAX_ITEMS", "6")))
+    # REQ-OG-006 teldutala.fo Faroese voice ids for a faroese-majority newscast. TUNABLE.
+    news_faroese_voice_female: str = field(default_factory=lambda: _env("BRAIN_NEWS_FO_VOICE_F", "Hanna22k_NT"))
+    news_faroese_voice_male: str = field(default_factory=lambda: _env("BRAIN_NEWS_FO_VOICE_M", "Hanus22k_NT"))
+
     @property
     def attempts_path(self) -> str:
         return os.path.join(self.db_dir, "attempts.json")

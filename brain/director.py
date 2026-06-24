@@ -33,7 +33,8 @@ log = logging.getLogger("brain.director")
 class Director:
     def __init__(self, cfg: Config, library: Library, acquirer: Acquirer, state, stop_event: threading.Event,
                  show_engine=None, seed=None, diary=None, od_diary=None, topic_bank=None,
-                 segment_registry=None):
+                 segment_registry=None, news_producer=None, news_source_list=None,
+                 news_player=None):
         self.cfg = cfg
         self.library = library
         self.acquirer = acquirer
@@ -80,6 +81,19 @@ class Director:
         # NFR-O-6) — it NEVER gates the music picker. Exception-isolated so a registry fault never
         # breaks the tick (the never-block rail).
         self.segment_registry = segment_registry
+        # OPS-004 Group OG (REQ-OG-001/007/009): the autonomous newsroom. The director chooses the
+        # newscast CADENCE at its own discretion (REQ-OG-001 — no fixed hardcoded schedule); when a
+        # slot is due it produces a newscast OFF the playout path through the producer, BOUNDED so
+        # it NEVER blocks the stream (REQ-OG-009 [HARD]). OPTIONAL + backward-compatible: [HARD]
+        # when None (cfg.newscasting_enabled off) the tick produces NO newscast and is byte-
+        # identical to before this SPEC — the picker/playout path is untouched. The source list is
+        # the AI's evolving trusted-source VIEW over the ONE ledger (REQ-OG-002); the player wraps a
+        # produced clip as a kind="news" NextItem (REQ-OG-007). The whole produce path is exception-
+        # isolated — any news fault SKIPS the slot, never breaking the tick (the never-block rail).
+        self.news_producer = news_producer
+        self.news_source_list = news_source_list
+        self.news_player = news_player
+        self._last_news_at = 0.0
         self._cycle = 0
         self._thread: threading.Thread | None = None
 
@@ -249,6 +263,45 @@ class Director:
                 self.segment_registry.health()
             except Exception as exc:  # noqa: BLE001 - a registry fault never breaks the tick
                 log_event(log, "director.segment_registry_error", error=str(exc))
+        # OPS-004 REQ-OG-001/007/009: the scheduled-newscast slot. The director decides — at its
+        # OWN discretion (REQ-OG-001) — when news is due via the player's chosen cadence, and on a
+        # due slot produces ONE newscast OFF the playout path through the BOUNDED producer
+        # (REQ-OG-007). Off (news_producer/news_player None => cfg.newscasting_enabled off) this is
+        # skipped entirely and the tick is byte-identical. The whole path is exception-isolated and
+        # the produce step is itself wall-clock-bounded — any news fault SKIPS the slot, never
+        # blocking/breaking the tick or the stream (REQ-OG-009 [HARD]).
+        self._maybe_produce_news()
+
+    def _maybe_produce_news(self) -> None:
+        """Produce a scheduled newscast IF the AI-chosen cadence is due (REQ-OG-001/007). Wholly
+        no-op + byte-identical when newscasting is off (producer/player None). Exception-isolated +
+        bounded: a news fault SKIPS the slot, never breaking the tick or blocking the stream
+        (REQ-OG-009 [HARD]). The produced clip is logged here; serving it as a kind=\"news\"
+        NextItem is the picker's pull-path concern (the player builds it)."""
+        if self.news_producer is None or self.news_player is None:
+            return
+        try:
+            cadence = float(getattr(self.cfg, "news_cadence_seconds", 0.0))
+            if not self.news_player.is_news_slot_due(self._last_news_at, cadence):
+                return
+            sources = []
+            if self.news_source_list is not None:
+                sources = self.news_source_list.list_active()
+            result = self.news_producer.produce(sources)
+            # A due slot was serviced regardless of outcome — advance the cadence clock so a
+            # skipped/empty newscast does not hot-loop retrying every tick (REQ-OG-009).
+            self._last_news_at = time.time()
+            if result is not None and not getattr(result, "skipped", True) \
+                    and getattr(result, "clip_path", None):
+                self.news_player.make_news_next_item(result.clip_path)
+                log_event(log, "director.news_produced",
+                          items=getattr(result, "item_count", 0),
+                          language=getattr(result, "language", ""))
+            else:
+                log_event(log, "director.news_skipped",
+                          reason=getattr(result, "reason", "no_result"))
+        except Exception as exc:  # noqa: BLE001 - any news fault SKIPS the slot, never blocks
+            log_event(log, "director.news_error", error=str(exc))
 
     def _loop(self) -> None:
         # First scan picks up anything already on disk before the first LLM call.

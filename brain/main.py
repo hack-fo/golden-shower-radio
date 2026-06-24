@@ -222,9 +222,56 @@ def run() -> int:
         except Exception as exc:  # noqa: BLE001 - the diary is best-effort, never fatal to boot
             log_event(log, "main.pl_diary_init_failed", error=str(exc))
             pl_diary = None
+    # SPEC-RADIO-OPS-004 Group OG: the autonomous newsroom. [HARD] OFF by default + best-effort:
+    # built ONLY when cfg.newscasting_enabled; otherwise all None and the director produces NO
+    # newscast and the picker/playout path is byte-identical (REQ-OG-009 behaviour preservation).
+    # The trusted-source list is a VIEW over the ONE OD-007 ledger (REQ-OG-002 — persists only when
+    # ledger_enabled too; absent a ledger it is an in-memory list, still correct). The producer
+    # reuses the SAME voice.produce_talk_clip TTS+loudnorm pipeline as talk (REQ-OG-007, no forked
+    # TTS), bounded by news_fetch_timeout_seconds so it NEVER blocks the stream (REQ-OG-009).
+    news_producer = None
+    news_source_list = None
+    news_player = None
+    if cfg.newscasting_enabled:
+        try:
+            from . import news as _news
+            from . import voice as _voice
+            news_source_list = _news.NewsSourceList(ledger=od_ledger, clock=time.time)
+            seeded = news_source_list.seed()
+            if seeded:
+                log_event(log, "main.news_sources_seeded", count=seeded)
+            # The TTS provider is the SAME house provider talk uses; the Faroese teldutala.fo
+            # voices are a separate VOICE-002 seam, so until that lands every language routes to
+            # the house provider (REQ-OG-006 routing is in place; the fo backend is the open seam).
+            _tts_provider = _voice.make_provider(cfg)
+
+            def _provider_for_language(_lang: str, _p=_tts_provider):
+                return _p
+
+            synth = _news.make_default_synth(cfg, _provider_for_language)
+            aggregator = _news.NewsAggregator(timeout_seconds=cfg.news_fetch_timeout_seconds)
+            builder = _news.NewscastBuilder(
+                name_resolver=lambda sid: next(
+                    (s.name for s in news_source_list.list_all() if s.source_id == sid), sid),
+                station_name=cfg.station_name,
+            )
+            news_producer = _news.NewscastProducer(
+                aggregator=aggregator, builder=builder, synth=synth, ledger=od_ledger,
+                max_items=cfg.news_max_items, timeout_seconds=cfg.news_fetch_timeout_seconds,
+                faroese_voice_female=cfg.news_faroese_voice_female,
+                faroese_voice_male=cfg.news_faroese_voice_male,
+            )
+            news_player = _news.NewsPlayer(station_name=cfg.station_name,
+                                           cadence_seconds=cfg.news_cadence_seconds)
+            log_event(log, "main.newscasting_ready",
+                      sources=len(news_source_list.list_active()))
+        except Exception as exc:  # noqa: BLE001 - the newsroom is best-effort, never fatal to boot
+            log_event(log, "main.newscasting_init_failed", error=str(exc))
+            news_producer = news_source_list = news_player = None
     director = Director(cfg, library, acquirer, state, stop_event, show_engine=show_engine,
                         seed=seed, diary=pl_diary, od_diary=od_diary, topic_bank=topic_bank,
-                        segment_registry=segment_registry)
+                        segment_registry=segment_registry, news_producer=news_producer,
+                        news_source_list=news_source_list, news_player=news_player)
     # SPEC-RADIO-OPS-004 Group OA: the Program Director + 24h schedule + the soft+hard separation
     # SelectionRefiner + the no-orphan bootstrap. [HARD] OFF by default + best-effort: built ONLY
     # when cfg.scheduling_enabled; otherwise all None and the picker calls library.pick_next

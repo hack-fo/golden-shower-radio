@@ -114,11 +114,20 @@ PROGRAM_EVENT_TYPES: Tuple[str, ...] = (
     "persona_assigned", "timeblock_reserved", "timeblock_restored",
 )
 
+# News & newscasting events (Group OG — the AI's evolving trusted-source list + air/skip audit
+# is a news-typed VIEW over THIS ledger, no new store, REQ-OG-002/005/009). ``news_source_*``
+# project the current trusted-source list; ``news_aired`` / ``news_skipped`` audit each newscast
+# slot's outcome (aired-with-attribution vs skipped-without-blocking).
+NEWS_EVENT_TYPES: Tuple[str, ...] = (
+    "news_source_added", "news_source_removed", "news_source_evaluated",
+    "news_aired", "news_skipped",
+)
+
 # The full documented vocabulary (the union — the registered event-type set, REQ-OD-007).
 EVENT_VOCABULARY: Tuple[str, ...] = (
     CORE_EVENT_TYPES + HYPOTHESIS_EVENT_TYPES + TOPIC_EVENT_TYPES
     + SEGMENT_TYPE_EVENT_TYPES + LIFECYCLE_EVENT_TYPES + SEAM_EVENT_TYPES
-    + PLAYBOOK_EVENT_TYPES + PROGRAM_EVENT_TYPES
+    + PLAYBOOK_EVENT_TYPES + PROGRAM_EVENT_TYPES + NEWS_EVENT_TYPES
 )
 
 
