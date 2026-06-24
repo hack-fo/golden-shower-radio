@@ -17,15 +17,9 @@ AC-VG-010: Both gates share the same VettingGate / BanList instance (no split st
 
 from __future__ import annotations
 
-import os
-import tempfile
-import threading
-import time
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock, call, patch
-
-import pytest
+from dataclasses import dataclass
+from typing import Any, List, Optional
+from unittest.mock import MagicMock, patch
 
 from .banlist import BanList
 from .vetting import (
@@ -201,7 +195,6 @@ class TestAcVg002_PrePlayGate:
 
 class TestAcVg003_PrePlayGateBansNonMusic:
     def test_non_music_track_banned_and_skipped(self, tmp_path):
-        cfg = _Cfg()
         cascade = MagicMock(spec=VetCascade)
         banlist = BanList(str(tmp_path / "banned.json"))
         gate = VettingGate(cascade, banlist, cooldown_seconds=3600.0)
@@ -289,15 +282,15 @@ class TestAcVg005_OffensiveVerdictSeam:
         from .library import Library
         from .state import StationState
         from .config import load_config
-        import io, os
         cfg = load_config()
 
         lib = MagicMock(spec=Library)
         lib.vetting_gate = None
         state = MagicMock(spec=StationState)
         ov = OffensiveRequestVerdict()
-        # Must not raise with the new param
-        httpd = make_server(cfg, lib, state, offensive_verdict=ov)
+        # Must not raise TypeError with the new param; mock socket bind to avoid port conflicts.
+        with patch("socketserver.TCPServer.server_bind"), patch("socketserver.TCPServer.server_activate"):
+            httpd = make_server(cfg, lib, state, offensive_verdict=ov)
         httpd.server_close()
 
 

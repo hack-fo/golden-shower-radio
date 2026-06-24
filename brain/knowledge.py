@@ -1063,7 +1063,7 @@ class KnowledgeStore:
                     (status, now, error or None, now, job_id),
                 )
                 self._conn.commit()
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             # research_jobs table may not have updated_at; silently retry without it.
             try:
                 with self._lock:
@@ -1147,10 +1147,7 @@ class KnowledgeStore:
                     "as_of": fact.get("as_of", ""),
                 }
 
-            # 3. Collect tracks linked to this release via edges.
-            track_edges = self.edges_from(
-                release_id, rels=[REL_RELEASED_ON, REL_CREDITED_TO]
-            )
+            # 3. Collect tracks linked to this release via edges (reverse lookup below).
             # Also check reverse: tracks that have REL_RELEASED_ON pointing TO this release.
             track_data: List[Dict[str, Any]] = []
             try:

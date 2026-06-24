@@ -3,7 +3,6 @@
 AC-ML-001 … AC-ML-006: four-layer model constants and partition map.
 """
 
-import pytest
 from memory import (
     ALL_LAYERS,
     LAYER_EPISODIC,
