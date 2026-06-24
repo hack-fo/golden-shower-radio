@@ -24,6 +24,7 @@ from .acquire import Acquirer
 from .library import Library
 from . import llm
 from . import seeding
+from . import taste
 from .logging_setup import log_event
 
 log = logging.getLogger("brain.director")
@@ -31,12 +32,18 @@ log = logging.getLogger("brain.director")
 
 class Director:
     def __init__(self, cfg: Config, library: Library, acquirer: Acquirer, state, stop_event: threading.Event,
-                 show_engine=None, seed=None):
+                 show_engine=None, seed=None, diary=None):
         self.cfg = cfg
         self.library = library
         self.acquirer = acquirer
         self.state = state
         self.stop_event = stop_event
+        # PROGRAMMING-007 Group PL (REQ-PL-003/009/010/011): the acquisition diary is the
+        # persistent-acquisition history feeding the curator exclusion sets + recording outcomes.
+        # OPTIONAL + backward-compatible: [HARD] when None OR cfg.taste_learning_enabled is off,
+        # _tick passes NO exclusion sets and applies NO diversity re-rank — the curator prompt
+        # and the batch are BYTE-IDENTICAL to before this SPEC (the behaviour-preservation pin).
+        self.diary = diary
         # SHOWS-020 (Group SD/SB, REQ-SD-001/SB-001): the editorial show engine is OPTIONAL +
         # backward-compatible. When None (or cfg.shows_enabled is off, or no show is active) the
         # curation is BYTE-IDENTICAL to before this SPEC — the seed reference stays empty and the
@@ -107,14 +114,68 @@ class Director:
             log_event(log, "director.show_lens_error", error=str(exc))
             return []
 
+    def _taste_exclusions(self) -> tuple:
+        """The Group PL exclusion-feedback sets (REQ-PL-009): (already_have, recently_rejected).
+
+        ([], []) when taste-learning is off OR no diary is wired — the default path is then
+        byte-identical (curate_batch adds no exclusion lines). Exception-isolated: a failure in
+        building the exclusion context never blocks a tick (the golden rule wins)."""
+        if not getattr(self.cfg, "taste_learning_enabled", False):
+            return [], []
+        try:
+            already_have = taste.build_already_have(
+                self.library, limit=self.cfg.taste_already_have_window)
+            recently_rejected = (
+                taste.build_recently_rejected(
+                    self.diary, limit=self.cfg.taste_recently_rejected_window)
+                if self.diary is not None else []
+            )
+            return already_have, recently_rejected
+        except Exception as exc:  # noqa: BLE001 - exclusion context is best-effort; never blocks
+            log_event(log, "director.taste_exclusion_error", error=str(exc))
+            return [], []
+
+    def _diversity_rerank(self, batch: List[dict]) -> List[dict]:
+        """Apply the Group PL catalog-diversity MMR re-rank (REQ-PL-011) to a batch.
+
+        Returns the batch UNCHANGED when taste-learning is off — the default path is then
+        byte-identical (no re-rank). Catalog-size-gated + relaxes below the wishlist
+        low-watermark inside ``taste.diversity_rerank``. Exception-isolated."""
+        if not getattr(self.cfg, "taste_learning_enabled", False) or not batch:
+            return batch
+        try:
+            catalog = list(self.library.query())
+            return taste.diversity_rerank(
+                batch, catalog,
+                catalog_size=self.library.count(),
+                watermark=self.cfg.wishlist_low_watermark,
+                relevance_weight=self.cfg.taste_diversity_relevance_weight,
+                diversity_weight=self.cfg.taste_diversity_weight,
+            )
+        except Exception as exc:  # noqa: BLE001 - the re-rank is best-effort; never blocks a tick
+            log_event(log, "director.diversity_rerank_error", error=str(exc))
+            return batch
+
     def _tick(self) -> None:
         recent = self._recent_strings()
+        # [HARD] BEHAVIOUR-PRESERVATION: with taste-learning off, _taste_exclusions returns
+        # ([], []) and we pass NO new kwargs — the curate_batch call is signature-identical to
+        # before this SPEC (so existing callers/stubs are untouched). Only when the loop is on
+        # AND the context is non-empty do the Group PL exclusion kwargs (REQ-PL-009) ride.
+        already_have, recently_rejected = self._taste_exclusions()
+        extra = {}
+        if already_have:
+            extra["already_have"] = already_have
+        if recently_rejected:
+            extra["recently_rejected"] = recently_rejected
         batch = llm.curate_batch(
             model=self.cfg.anthropic_model,
             batch_size=self.cfg.llm_batch_size,
             recent=recent,
             seed_reference=self._seed_reference(),
+            **extra,
         )
+        batch = self._diversity_rerank(batch)
         queued = 0
         for track in batch:
             if self.stop_event.is_set():

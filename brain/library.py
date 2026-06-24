@@ -171,6 +171,28 @@ class Track:
     # loading cleanly via the tolerant loaders.
     tagstream_version: int = 0
 
+    # -- PROGRAMMING-007 Group PL: track provenance (REQ-PL-001/002/008) ----------
+    # WHO wanted a track and from WHERE — the acquisition history the audited brain lacked
+    # (it could not tell a curated download from a manual drop once indexed, Section 1.7).
+    # These fields EXTEND the ANALYSIS-006 Track record in place (REQ-AD-001 — no fork of the
+    # library store); ANALYSIS-006 owns the field schema, Group PL (brain/taste.py) owns the
+    # POPULATING logic + write-discipline. All default empty so an old library.json/sqlite row
+    # (lacking these keys) loads cleanly via the tolerant loaders and a track ingested before
+    # provenance existed stays a valid catalog member.
+    #   acquired_for     — the persona/show the track was acquired for, or "unattributed/house"
+    #                      for a manual drop / house-level acquisition (REQ-PL-002).
+    #   acquired_context — why / which curation decision drove the acquisition.
+    #   source           — slskd / yt-dlp / manual-drop.
+    #   grab_reason      — (REQ-PL-008 / ANALYSIS-006 REQ-AD-006) the director's STRUCTURED
+    #                      at-grab-time reason. An UNVERIFIED director CLAIM: useful for the
+    #                      diary/audit-trail + as a taste signal, but NEVER airable-as-fact
+    #                      (it never enters the REQ-PG-001 fact contract — see brain/taste.py
+    #                      GRAB_REASON_NEVER_FACT).
+    acquired_for: str = ""
+    acquired_context: str = ""
+    source: str = ""
+    grab_reason: str = ""
+
 
 # Identity / dedup fields that set_analysis MUST NEVER overwrite (M5 allowlist
 # hard-exclusions). A metadata provider returning a field literally named "key"
@@ -207,6 +229,16 @@ _ENRICH_WRITABLE_FIELDS = frozenset(
      # TAGSTREAM-009 Group TW (REQ-TW-006): the independent feature-tag skip-marker, persisted
      # via the same allowlist accessor — never touches the frozen identity / play-history fields.
      "tagstream_version"}
+)
+
+# PROGRAMMING-007 Group PL ALLOWLIST: the provenance fields set_provenance may write
+# (REQ-PL-001/002/008). Distinct from set_analysis / set_core_tags — the provenance writer is
+# the EXPLICIT populating path Group PL owns; the identity, play-history, and analysis fields
+# stay frozen so attributing WHO/WHERE acquired a track can never re-key it or corrupt its
+# feature record. grab_reason rides here too (REQ-PL-008): it is written like provenance, an
+# UNVERIFIED claim, and never an identity/analysis field.
+_PROVENANCE_WRITABLE_FIELDS = frozenset(
+    {"acquired_for", "acquired_context", "source", "grab_reason"}
 )
 
 
@@ -615,6 +647,28 @@ class Library:
                 return False
             for name, value in payload.items():
                 if name not in _ENRICH_WRITABLE_FIELDS:
+                    continue  # identity + play-history + analysis fields immutable here
+                setattr(t, name, value)
+            self._persist_row(t)
+            return True
+
+    def set_provenance(self, key: str, payload: Dict[str, Any]) -> bool:
+        """ALLOWLIST writer for PROGRAMMING-007 Group PL track provenance (REQ-PL-001/002/008).
+
+        Writes ONLY the provenance fields from ``payload`` onto the track:
+        ``acquired_for`` / ``acquired_context`` / ``source`` / ``grab_reason``. Every other
+        key — including ``key``, ``path``, the play-history fields, and the analysis fields —
+        is hard-excluded so attributing WHO/WHERE acquired a track can never re-key it or
+        corrupt its feature record. Mirrors set_analysis / set_core_tags. Returns True if the
+        track existed and was updated, False otherwise. Persists under the lock; best-effort
+        (a missing track is a silent False). This is the EXPLICIT populating path Group PL
+        (brain/taste.py) owns; ANALYSIS-006 owns the field schema (no fork)."""
+        with self._lock:
+            t = self._tracks.get(key)
+            if t is None:
+                return False
+            for name, value in payload.items():
+                if name not in _PROVENANCE_WRITABLE_FIELDS:
                     continue  # identity + play-history + analysis fields immutable here
                 setattr(t, name, value)
             self._persist_row(t)

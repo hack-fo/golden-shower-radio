@@ -192,7 +192,9 @@ def _coerce_track_list(data) -> List[Dict[str, str]]:
     return tracks
 
 
-def _build_prompt(batch_size: int, recent: List[str], seed_reference: List[str]) -> str:
+def _build_prompt(batch_size: int, recent: List[str], seed_reference: List[str],
+                  already_have: Optional[List[str]] = None,
+                  recently_rejected: Optional[List[str]] = None) -> str:
     parts = [
         f"Give me {batch_size} tracks to play next on the station right now.",
         "Mix it up across genres, eras, and moods - build a great, surprising radio flow.",
@@ -205,6 +207,23 @@ def _build_prompt(batch_size: int, recent: List[str], seed_reference: List[str])
         parts.append(
             "For loose reference only (the listener's taste - feel free to expand on or "
             "ignore it): " + "; ".join(seed_reference[:15]) + "."
+        )
+    # PROGRAMMING-007 Group PL (REQ-PL-009) exclusion-feedback: the PERSISTENT acquisition
+    # history, ADDITIVE to the EPHEMERAL playout `recent` window (the two-no-repeat separation).
+    # `already_have` = recently-acquired catalog members; `recently_rejected` = recently
+    # failed / no-candidate items. Feeding these makes the batch propose genuinely NEW
+    # candidates the acquisition gate can actually act on, instead of re-proposing items it
+    # silently drops (the verified wasted-quota gap). BOTH default empty => no lines added =>
+    # the prompt is BYTE-IDENTICAL to before this SPEC (the behaviour-preservation pin).
+    if already_have:
+        parts.append(
+            "Already in the library (do NOT propose these - we already have them): "
+            + "; ".join(already_have[:40]) + "."
+        )
+    if recently_rejected:
+        parts.append(
+            "Recently tried but could NOT acquire (do NOT propose these again - no source / "
+            "failed): " + "; ".join(recently_rejected[:40]) + "."
         )
     return "\n".join(parts)
 
@@ -258,6 +277,8 @@ def curate_batch(
     recent: Optional[List[str]] = None,
     seed_reference: Optional[List[str]] = None,
     persona=None,
+    already_have: Optional[List[str]] = None,
+    recently_rejected: Optional[List[str]] = None,
 ) -> List[Dict[str, str]]:
     """Return a batch of {artist, title} dicts. NEVER raises; always returns >=1.
 
@@ -268,10 +289,14 @@ def curate_batch(
     None the curation is BYTE-IDENTICAL to before this SPEC (the house curator PERSONA). When
     an active persona is supplied (opt-in multi-persona), curation is biased toward its taste
     charter so it draws a distinct candidate pool (REQ-PR-014).
+
+    ``already_have`` / ``recently_rejected`` (Group PL, REQ-PL-009) are the OPTIONAL persistent-
+    acquisition exclusion sets, ADDITIVE to the ephemeral playout ``recent`` (the two-no-repeat
+    separation). BOTH default empty => the prompt is byte-identical to before this SPEC.
     """
     recent = recent or []
     seed_reference = seed_reference or []
-    prompt = _build_prompt(batch_size, recent, seed_reference)
+    prompt = _build_prompt(batch_size, recent, seed_reference, already_have, recently_rejected)
     system_prompt, persona_lines = _persona_curation_overlay(persona)
     if persona_lines:
         prompt = prompt + "\n" + "\n".join(persona_lines)

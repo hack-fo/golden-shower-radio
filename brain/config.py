@@ -425,6 +425,28 @@ class Config:
     # OF TRUTH PV reads regardless of this flag (it replaces a fork, it does not gate behaviour).
     ear_writing_lint_enabled: bool = field(default_factory=lambda: _env("BRAIN_EAR_WRITING_LINT_ENABLED", "0") not in ("0", "false", "no"))
 
+    # --- PROGRAMMING-007 Group PL: taste self-learning, provenance & feedback ---
+    # Master switch for the taste self-learning loop + the acquisition-time exclusion-feedback
+    # (REQ-PL-009) + catalog-diversity re-rank (REQ-PL-011). [HARD] OFF by default so the
+    # director tick is BYTE-IDENTICAL to before this SPEC: with it off, _tick passes no
+    # already_have / recently_rejected exclusion sets and applies no diversity re-rank — the
+    # curator prompt and the batch are unchanged. Track PROVENANCE (REQ-PL-001/002) is always
+    # populated when an acquisition path supplies it (additive Track fields, default empty), but
+    # the LEARNING behaviour (exclusion + re-rank + the measured profile loop) only engages here.
+    taste_learning_enabled: bool = field(default_factory=lambda: _env("BRAIN_TASTE_LEARNING_ENABLED", "0") not in ("0", "false", "no"))
+    # REQ-PL-009 exclusion windows: how many recently-acquired / recently-rejected items the
+    # curator prompt carries. TUNABLE; the boundedness is the rail.
+    taste_already_have_window: int = field(default_factory=lambda: int(_env("BRAIN_TASTE_ALREADY_HAVE_WINDOW", "200")))
+    taste_recently_rejected_window: int = field(default_factory=lambda: int(_env("BRAIN_TASTE_RECENTLY_REJECTED_WINDOW", "100")))
+    # REQ-PL-011 MMR weights + the wishlist low-watermark (reuses wishlist_low_watermark as the
+    # acquisition-need signal). Below the watermark diversity RELAXES so a thin catalog is grown.
+    taste_diversity_relevance_weight: float = field(default_factory=lambda: float(_env("BRAIN_TASTE_DIVERSITY_RELEVANCE_W", "1.0")))
+    taste_diversity_weight: float = field(default_factory=lambda: float(_env("BRAIN_TASTE_DIVERSITY_W", "1.0")))
+    # REQ-PL-006 measured-loop rails: per-tick magnitude cap (anti-thrash) + cooldown seconds
+    # between applied taste changes. TUNABLE; the boundedness is the fixed rail.
+    taste_evolution_max_rate: float = field(default_factory=lambda: float(_env("BRAIN_TASTE_EVOLUTION_MAX_RATE", "0.25")))
+    taste_evolution_cooldown_seconds: float = field(default_factory=lambda: float(_env("BRAIN_TASTE_EVOLUTION_COOLDOWN_SEC", "86400")))
+
     @property
     def attempts_path(self) -> str:
         return os.path.join(self.db_dir, "attempts.json")
