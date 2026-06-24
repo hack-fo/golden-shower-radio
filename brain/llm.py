@@ -709,6 +709,86 @@ def generate_talk_script(model: str, context: Dict, persona=None) -> str:
     return ""
 
 
+# A tight system prompt for the Tier-2 adversarial self-check (SPEC-RADIO-PROGRAMMING-007
+# REQ-PG-005). The model acts as a skeptical fact-checker over its OWN draft: it lists every
+# factual claim and outputs ONLY the claims NOT supported by the supplied context. Kept short.
+FACTCHECK_PERSONA = (
+    "You are a strict radio fact-checker. You are given a short host script and the ONLY "
+    "facts the host was allowed to use. List every factual claim in the script, then output "
+    "ONLY the claims that are NOT supported by the supplied facts (a wrong or absent year, "
+    "label, producer, personnel, chart, award, or anecdote). Perceptual descriptions of how "
+    "the music SOUNDS are not factual claims and are always supported. Respond with ONLY a "
+    'JSON array of the unsupported claims as strings, e.g. ["released in 1979", "their third '
+    'album"]. If every claim is supported, respond with exactly [].'
+)
+
+
+def _build_factcheck_prompt(script: str, contract) -> str:
+    """Render the script + the closed-world fact contract into the adversarial prompt
+    (REQ-PG-005 Tier-2). The contract's airable facts are listed so the model can flag any
+    claim outside them."""
+    facts: List[str] = []
+    if getattr(contract, "artist", ""):
+        facts.append(f"artist: {contract.artist}")
+    if getattr(contract, "title", ""):
+        facts.append(f"title: {contract.title}")
+    if getattr(contract, "album", ""):
+        facts.append(f"album: {contract.album}")
+    if getattr(contract, "year", None):
+        facts.append(f"year: {contract.year}")
+    for g in (getattr(contract, "genres", None) or []):
+        facts.append(f"genre: {g}")
+    for f in (getattr(contract, "grounded_facts", None) or []):
+        if isinstance(f, dict) and f.get("value"):
+            facts.append(f"{f.get('predicate', 'fact')}: {f.get('value')}")
+    for s in (getattr(contract, "showprep_facts", None) or []):
+        if isinstance(s, dict) and (s.get("value") or s.get("quote")):
+            facts.append(f"sourced: {s.get('quote') or s.get('value')}")
+    fact_block = "\n".join(f"- {x}" for x in facts) or "- (no facts supplied)"
+    return (
+        "Script to check:\n" + script.strip() + "\n\n"
+        "The ONLY facts the host was allowed to use:\n" + fact_block + "\n\n"
+        "Output ONLY a JSON array of the unsupported factual claims (or [])."
+    )
+
+
+def adversarial_factcheck(model: str, script: str, contract) -> List[str]:
+    """The Tier-2 adversarial self-check (SPEC-RADIO-PROGRAMMING-007 REQ-PG-005). NEVER raises.
+
+    Asks the LLM to list every factual claim in ``script`` and return any NOT supported by
+    the ``contract``. Returns the list of unsupported claims (empty == all supported, so the
+    gate passes Tier-2). On any SDK error / quota / empty parse returns [] (fail-open: the
+    deterministic Tier-1 already caught the mechanical wrong facts, and an LLM-down adversarial
+    pass must not block an otherwise-clean break — never-stops)."""
+    prompt = _build_factcheck_prompt(script, contract)
+    try:
+        text = asyncio.run(_query_text(prompt, model, system_prompt=FACTCHECK_PERSONA))
+    except Exception as exc:  # noqa: BLE001 - best-effort; never crash playout
+        log_event(log, "llm.factcheck_error", error=str(exc), model=model)
+        return []
+    claims = _extract_string_list(text)
+    log_event(log, "llm.factcheck", model=model, unsupported=len(claims))
+    return claims
+
+
+def _extract_string_list(text: str) -> List[str]:
+    """Pull a JSON array of strings out of arbitrary model text. Returns [] on anything
+    unparseable (mirrors the defensive JSON-anywhere strategy of _extract_tracks)."""
+    if not text:
+        return []
+    start = text.find("[")
+    end = text.rfind("]")
+    if start == -1 or end == -1 or end <= start:
+        return []
+    try:
+        data = json.loads(text[start : end + 1])
+    except (json.JSONDecodeError, ValueError):
+        return []
+    if not isinstance(data, list):
+        return []
+    return [str(x).strip() for x in data if str(x).strip()]
+
+
 # =====================================================================================
 # IDENTITY layer (SPEC-RADIO-SEEDING-029 Step 2): autonomous persona-identity design.
 #

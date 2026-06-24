@@ -31,7 +31,7 @@ from typing import Optional
 
 from .config import Config
 from .library import Library, normalize_key
-from . import llm, voice
+from . import grounding, llm, voice
 from .logging_setup import log_event
 
 log = logging.getLogger("brain.talk")
@@ -124,6 +124,17 @@ class TalkDirector:
             # LLM every 5s while a break is "due" - we'll try again after more songs.
             self.state.defer_talk()
             log_event(log, "talk.skip_no_script")
+            return
+
+        # PROGRAMMING-007 Group PG (REQ-PG-005): pass the generated break through the
+        # two-tier quality gate. OFF by default => byte-identical (the script ships as-is).
+        # When ON, a FAIL regenerates once; a second FAIL SKIPS the break (talk less rather
+        # than ship a wrong fact). [HARD] never ships a FAIL; a skipped break keeps music
+        # playing (never-stops). Best-effort: any gate fault falls back to the raw script.
+        script = self._apply_quality_gate(context, persona, script)
+        if not script:
+            self.state.defer_talk()
+            log_event(log, "talk.skip_gate_fail")
             return
 
         clip = voice.produce_talk_clip(self.cfg, self._provider, script)
@@ -236,6 +247,55 @@ class TalkDirector:
         except Exception as exc:  # noqa: BLE001 - persona resolution is best-effort, never blocks talk
             log_event(log, "talk.persona_resolve_error", error=str(exc))
             return None
+
+    def _apply_quality_gate(self, context: dict, persona, script: str) -> Optional[str]:
+        """Run the generated break through the Group PG two-tier quality gate (REQ-PG-005).
+
+        [HARD] Behavior preservation: with ``quality_gate_enabled`` OFF (the default) this
+        returns ``script`` UNCHANGED — the talk path is byte-identical to before this SPEC.
+        When ON, it builds the closed-world FactContract from the SAME context bundle the
+        prompt consumed, then runs the gate: a FAIL regenerates ONCE (a fresh script from the
+        same context), a second FAIL returns ``None`` so the caller SKIPS the break. Tier-2
+        (the adversarial LLM self-check) is wired only when ``quality_gate_adversarial`` is on.
+        Best-effort: any gate fault logs and returns the raw script (never blocks playout).
+        """
+        if not getattr(self.cfg, "quality_gate_enabled", False):
+            return script
+        try:
+            contract = grounding.FactContract.from_context(context)
+
+            def _regenerate(violations):
+                # Regenerate once from the SAME context; the fresh draft is re-gated.
+                fresh = llm.generate_talk_script(self.cfg.anthropic_model, context, persona)
+                log_event(log, "talk.gate_regenerate", reasons=len(violations))
+                return fresh or ""
+
+            adversarial = None
+            if getattr(self.cfg, "quality_gate_adversarial", False):
+                adversarial = self._adversarial_checker(persona)
+
+            outcome = grounding.run_gate(
+                script, contract, regenerate=_regenerate, adversarial=adversarial
+            )
+            if outcome.skipped:
+                log_event(log, "talk.gate_skip",
+                          violations=len(outcome.result.violations),
+                          attempts=outcome.attempts)
+                return None
+            if outcome.attempts:
+                log_event(log, "talk.gate_passed_after_regen", attempts=outcome.attempts)
+            return outcome.script
+        except Exception as exc:  # noqa: BLE001 - the gate must never crash the talk loop
+            log_event(log, "talk.gate_error", error=str(exc))
+            return script
+
+    def _adversarial_checker(self, persona):
+        """Build the Tier-2 adversarial self-check callable (REQ-PG-005 Tier-2): it asks the
+        LLM to list every factual claim in the script and output any NOT supported by the
+        supplied context. Returns the list of unsupported claims (empty == all supported)."""
+        def _check(script: str, contract) -> list:
+            return llm.adversarial_factcheck(self.cfg.anthropic_model, script, contract)
+        return _check
 
     def _attach_show_context(self, context: dict) -> None:
         """Fold the active show's theme + GROUNDED talking points into the talk context

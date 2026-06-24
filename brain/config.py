@@ -377,6 +377,21 @@ class Config:
     # are ALSO enqueued for download. OFF by default — refs feed TASTE only (REQ-SS-003).
     seed_acquire_default: bool = field(default_factory=lambda: _env("BRAIN_SEED_ACQUIRE_DEFAULT", "0") not in ("0", "false", "no"))
 
+    # --- PROGRAMMING-007 Group PG: grounded host voice & two-tier quality gate ---
+    # Master switch for the host-voice quality gate (the forbidden-fact / anti-slop / comparison
+    # / quote-sourcing Tier-1 deterministic lint, the Tier-2 adversarial self-check, and the
+    # per-persona voice card). OFF by default so the talk path is BYTE-IDENTICAL to before this
+    # SPEC: with the gate off, generate_talk_script renders exactly as before and the host copy
+    # is never re-checked. When ON, a generated break is gated (REQ-PG-005): a FAIL regenerates
+    # once, a second FAIL SKIPS the break (talk less rather than ship a wrong fact); never-ship-
+    # a-FAIL is the fixed rail.
+    quality_gate_enabled: bool = field(default_factory=lambda: _env("BRAIN_QUALITY_GATE_ENABLED", "0") not in ("0", "false", "no"))
+    # Tier-2 adversarial LLM self-check (REQ-PG-005 Tier-2). OFF by default even when the gate is
+    # on, because it costs an extra LLM call per break; the deterministic Tier-1 lint is the cheap
+    # always-on guard. When ON (and an LLM is reachable) the gate also runs the adversarial claim
+    # check. The Tier-1 forbidden-fact scan is the mechanical never-ship-a-wrong-year guard.
+    quality_gate_adversarial: bool = field(default_factory=lambda: _env("BRAIN_QUALITY_GATE_ADVERSARIAL", "0") not in ("0", "false", "no"))
+
     @property
     def attempts_path(self) -> str:
         return os.path.join(self.db_dir, "attempts.json")
