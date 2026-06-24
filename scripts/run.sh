@@ -323,6 +323,108 @@ resolve_slskd() {
 }
 
 # --------------------------------------------------------------------------- #
+# SEEDING-029 (Group SB) — first-run TASTE-SEED setup step. Mirrors resolve_slskd:
+# captures a ONE-TIME operator choice OUTSIDE the headless brain and persists it to
+# data/db/seed-config.json + a data/db/seed_decided marker. Once the marker exists this
+# is a NO-OP — a restart / mid-broadcast redeploy NEVER re-prompts (REQ-SB-002/003).
+# Decline / non-interactive => WOPR (full autonomy = today's behaviour); the station
+# ALWAYS boots and plays regardless (REQ-SB-006). The brain reads the contract at startup
+# (brain/seeding.py); a missing/corrupt file degrades to WOPR there too.
+#
+# Precedence (mirrors slskd): SEED_MODE env > interactive prompt > decline (WOPR).
+# Sources/refs are recorded as PATHS/FLAGS; the brain does the tolerant CSV parse.
+# Bounded knobs (all optional): SEED_MODE (anchor|compass|wopr), SEED_CSV (a CSV
+# filename under data/db the brain reads), SEED_DROPPED (1=read dropped-file taste),
+# SEED_ACQUIRE (1=also enqueue CSV refs for download).
+# --------------------------------------------------------------------------- #
+SEED_DB_DIR="${SEED_DB_DIR:-$REPO/data/db}"
+resolve_seed() {
+  local marker="$SEED_DB_DIR/seed_decided"
+  local config="$SEED_DB_DIR/seed-config.json"
+  if [[ -f "$marker" ]]; then
+    log "seed: decision already made (marker present) — booting from $config, not re-prompting."
+    return 0
+  fi
+
+  local mode="${SEED_MODE:-}"
+  local csv="${SEED_CSV:-}"
+  local dropped="${SEED_DROPPED:-}"
+  local acquire="${SEED_ACQUIRE:-}"
+
+  # Prompt only on a TTY with no explicit SEED_MODE; otherwise take the safe default (decline).
+  if [[ -z "$mode" ]]; then
+    if [[ -t 0 ]]; then
+      printf "Pre-seed the station's taste now? Choose fidelity [a]nchor / [c]ompass / [W]opr(none): "
+      local _ans
+      read -r _ans || _ans=""
+      case "$(printf '%s' "$_ans" | tr '[:upper:]' '[:lower:]')" in
+        a | anchor) mode="anchor" ;;
+        c | compass) mode="compass" ;;
+        *) mode="wopr" ;;
+      esac
+      if [[ "$mode" != "wopr" ]]; then
+        printf "  Spotify CSV export filename under data/db (blank to skip): "
+        read -r csv || csv=""
+        printf "  Also read dropped music files as a taste signal? [y/N] "
+        local _d; read -r _d || _d=""
+        case "$(printf '%s' "$_d" | tr '[:upper:]' '[:lower:]')" in y | yes) dropped=1 ;; *) dropped=0 ;; esac
+        if [[ -n "$csv" ]]; then
+          printf "  Also DOWNLOAD the CSV tracks (grows the library)? [y/N] "
+          local _q; read -r _q || _q=""
+          case "$(printf '%s' "$_q" | tr '[:upper:]' '[:lower:]')" in y | yes) acquire=1 ;; *) acquire=0 ;; esac
+        fi
+      fi
+    else
+      mode="wopr"
+    fi
+  fi
+
+  case "$(printf '%s' "$mode" | tr '[:upper:]' '[:lower:]')" in
+    anchor | compass | wopr) mode="$(printf '%s' "$mode" | tr '[:upper:]' '[:lower:]')" ;;
+    *) mode="wopr" ;;
+  esac
+  [[ "$dropped" == "1" ]] || dropped=0
+  [[ "$acquire" == "1" ]] || acquire=0
+
+  # The CSV filename is recorded as the brain-container path (/db/<name>); data/db mounts at /db.
+  local csv_container=""
+  [[ -n "$csv" ]] && csv_container="/db/$csv"
+
+  write_seed_config "$config" "$mode" "$csv_container" "$dropped" "$acquire"
+  run_or_dry touch "$marker"
+  if [[ "$mode" == "wopr" ]]; then
+    log "seed: WOPR (full autonomy = today's behaviour). The station self-directs; no preseed."
+  else
+    log "seed: ${mode^^} fidelity — csv='${csv_container:-none}' dropped=$dropped acquire=$acquire."
+    log "      The seed is a NON-BINDING bias; the station always boots and plays."
+  fi
+}
+
+# write_seed_config <path> <mode> <csv_container> <dropped> <acquire>
+# Emits the SEEDING-029 seed-config.json contract (the SAME shape a future WEBUI-018 wizard
+# writes): {mode, sources:{spotify_csv,dropped_file_taste}, acquire}. Goes through run_or_dry
+# (a python3 heredoc for safe JSON), so the test harness sees a DRYRUN line and writes nothing.
+write_seed_config() {
+  local path="$1" mode="$2" csv="$3" dropped="$4" acquire="$5"
+  run_or_dry env SEED_OUT="$path" SEED_M="$mode" SEED_C="$csv" SEED_D="$dropped" SEED_A="$acquire" \
+    python3 - <<'PY'
+import json, os
+out = {
+    "mode": os.environ.get("SEED_M", "wopr"),
+    "sources": {
+        "spotify_csv": os.environ.get("SEED_C", "") or "",
+        "dropped_file_taste": os.environ.get("SEED_D", "0") == "1",
+    },
+    "acquire": os.environ.get("SEED_A", "0") == "1",
+}
+path = os.environ["SEED_OUT"]
+os.makedirs(os.path.dirname(path), exist_ok=True)
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(out, fh, ensure_ascii=False, indent=2)
+PY
+}
+
+# --------------------------------------------------------------------------- #
 # Port-in-use awareness (informational). A port already bound by OUR containers is
 # expected on an idempotent re-run; this only NOTES the binding.
 # --------------------------------------------------------------------------- #
@@ -482,6 +584,7 @@ main() {
   check_subscription_auth            # non-fatal skip-with-report (#1 lesson guard)
   check_disk                         # non-fatal warn
   prepare_filesystem
+  resolve_seed                       # SEEDING-029: first-run taste-seed setup (no-op if decided)
   resolve_slskd
   note_ports
   compose_up || {

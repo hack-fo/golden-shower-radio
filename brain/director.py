@@ -23,6 +23,7 @@ from .config import Config
 from .acquire import Acquirer
 from .library import Library
 from . import llm
+from . import seeding
 from .logging_setup import log_event
 
 log = logging.getLogger("brain.director")
@@ -30,7 +31,7 @@ log = logging.getLogger("brain.director")
 
 class Director:
     def __init__(self, cfg: Config, library: Library, acquirer: Acquirer, state, stop_event: threading.Event,
-                 show_engine=None):
+                 show_engine=None, seed=None):
         self.cfg = cfg
         self.library = library
         self.acquirer = acquirer
@@ -41,6 +42,13 @@ class Director:
         # curation is BYTE-IDENTICAL to before this SPEC — the seed reference stays empty and the
         # picker keeps full autonomy. An active show's selection lens only BIASES the batch.
         self.show_engine = show_engine
+        # SEEDING-029 (Groups SB/SS/SF): the OPERATOR's first-run taste seed + fidelity mode,
+        # loaded by main.py from the persisted seed-config.json. OPTIONAL + backward-compatible:
+        # [HARD] when None (seeding disabled / undecided / WOPR / corrupt config) the operator
+        # seed contributes NOTHING and _seed_reference() degrades to today's behaviour
+        # (the show lens, itself [] with shows off). The seed is fed ONLY as the NON-BINDING
+        # seed_reference (REQ-SF-004) — it never gates the picker, so the golden rule always wins.
+        self.seed = seed
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
@@ -51,14 +59,34 @@ class Director:
         return [f"{r['artist']} - {r['title']}" for r in self.state.recent() if r.get("title")]
 
     def _seed_reference(self) -> List[str]:
-        # FUTURE: pull the user's Spotify/YouTube liked tracks here as NON-BINDING
-        # reference context (see brain.config.SEED_ENRICHMENT_STUBS). Phase 1: none.
+        # The NON-BINDING reference context woven into curate_batch (llm.py:204-206) — the model
+        # MAY ignore it. It is NEVER a hard filter on the picker, so the golden rule (never stop)
+        # always wins. Two ADDITIVE, backward-compatible sources fold in here; with BOTH off this
+        # returns [] and the batch is BYTE-IDENTICAL to before either SPEC (the load-bearing
+        # behaviour-preservation pin).
         #
-        # SHOWS-020 REQ-SD-001 (D-S-2): when an active show exists, fold its selection-lens
-        # descriptors in as a NON-BINDING reference hint — exactly the seed_reference seam, never
-        # a director rewrite. Best-effort + exception-swallowed: [HARD] with the engine absent /
-        # shows disabled / no active show this returns [] and the batch is UNCHANGED (NFR-S-5).
-        return self._show_lens_reference()
+        # SEEDING-029 (Groups SF/SS): the OPERATOR's first-run taste seed under the chosen
+        # fidelity mode (ANCHOR / COMPASS / WOPR). [HARD] WOPR / disabled / undecided / corrupt
+        # config => seeding.seed_reference_strings(None|wopr) == [] (REQ-SF-003/004/005).
+        #
+        # SHOWS-020 REQ-SD-001 (D-S-2): when an active show exists, its selection-lens descriptors
+        # fold in as a NON-BINDING hint — exactly the seed_reference seam, never a director
+        # rewrite. [HARD] engine absent / shows disabled / no active show => [] (NFR-S-5).
+        #
+        # The two are CONCATENATED (operator taste first, show lens second); each is independently
+        # exception-isolated. Order is stable so the prompt reads operator-taste then show-angle.
+        return self._operator_seed_reference() + self._show_lens_reference()
+
+    def _operator_seed_reference(self) -> List[str]:
+        """The operator's first-run taste seed as the fidelity-weighted, NON-BINDING
+        seed_reference (SEEDING-029 Groups SF/SS). [] when no seed is configured (WOPR/disabled/
+        undecided), so the default path is byte-identical. Best-effort + exception-swallowed:
+        the seed is a preference, never a barrier (REQ-SF-004, NFR-S-1)."""
+        try:
+            return seeding.seed_reference_strings(self.seed)
+        except Exception as exc:  # noqa: BLE001 - the seed is best-effort; never blocks curation
+            log_event(log, "director.seed_reference_error", error=str(exc))
+            return []
 
     def _show_lens_reference(self) -> List[str]:
         """The active show's lens as non-binding curation hints (REQ-SD-001). [] when off."""

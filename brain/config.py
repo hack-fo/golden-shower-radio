@@ -353,6 +353,30 @@ class Config:
     # Cluster cap: how many back-to-back tracks form one human-DJ cluster (REQ-SK-001).
     humandj_cluster_size: int = field(default_factory=lambda: int(_env("BRAIN_HUMANDJ_CLUSTER_SIZE", "4")))
 
+    # --- SEEDING-029: initial-library seeding + taste-fidelity cold-start (Groups SB/SS/SF) ---
+    # Master switch for the OPERATOR seed subsystem (brain/seeding.py). [HARD] OFF by default
+    # (REQ-SF-005, NFR-S-6): with it off the director's _seed_reference() contributes NOTHING
+    # from the operator seed and the station is WOPR — byte-identical to before this SPEC
+    # (the seed-config.json is never read, no fidelity bias applied). The seed is captured
+    # OUTSIDE the headless brain (the scripts/run.sh setup step, mirroring resolve_slskd) and
+    # written to a single brain-readable seed-config.json contract the brain reads at startup.
+    # The seed is NON-BINDING at every fidelity level: it shifts curation WEIGHT via the
+    # existing curate_batch(seed_reference=...) hook (the model MAY ignore it); ANCHOR raises
+    # the weight, it NEVER hard-filters the library — the golden rule (never stop) always wins
+    # (REQ-SF-004 [HARD][LOAD-BEARING]). All seed work is exception-isolated: a malformed CSV,
+    # an unreadable drop, or a missing/corrupt seed-config.json logs and degrades to WOPR; it
+    # NEVER fails boot, crashes the director loop, or silences the stream (NFR-S-1).
+    seeding_enabled: bool = field(default_factory=lambda: _env("BRAIN_SEEDING_ENABLED", "0") not in ("0", "false", "no"))
+    # Override path to the persisted seed-config.json. EMPTY (default) -> db_dir/seed-config.json
+    # (see seed_config_path). An env var MAY point the headless brain at it (REQ-SB-004).
+    seed_config_path_override: str = field(default_factory=lambda: _env("BRAIN_SEED_CONFIG_PATH", ""))
+    # Default / fallback fidelity mode when the config omits or carries an unknown mode. One of
+    # anchor | compass | wopr; wopr (today's full-autonomy behaviour) is the safe default.
+    seed_default_mode: str = field(default_factory=lambda: _env("BRAIN_SEED_DEFAULT_MODE", "wopr").strip().lower())
+    # Seed-as-acquisition default (REQ-SS-005): when the config omits the flag, whether CSV refs
+    # are ALSO enqueued for download. OFF by default — refs feed TASTE only (REQ-SS-003).
+    seed_acquire_default: bool = field(default_factory=lambda: _env("BRAIN_SEED_ACQUIRE_DEFAULT", "0") not in ("0", "false", "no"))
+
     @property
     def attempts_path(self) -> str:
         return os.path.join(self.db_dir, "attempts.json")
@@ -424,6 +448,23 @@ class Config:
         the welcome is NOT re-armed on the next start (once per station genesis). Lives in
         DB_DIR so it survives brain restarts; delete it (or wipe the db) to re-arm."""
         return os.path.join(self.db_dir, "welcomed")
+
+    @property
+    def seed_decided_marker_path(self) -> str:
+        """SPEC-RADIO-SEEDING-029 (REQ-SB-002): sentinel file marking that the first-run seed
+        decision has been made. MIRRORS welcome_marker_path: present -> the run.sh setup step is
+        a no-op and the brain boots straight to the persisted seed-config.json, NEVER re-prompting
+        on a restart / mid-broadcast redeploy (REQ-SB-003). Lives in DB_DIR so it survives brain
+        restarts; deleting it (or wiping the db) is the only re-arm."""
+        return os.path.join(self.db_dir, "seed_decided")
+
+    @property
+    def seed_config_path(self) -> str:
+        """SPEC-RADIO-SEEDING-029 (REQ-SB-004): the single persisted seed-decision contract the
+        headless brain reads at startup — db_dir/seed-config.json, unless BRAIN_SEED_CONFIG_PATH
+        overrides it. Both the run.sh setup step (primary) and any future WEBUI-018 wizard
+        (alternative) write the SAME file; the brain is agnostic to which front-end wrote it."""
+        return self.seed_config_path_override or os.path.join(self.db_dir, "seed-config.json")
 
     def container_music_path(self, abs_or_rel: str) -> str:
         """Return the ``/music/...`` path Liquidsoap should fetch for a library file.

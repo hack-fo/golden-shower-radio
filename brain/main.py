@@ -30,6 +30,7 @@ from .lastfm import LastfmResearch
 from .library import Library
 from .logging_setup import log_event, setup_logging
 from .research import Researcher
+from . import seeding
 from .server import make_server
 from .shows import ShowEngine
 from .state import StationState
@@ -99,7 +100,38 @@ def run() -> int:
         except Exception as exc:  # noqa: BLE001 - the show engine is best-effort, never fatal
             log_event(log, "main.show_engine_init_failed", error=str(exc))
             show_engine = None
-    director = Director(cfg, library, acquirer, state, stop_event, show_engine=show_engine)
+    # SEEDING-029 (Groups SB/SS/SF): the OPERATOR's first-run taste seed + fidelity mode, read
+    # from the persisted seed-config.json the run.sh setup step wrote OUTSIDE this headless brain.
+    # [HARD] OFF by default (cfg.seeding_enabled) and best-effort: a disabled toggle, an absent /
+    # corrupt config, or a WOPR decision leaves seed None and the director is WOPR — byte-identical
+    # to before this SPEC (REQ-SF-005, REQ-SB-006, NFR-S-1). The seed is fed ONLY as the
+    # NON-BINDING curate_batch seed_reference; it never gates the picker, so the golden rule wins.
+    seed = None
+    if cfg.seeding_enabled:
+        try:
+            seed = seeding.load_seed(cfg, library)
+        except Exception as exc:  # noqa: BLE001 - the seed is best-effort, never fatal to boot
+            log_event(log, "main.seed_load_failed", error=str(exc))
+            seed = None
+    if seed is not None:
+        log_event(log, "main.seed_loaded", mode=seed.mode, refs=len(seed.references),
+                  acquire=seed.acquire)
+        # REQ-SS-005 seed-as-acquisition (OPT-IN, off by default): when enabled, enqueue the seed
+        # references for download via the EXISTING acquirer.enqueue seam so the seed GROWS the
+        # library, not just biases curation. Each grab rides the normal path UNCHANGED — the
+        # attempts/in-flight/has_key dedup and (when built) the VETTING-027 pre-download vet — so
+        # the seed bypasses no guard. Best-effort + bounded: a failed enqueue never blocks boot.
+        if seed.acquire and seed.references:
+            queued = 0
+            for ref in seed.references:
+                try:
+                    if acquirer.enqueue(ref.get("artist", ""), ref.get("title", "")):
+                        queued += 1
+                except Exception as exc:  # noqa: BLE001 - one bad enqueue never blocks boot
+                    log_event(log, "main.seed_enqueue_error", error=str(exc))
+            log_event(log, "main.seed_acquisition", enqueued=queued, total=len(seed.references))
+    director = Director(cfg, library, acquirer, state, stop_event, show_engine=show_engine,
+                        seed=seed)
     # KNOWLEDGE-008: the dated, sourced, relational editorial-knowledge store (SQLite in
     # /db). Best-effort - if disabled or the store can't open, the host simply talks from
     # genre/feel only. NEVER on the <1s /api/next pull path. Built before TalkDirector +

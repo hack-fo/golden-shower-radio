@@ -67,5 +67,32 @@ out="$(verify_station 2>&1)"; check "verify_station dry-runs (no real probes)" '
 # --- usage prints and main --help returns 0 without launching --------------- #
 out="$(main --help 2>&1)"; check "main --help prints usage, no launch" 'printf "%s" "$out" | grep -q "turnkey startup orchestrator" && ! printf "%s" "$out" | grep -q "Bringing the stack up"'
 
+# --- SEEDING-029 resolve_seed (REQ-SB-001/002/003/006) ---------------------- #
+# Sandbox the seed db dir under the temp tree; DRY_RUN makes the writes print, not execute.
+export SEED_DB_DIR="$TMP/data/db"
+mkdir -p "$SEED_DB_DIR"
+
+# Non-interactive WOPR decline (no SEED_MODE, no TTY) => mode wopr, writes config + marker (dry).
+SEED_MODE="" out="$(resolve_seed 2>&1)"
+check "resolve_seed non-interactive => WOPR decline" 'printf "%s" "$out" | grep -q "seed: WOPR"'
+check "resolve_seed writes seed-config.json (dry)" 'printf "%s" "$out" | grep -q "DRYRUN:.*seed-config.json"'
+check "resolve_seed drops the seed_decided marker (dry)" 'printf "%s" "$out" | grep -q "DRYRUN: touch.*seed_decided"'
+
+# Explicit SEED_MODE=anchor with a CSV + flags (non-interactive) => anchor, container csv path.
+SEED_MODE=anchor SEED_CSV=mytaste.csv SEED_DROPPED=1 SEED_ACQUIRE=1 out="$(resolve_seed 2>&1)"
+check "resolve_seed SEED_MODE=anchor => ANCHOR fidelity" 'printf "%s" "$out" | grep -qi "seed: ANCHOR"'
+check "resolve_seed records container csv path /db/<name>" 'printf "%s" "$out" | grep -q "csv=./db/mytaste.csv"'
+
+# Unknown mode => safe WOPR fallback (tolerant).
+SEED_MODE=bogus out="$(resolve_seed 2>&1)"
+check "resolve_seed unknown mode => WOPR fallback" 'printf "%s" "$out" | grep -q "seed: WOPR"'
+
+# Marker present => NO-OP (no re-prompt, no write) — the once-per-genesis rail (REQ-SB-002/003).
+touch "$SEED_DB_DIR/seed_decided"
+out="$(resolve_seed 2>&1)"
+check "resolve_seed marker-present is a no-op" 'printf "%s" "$out" | grep -q "decision already made"'
+check "resolve_seed no-op writes nothing" '! printf "%s" "$out" | grep -q "DRYRUN:"'
+rm -f "$SEED_DB_DIR/seed_decided"
+
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]]
