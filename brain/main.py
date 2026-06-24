@@ -268,10 +268,37 @@ def run() -> int:
         except Exception as exc:  # noqa: BLE001 - the newsroom is best-effort, never fatal to boot
             log_event(log, "main.newscasting_init_failed", error=str(exc))
             news_producer = news_source_list = news_player = None
+    # SPEC-RADIO-OPS-004 Group OE: the self-produced imaging/jingles subsystem (station IDs,
+    # sweepers, time-checks, jingles). [HARD] OFF by default + best-effort: built ONLY when
+    # cfg.imaging_enabled; otherwise None and the director produces NO imaging and the
+    # picker/playout path is BYTE-IDENTICAL to before this SPEC (REQ-OE-011 behaviour preservation).
+    # The bed registry is a VIEW over the ONE OD-007 ledger (REQ-OE-005 — persists only when
+    # ledger_enabled too; absent a ledger it is an in-memory inventory, still correct). The producer
+    # reuses the SAME voice.produce_talk_clip TTS+loudnorm pipeline as talk (REQ-OE-003, no forked
+    # TTS), mixes only over LICENSE-CLEARED beds (REQ-OE-005/006), and every external process is
+    # wall-clock-bounded so it NEVER blocks the stream (REQ-OE-009 [HARD]). A SINGLE serialized
+    # generation worker fills a ready buffer ahead of playout (REQ-OE-008) — no TTS/ffmpeg
+    # concurrency. The clip is a self-contained file the picker serves as a kind="imaging" NextItem.
+    imaging_system = None
+    if cfg.imaging_enabled:
+        try:
+            from . import imaging as _imaging
+            from . import voice as _voice
+            imaging_provider = _voice.make_provider(cfg)
+            imaging_system = _imaging.build_imaging_system(
+                cfg, imaging_provider, ledger=od_ledger, clock=time.time)
+            log_event(log, "main.imaging_ready",
+                      cadence=cfg.imaging_cadence_seconds,
+                      buffer_depth=cfg.imaging_buffer_depth,
+                      stable_audio=cfg.imaging_stable_audio_enabled)
+        except Exception as exc:  # noqa: BLE001 - imaging is best-effort, never fatal to boot
+            log_event(log, "main.imaging_init_failed", error=str(exc))
+            imaging_system = None
     director = Director(cfg, library, acquirer, state, stop_event, show_engine=show_engine,
                         seed=seed, diary=pl_diary, od_diary=od_diary, topic_bank=topic_bank,
                         segment_registry=segment_registry, news_producer=news_producer,
-                        news_source_list=news_source_list, news_player=news_player)
+                        news_source_list=news_source_list, news_player=news_player,
+                        imaging_system=imaging_system)
     # SPEC-RADIO-OPS-004 Group OA: the Program Director + 24h schedule + the soft+hard separation
     # SelectionRefiner + the no-orphan bootstrap. [HARD] OFF by default + best-effort: built ONLY
     # when cfg.scheduling_enabled; otherwise all None and the picker calls library.pick_next

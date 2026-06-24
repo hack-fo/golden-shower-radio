@@ -34,7 +34,7 @@ class Director:
     def __init__(self, cfg: Config, library: Library, acquirer: Acquirer, state, stop_event: threading.Event,
                  show_engine=None, seed=None, diary=None, od_diary=None, topic_bank=None,
                  segment_registry=None, news_producer=None, news_source_list=None,
-                 news_player=None):
+                 news_player=None, imaging_system=None):
         self.cfg = cfg
         self.library = library
         self.acquirer = acquirer
@@ -94,6 +94,16 @@ class Director:
         self.news_source_list = news_source_list
         self.news_player = news_player
         self._last_news_at = 0.0
+        # OPS-004 Group OE (REQ-OE-001/008/009/011): the self-produced imaging/jingles subsystem.
+        # The director refills the imaging ready-buffer one clip at a time OFF the playout path at a
+        # cadence the AI chooses at its own discretion (REQ-OE-001 — no fixed hardcoded schedule);
+        # serving a due slot as a kind="imaging" NextItem is the picker's pull-path concern
+        # (ImagingSystem.next_imaging_item). OPTIONAL + backward-compatible: [HARD] when None
+        # (cfg.imaging_enabled off) the tick produces NO imaging and is byte-identical to before
+        # this SPEC — the picker/playout path is untouched. The whole refill path is exception-
+        # isolated and the produce step is itself wall-clock-bounded — any imaging fault SKIPS the
+        # slot, never breaking the tick or blocking the stream (REQ-OE-009/011 [HARD]).
+        self.imaging_system = imaging_system
         self._cycle = 0
         self._thread: threading.Thread | None = None
 
@@ -271,6 +281,27 @@ class Director:
         # the produce step is itself wall-clock-bounded — any news fault SKIPS the slot, never
         # blocking/breaking the tick or the stream (REQ-OG-009 [HARD]).
         self._maybe_produce_news()
+        # OPS-004 REQ-OE-001/008/009: the self-produced imaging slot. The director refills the
+        # imaging ready-buffer ONE clip at a time OFF the playout path (REQ-OE-008) so a clip is
+        # always ready when the AI-chosen cadence is due; the picker serves it as a kind="imaging"
+        # NextItem (REQ-OE-008). Off (imaging_system None => cfg.imaging_enabled off) this is
+        # skipped entirely and the tick is byte-identical. Exception-isolated + the produce step is
+        # itself wall-clock-bounded — any imaging fault SKIPS the slot, never blocking/breaking the
+        # tick or the stream (REQ-OE-009/011 [HARD]).
+        self._maybe_produce_imaging()
+
+    def _maybe_produce_imaging(self) -> None:
+        """Refill the imaging ready-buffer by one clip IF imaging is on (REQ-OE-008). Wholly no-op +
+        byte-identical when imaging is off (imaging_system None). Exception-isolated + bounded: an
+        imaging fault SKIPS the refill, never breaking the tick or blocking the stream
+        (REQ-OE-009/011 [HARD]). The off-path production fills the buffer; serving a due clip as a
+        kind=\"imaging\" NextItem is the picker's pull-path concern (the system builds it)."""
+        if self.imaging_system is None:
+            return
+        try:
+            self.imaging_system.tick()
+        except Exception as exc:  # noqa: BLE001 - any imaging fault SKIPS the slot, never blocks
+            log_event(log, "director.imaging_error", error=str(exc))
 
     def _maybe_produce_news(self) -> None:
         """Produce a scheduled newscast IF the AI-chosen cadence is due (REQ-OG-001/007). Wholly

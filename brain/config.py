@@ -599,6 +599,36 @@ class Config:
     news_faroese_voice_female: str = field(default_factory=lambda: _env("BRAIN_NEWS_FO_VOICE_F", "Hanna22k_NT"))
     news_faroese_voice_male: str = field(default_factory=lambda: _env("BRAIN_NEWS_FO_VOICE_M", "Hanus22k_NT"))
 
+    # --- SPEC-RADIO-OPS-004 Group OE: Self-Produced Imaging & Jingles ------------------------
+    # [HARD] OFF by default. With it off NOTHING constructs the imaging subsystem: main.py builds
+    # no ImagingSystem, the director produces NO imaging, and the picker/playout path is BYTE-
+    # IDENTICAL to before this SPEC (REQ-OE-011 behaviour preservation). Flipping it ON lets the
+    # director self-produce station IDs / sweepers / jingles at its OWN-chosen cadence (REQ-OE-001)
+    # OFF the playout path: conceive a brief (REQ-OE-001), synth a voice line through the SAME TTS +
+    # loudnorm pipeline as talk (REQ-OE-003, no forked TTS), mix it over a license-cleared music bed
+    # (REQ-OE-004/005), and buffer the finished self-contained clip for the picker to serve as a
+    # kind="imaging" NextItem (REQ-OE-008). Every external process (ffmpeg/sox) is wall-clock-bounded
+    # in a daemon thread: on slow/errored production the slot is SKIPPED + logged, never silencing the
+    # stream (REQ-OE-009/011 [HARD]).
+    imaging_enabled: bool = field(default_factory=lambda: _env("BRAIN_IMAGING_ENABLED", "0") not in ("0", "false", "no"))
+    # REQ-OE-005 — whether the procedurally-generated / external Stable-Audio bed sourcer may be
+    # used for music beds. OFF by default keeps bed sourcing to the self-cleared CC0 first-party /
+    # procedural path even when imaging_enabled is ON, so a deploy can enable imaging WITHOUT any
+    # external generation dependency. Unknown-license beds are ALWAYS quarantined regardless.
+    imaging_stable_audio_enabled: bool = field(default_factory=lambda: _env("BRAIN_IMAGING_STABLE_AUDIO_ENABLED", "0") not in ("0", "false", "no"))
+    # REQ-OE-001 default cadence (seconds) between self-produced imaging clips. The AI may override
+    # this at its own discretion; this is the default rhythm, NOT a hardcoded fixed schedule. TUNABLE.
+    imaging_cadence_seconds: float = field(default_factory=lambda: float(_env("BRAIN_IMAGING_CADENCE_SEC", "900")))
+    # REQ-OE-008 — how many finished imaging clips the ready buffer keeps ahead of playout, so
+    # production is decoupled from the slot (a clip is always ready when due). TUNABLE.
+    imaging_buffer_depth: int = field(default_factory=lambda: int(_env("BRAIN_IMAGING_BUFFER_DEPTH", "3")))
+    # REQ-OE-009 / NFR-O bounded imaging budget (seconds): synth + bed + mix NEVER exceed this
+    # before the slot is abandoned (skipped). TUNABLE; the bound itself is the FIXED rail.
+    imaging_timeout_seconds: float = field(default_factory=lambda: float(_env("BRAIN_IMAGING_TIMEOUT_SEC", "60")))
+    # REQ-OE-004 voice-to-bed mix ratio (0..1): the share of the mix the dry voice keeps, the bed
+    # filling the remainder under sidechain ducking. 1.0 == dry voice only (no bed). TUNABLE.
+    imaging_dry_ratio: float = field(default_factory=lambda: float(_env("BRAIN_IMAGING_DRY_RATIO", "0.70")))
+
     @property
     def attempts_path(self) -> str:
         return os.path.join(self.db_dir, "attempts.json")
@@ -705,10 +735,28 @@ class Config:
         dot-dir so the library scan skips it (see Library.scan / TALK_DIR_NAME)."""
         return os.path.join(self.music_dir, TALK_DIR_NAME)
 
+    @property
+    def imaging_clips_dir(self) -> str:
+        """SPEC-RADIO-OPS-004 Group OE (REQ-OE-008): where self-produced imaging clips live.
+        Each clip is a SELF-CONTAINED file (REQ-OE-009) the picker serves as a kind="imaging"
+        NextItem. Like talk clips it MUST be under music_dir so Liquidsoap (which mounts
+        ../data/music at /music:ro) can read it WITHOUT a new mount, and MUST be a dot-dir so the
+        music-library scan skips it (it is imaging, not a song). BRAIN_IMAGING_CLIPS_DIR overrides
+        the location for a deploy that mounts imaging elsewhere."""
+        override = _env("BRAIN_IMAGING_CLIPS_DIR", "")
+        if override:
+            return override
+        return os.path.join(self.music_dir, IMAGING_DIR_NAME)
+
 
 # Dot-prefixed so the music library scan ignores it (talk clips are NOT songs).
 # Lives under MUSIC_DIR so Liquidsoap can read the clips without a new mount.
 TALK_DIR_NAME = ".talk"
+
+# SPEC-RADIO-OPS-004 Group OE: dot-prefixed so the music-library scan ignores it (imaging clips
+# are NOT songs). Lives under MUSIC_DIR so Liquidsoap can read the self-produced clips without a
+# new mount, exactly like the talk dir.
+IMAGING_DIR_NAME = ".imaging"
 
 
 # Audio extensions we care about.

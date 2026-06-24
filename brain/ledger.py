@@ -123,11 +123,24 @@ NEWS_EVENT_TYPES: Tuple[str, ...] = (
     "news_aired", "news_skipped",
 )
 
+# Self-produced imaging & jingles events (Group OE — the station's own IDs/sweepers/jingles.
+# The brief log + bed registry + air/skip audit are imaging-typed VIEWs over THIS ledger, no
+# new store, REQ-OE-001..012). ``imaging_brief_generated`` records each conceived imaging brief
+# (REQ-OE-001); ``imaging_clip_produced`` / ``imaging_clip_aired`` / ``imaging_clip_skipped``
+# audit each clip's production + playout outcome (REQ-OE-009/011 — produced-but-skipped never
+# silences the stream); ``imaging_bed_registered`` / ``imaging_bed_quarantined`` project the
+# self-cleared music-bed inventory (REQ-OE-005/006 — only license-cleared beds are usable).
+IMAGING_EVENT_TYPES: Tuple[str, ...] = (
+    "imaging_brief_generated", "imaging_clip_produced", "imaging_clip_aired",
+    "imaging_clip_skipped", "imaging_bed_registered", "imaging_bed_quarantined",
+)
+
 # The full documented vocabulary (the union — the registered event-type set, REQ-OD-007).
 EVENT_VOCABULARY: Tuple[str, ...] = (
     CORE_EVENT_TYPES + HYPOTHESIS_EVENT_TYPES + TOPIC_EVENT_TYPES
     + SEGMENT_TYPE_EVENT_TYPES + LIFECYCLE_EVENT_TYPES + SEAM_EVENT_TYPES
     + PLAYBOOK_EVENT_TYPES + PROGRAM_EVENT_TYPES + NEWS_EVENT_TYPES
+    + IMAGING_EVENT_TYPES
 )
 
 
