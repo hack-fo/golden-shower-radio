@@ -551,6 +551,26 @@ class Config:
     # that a retired voice is quarantined for the Tier-1 window is the FIXED rail.
     lifecycle_voice_cooldown_seconds: float = field(default_factory=lambda: float(_env("BRAIN_LIFECYCLE_VOICE_COOLDOWN_SEC", "0")))
 
+    # --- SPEC-RADIO-OPS-004 Group OC: Research-Driven Show Prep -------------------------------
+    # [HARD] OFF by default. With it off NOTHING constructs the ShowPrepper: the OY production
+    # pipeline's research stage stays the default no-op, the talk context carries no show-prep
+    # facts it would not already carry, and the cheap Mode-A LLM path is untouched — so the talk
+    # + <1s playout paths stay BYTE-IDENTICAL to before this SPEC. Flipping it ON lets the
+    # director run a BOUNDED-TIMEOUT pre-show research pass (REQ-OC-002): it CALLS the
+    # KNOWLEDGE-008 Researcher's on-demand seam + READS verified facts back through the SAME
+    # grounding feed (no forked research engine / store), and occasionally uses the web-tools-ON
+    # Mode B (REQ-OC-001) for theme depth. Research is downstream of air: on timeout it proceeds
+    # with whatever facts are ready, never blocking the stream (NFR-O).
+    showprep_enabled: bool = field(default_factory=lambda: _env("BRAIN_SHOWPREP_ENABLED", "0") not in ("0", "false", "no"))
+    # REQ-OC-005 / NFR-O bounded research budget (seconds): the pre-show research pass NEVER
+    # exceeds this before yielding to air. TUNABLE; that the pass is bounded + never-block is the
+    # FIXED rail.
+    showprep_research_timeout_seconds: float = field(default_factory=lambda: float(_env("BRAIN_SHOWPREP_TIMEOUT_SEC", "8")))
+    # REQ-OC-001 — whether the occasional Mode-B (web-tools-ON) planner is used for theme depth.
+    # OFF by default keeps show-prep to the fact-only path (the verified grounding feed) even when
+    # showprep_enabled is ON, so a deploy can enable grounded prep WITHOUT spending web-tool quota.
+    showprep_mode_b_enabled: bool = field(default_factory=lambda: _env("BRAIN_SHOWPREP_MODE_B_ENABLED", "0") not in ("0", "false", "no"))
+
     @property
     def attempts_path(self) -> str:
         return os.path.join(self.db_dir, "attempts.json")

@@ -1198,3 +1198,126 @@ def _extract_show_angle(text: str) -> Dict[str, Any]:
     if isinstance(tps, list):
         out["talking_points"] = [str(t).strip() for t in tps if str(t).strip()]
     return out
+
+
+# =====================================================================================
+# MODE B — the richer, web-tools-ON show-prep / research path (SPEC-RADIO-OPS-004 Group OC,
+# REQ-OC-001). This is the OCCASIONAL path: it differs from every Mode-A call above in ONE
+# field — ``allowed_tools=["WebSearch"]`` instead of ``[]`` — so the model may fetch live
+# facts for a themed show. The FREQUENT next-track / imaging / talk paths NEVER call this;
+# they stay on the tools-off Mode-A ``_query_text`` so the subscription quota is respected
+# (AC-OC-001 [HARD]: the hot path is tools-off). Like every other seam it NEVER raises and
+# falls back to {} so show-prep degrades to fact-only (the grounded feed) — research is
+# downstream of air, never upstream.
+# =====================================================================================
+
+# Mode B keeps the SAME minimal, subscription-auth, one-turn contract as Mode A — it only
+# turns ON the web-search tool. No claude_code preset, no MCP/hooks, no permission prompts
+# (WebSearch is a read-only built-in that needs no file-write permission).
+_MODE_B_TOOLS = ["WebSearch"]
+
+
+def _build_research_options(model: str, system_prompt: str):
+    """Mode-B options: identical to the cheap Mode-A config EXCEPT web tools are ON.
+
+    Shares the subscription-auth + custom-prompt + no-preset contract of ``_build_options``
+    (so the quota stays protected) and adds ONLY ``allowed_tools=["WebSearch"]`` so an
+    occasional show-prep call may fetch live facts. ``max_turns`` is raised to allow a
+    tool-use round-trip; everything else is the cheap path."""
+    from claude_agent_sdk import ClaudeAgentOptions  # type: ignore
+
+    child_env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+    child_env.setdefault("HOME", "/root")
+    return ClaudeAgentOptions(
+        system_prompt=system_prompt,       # plain string => custom prompt, NO claude_code preset
+        allowed_tools=_MODE_B_TOOLS,        # the ONLY difference from Mode A: web search ON
+        setting_sources=[],                 # do not load CLAUDE.md / settings / MCP / hooks
+        max_turns=4,                        # allow a tool-use round-trip for the web fetch
+        model=model,
+        env=child_env,                      # ANTHROPIC_API_KEY stripped => subscription auth
+    )
+
+
+async def _query_research(prompt: str, model: str, system_prompt: str) -> str:
+    """Run a single Mode-B (web-tools-ON) query and concatenate the assistant text blocks."""
+    from claude_agent_sdk import query, AssistantMessage, TextBlock  # type: ignore
+
+    options = _build_research_options(model, system_prompt=system_prompt)
+    chunks: List[str] = []
+    async for message in query(prompt=prompt, options=options):
+        if isinstance(message, AssistantMessage):
+            for block in message.content:
+                if isinstance(block, TextBlock):
+                    chunks.append(block.text)
+    return "".join(chunks)
+
+
+# The Mode-B show-prep system prompt. Grounded + anti-fabrication + no-self-imitation. It
+# instructs the model to fetch facts via web search and to HEDGE or OMIT anything it cannot
+# verify (REQ-OC-005), and it states explicitly that the supplied recent output is an
+# AVOID-LIST, never an example to imitate (REQ-OC-006).
+SHOW_PREP_PERSONA = (
+    "You are the research desk for an autonomous freeform radio station, preparing one "
+    "themed show. Using web search, gather REAL, verifiable facts about the featured artist "
+    "and theme — genre origins and movements, eras, artist/label/song history, cultural and "
+    "societal context, the role the music plays in human life. Ground every factual claim in "
+    "a source you actually found; if you cannot verify a claim, HEDGE it or LEAVE IT OUT — "
+    "never invent a fact, a date, a quote, or a credit. The recent-output list you are given "
+    "is ONLY so you AVOID repeating yourself — it is NOT an example to imitate. Respond with "
+    "ONLY a JSON object "
+    '{"theme": ..., "tracklist": [{"artist":...,"title":...}], "talking_points": [...]} — no '
+    "commentary, no markdown fences. 'talking_points' are short framing notes (genre/cultural "
+    "context), NOT hard factual assertions; the hard facts come from the verified knowledge "
+    "store, not from you."
+)
+
+
+def _build_show_prep_prompt(artist: str, theme: str,
+                            grounded_facts: Optional[List[Dict[str, Any]]],
+                            avoid: Optional[List[str]]) -> str:
+    """One-shot Mode-B prompt: research a featured artist/theme into show-prep depth.
+
+    ``grounded_facts`` are the facts ALREADY verified by KNOWLEDGE-008 (passed so the model
+    does not re-fetch them and so it knows what is established); ``avoid`` is the recent-output
+    AVOID-LIST threaded ONLY to suppress repetition, NEVER as exemplars (REQ-OC-006)."""
+    parts = [
+        f"Prepare a themed show featuring {artist or 'the featured artist'}"
+        + (f", theme: {theme}." if theme else "."),
+        "Use web search to research it. Return ONLY the JSON object described.",
+    ]
+    known = [str(f.get("value", "")).strip() for f in (grounded_facts or [])
+             if str(f.get("value", "")).strip()]
+    if known:
+        parts.append("Already-verified facts (do not re-fetch, build around these): "
+                     + "; ".join(known[:12]) + ".")
+    recent = [a for a in (avoid or []) if a]
+    if recent:
+        parts.append("Recently aired (AVOID repeating these — this is a repeat-avoidance "
+                     "list, NOT examples to copy): " + "; ".join(recent[:10]) + ".")
+    return "\n".join(parts)
+
+
+def research_show_prep(model: str, artist: str, *, theme: str = "",
+                       grounded_facts: Optional[List[Dict[str, Any]]] = None,
+                       avoid: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Mode-B occasional show-prep research (REQ-OC-001/002/004). NEVER raises.
+
+    Returns ``{"theme", "tracklist", "talking_points"}`` (keys may be absent), or ``{}`` on
+    any SDK error / quota / empty parse so the ShowPrepper degrades to the fact-only plan
+    built from the verified grounding feed. This is the ONLY web-tools-ON call in the brain;
+    it is occasional by construction (only the show-prep pass invokes it)."""
+    prompt = _build_show_prep_prompt(artist, theme, grounded_facts, avoid)
+    try:
+        text = asyncio.run(_query_research(prompt, model, system_prompt=SHOW_PREP_PERSONA))
+        plan = _extract_show_angle(text)  # same {theme, talking_points, ...} JSON shape
+        tracklist = _extract_tracks(text)
+        if tracklist:
+            plan["tracklist"] = tracklist
+        if plan:
+            log_event(log, "llm.show_prep", model=model, artist=artist,
+                      tracks=len(tracklist), theme=plan.get("theme", ""))
+            return plan
+        log_event(log, "llm.show_prep_empty_parse", model=model, raw_len=len(text or ""))
+    except Exception as exc:  # noqa: BLE001 - show-prep is best-effort; never stall a show
+        log_event(log, "llm.show_prep_error", error=str(exc), model=model)
+    return {}

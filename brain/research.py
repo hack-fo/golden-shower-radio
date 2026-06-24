@@ -215,6 +215,25 @@ class Researcher:
         self.store.mark_researched(entity_id, error=last_error or None)
         return wrote
 
+    def research_one(self, artist: str) -> bool:
+        """On-demand, synchronous research of ONE artist (OPS-004 Group OC pre-show prep).
+
+        The same end-to-end pass the background tick runs (``_research_artist``), exposed as a
+        public seam for the show-prep RESEARCH pass to deep-research a featured artist BEFORE
+        a show airs (REQ-OC-002). Idempotent (REQ-KR-003): an already-researched artist
+        re-runs harmlessly (the store upserts). NEVER raises — a fault degrades to False so
+        the caller proceeds with whatever facts are in the store (REQ-OC-005 / never-block).
+        OC wraps THIS call in its own wall-clock deadline; this method does not block on a
+        timer of its own."""
+        artist = (artist or "").strip()
+        if not artist:
+            return False
+        try:
+            return self._research_artist(artist)
+        except Exception as exc:  # noqa: BLE001 - on-demand research is best-effort
+            log_event(log, "research.research_one_error", artist=artist, error=str(exc))
+            return False
+
     def _first_lib_key_for_artist(self, artist: str) -> Optional[str]:
         """A representative library track key for this artist (for the entity link)."""
         target = _artist_norm_key(artist)

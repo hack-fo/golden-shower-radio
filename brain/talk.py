@@ -77,7 +77,7 @@ class TalkDirector:
     """
 
     def __init__(self, cfg: Config, library: Library, state, stop_event: threading.Event,
-                 knowledge=None, show_engine=None, roster=None):
+                 knowledge=None, show_engine=None, roster=None, show_prepper=None):
         self.cfg = cfg
         self.library = library
         self.state = state
@@ -98,6 +98,13 @@ class TalkDirector:
         # SPEC. When a roster singles out an active persona, that persona is threaded into
         # generate_talk_script so the year/album/curiosa delivery is distinguishable per host.
         self.roster = roster
+        # SPEC-RADIO-OPS-004 Group OC (REQ-OC-002/003/005): the pre-show research pass is OPTIONAL +
+        # backward-compatible. When None (or cfg.showprep_enabled off) NO show-prep facts are added —
+        # the talk context is BYTE-IDENTICAL to before this SPEC. When present, a break that has a
+        # featured artist runs the BOUNDED-TIMEOUT prep and ADDS its grounded ``showprep_facts`` to
+        # the existing closed-world bundle (the same shape the gate already reads). Research is
+        # downstream of air: the bounded timeout means it can never hold the break.
+        self.show_prepper = show_prepper
         self._thread: Optional[threading.Thread] = None
         self._provider = voice.make_provider(cfg)
         self._last_prune = 0.0
@@ -304,6 +311,12 @@ class TalkDirector:
         # with the engine absent / shows disabled / no active show the keys are simply not added
         # and the context is byte-identical (REQ-SB-001/002). Never on the /api/next pull path.
         self._attach_show_context(context)
+        # SPEC-RADIO-OPS-004 Group OC (REQ-OC-002/003/005): the pre-show research pass ADDS
+        # source-stamped ``showprep_facts`` for the featured artist to the SAME closed-world
+        # bundle. Best-effort + bounded-timeout + exception-swallowing exactly like
+        # _attach_grounding; with the prepper absent / showprep disabled / no featured artist the
+        # keys are not added and the context is byte-identical. Research is downstream of air.
+        self._attach_showprep(context)
         return context
 
     def _active_persona(self):
@@ -509,6 +522,30 @@ class TalkDirector:
                 context["grounded_relations"] = relations
         except Exception as exc:  # noqa: BLE001 - grounding is best-effort, never blocks talk
             log_event(log, "talk.grounding_error", error=str(exc))
+
+    def _attach_showprep(self, context: dict) -> None:
+        """Fold the OPS-004 Group OC pre-show research into the talk context (REQ-OC-002/003/005).
+
+        For a break with a featured artist, run the BOUNDED-TIMEOUT show-prep pass and ADD the
+        grounded ``showprep_facts`` (source-stamped, certain/hedged-marked) to the existing
+        closed-world bundle the gate reads. Backward-compatible: absent a prepper, disabled SPEC,
+        or no featured artist -> the keys are not added and the prompt is unchanged. The bounded
+        timeout means this can never hold the break (research is downstream of air)."""
+        if self.show_prepper is None or not getattr(self.cfg, "showprep_enabled", False):
+            return
+        try:
+            artist = str(context.get("last_artist") or context.get("show_featured_artist") or "").strip()
+            if not artist:
+                return
+            theme = str(context.get("show_theme") or "").strip()
+            avoid = context.get("recent_themes") or []
+            plan = self.show_prepper.prep_show(artist, theme=theme, avoid=avoid)
+            frag = plan.to_context()
+            prep_facts = frag.get("showprep_facts") or []
+            if prep_facts:
+                context["showprep_facts"] = list(context.get("showprep_facts") or []) + prep_facts
+        except Exception as exc:  # noqa: BLE001 - show-prep is best-effort, never blocks talk
+            log_event(log, "talk.showprep_error", error=str(exc))
 
     def _maybe_prune(self) -> None:
         now = time.time()

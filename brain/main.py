@@ -308,12 +308,49 @@ def run() -> int:
         except Exception as exc:  # noqa: BLE001 - knowledge is best-effort, never fatal
             log_event(log, "main.knowledge_init_failed", error=str(exc))
             knowledge = None
+    # KNOWLEDGE-008: background, serialized, non-blocking research worker (Group KR). Constructed
+    # here (ahead of the talk layer) so the OPS-004 Group OC pre-show prepper can wrap its
+    # on-demand research seam. start() is deferred to the worker-start block below.
+    researcher = Researcher(cfg, library, knowledge, state, stop_event) if knowledge else None
+
+    # SPEC-RADIO-OPS-004 Group OC: the pre-show RESEARCH pass (REQ-OC-001..006). [HARD] OFF by
+    # default + best-effort: built ONLY when showprep_enabled AND a live KNOWLEDGE-008 researcher +
+    # store exist; otherwise None and nothing runs a pre-show pass (byte-identical). It FORKS no
+    # research engine + no grounding store — it CALLS researcher.research_one (the on-demand seam)
+    # under a bounded wall-clock deadline and READS verified facts back through the SAME grounding
+    # feed (knowledge.grounding_for_artist). Mode B (web tools ON, REQ-OC-001) is wired only when
+    # showprep_mode_b_enabled so a deploy can enable grounded prep WITHOUT spending web-tool quota.
+    # The result feeds the talk context's showprep_facts (additive) + the OY pipeline research-stage
+    # seam (showprep.research_stage). Research is downstream of air: on timeout it proceeds with
+    # whatever facts are ready, never blocking the stream (NFR-O).
+    show_prepper = None
+    if cfg.showprep_enabled and researcher is not None and knowledge is not None:
+        try:
+            from .showprep import ShowPrepper
+            planner = None
+            if cfg.showprep_mode_b_enabled:
+                from . import llm as _llm
+                _model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+
+                def planner(**kw):  # Mode-B web-tools-ON occasional research (REQ-OC-001)
+                    return _llm.research_show_prep(
+                        _model, kw.get("artist", ""), theme=kw.get("theme", ""),
+                        grounded_facts=kw.get("grounded_facts"), avoid=kw.get("avoid"))
+            show_prepper = ShowPrepper(
+                researcher=researcher.research_one, store=knowledge, planner=planner,
+                timeout_seconds=cfg.showprep_research_timeout_seconds)
+            log_event(log, "main.show_prepper_ready", mode_b=cfg.showprep_mode_b_enabled)
+        except Exception as exc:  # noqa: BLE001 - show-prep is best-effort, never fatal to boot
+            log_event(log, "main.show_prepper_init_failed", error=str(exc))
+            show_prepper = None
+
     # TALKING layer (phase 2a): pre-renders host talk clips between songs. Best-effort -
     # if disabled or TTS/LLM fails, the station stays pure music. Carries the KNOWLEDGE-008
     # grounding feed (verified facts) when the store is available (REQ-KI-001) + the SHOWS-020
-    # active-show theme/talking points when the show engine is on (REQ-SD-002).
+    # active-show theme/talking points when the show engine is on (REQ-SD-002) + the OPS-004
+    # Group OC show-prep facts when the prepper is on (REQ-OC-002/003/005).
     talk_director = TalkDirector(cfg, library, state, stop_event, knowledge=knowledge,
-                                 show_engine=show_engine)
+                                 show_engine=show_engine, show_prepper=show_prepper)
     # First-run WELCOME (one-shot opening): arm it only when talk is on, it's enabled, and
     # the genesis marker is absent — so it plays once at the station's first start and a
     # later brain restart mid-broadcast does NOT re-welcome. The TalkDirector prepares it
@@ -340,11 +377,6 @@ def run() -> int:
     # in (BRAIN_FILENAME_RENAME_ENABLED + the write-files discipline) and never touches the
     # in-flight file. Best-effort + bounded; NEVER on the <1s /api/next pull path.
     filename_worker = FilenameWorker(cfg, library, state, stop_event)
-    # KNOWLEDGE-008: background, serialized, non-blocking research worker (Group KR). Fills
-    # the editorial-knowledge store from MusicBrainz / Last.fm / etc. Best-effort + bounded +
-    # throttled; degrades gracefully on a source outage. NEVER blocks playout.
-    researcher = Researcher(cfg, library, knowledge, state, stop_event) if knowledge else None
-
     httpd = make_server(cfg, library, state, knowledge=knowledge,
                         refiner=selection_refiner, no_orphan=no_orphan)
     http_thread = threading.Thread(target=httpd.serve_forever, name="http", daemon=True)
