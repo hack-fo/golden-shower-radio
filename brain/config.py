@@ -536,6 +536,21 @@ class Config:
     selection_penalty_lambda: float = field(default_factory=lambda: float(_env("BRAIN_SELECTION_PENALTY_LAMBDA", "1.0")))
     selection_adjacency_lambda: float = field(default_factory=lambda: float(_env("BRAIN_SELECTION_ADJACENCY_LAMBDA", "0.6")))
 
+    # --- SPEC-RADIO-OPS-004 Group OB lifecycle: Host/Show Lifecycle + Always-Staffed ---------
+    # [HARD] OFF by default. With it off the lifecycle FSM is never constructed: the existing
+    # manual persona CRUD (Roster.create/edit/disable/remove), the SHOWS-020 show status
+    # lifecycle, the schedule, and the default station are BYTE-IDENTICAL — no persona is retired/
+    # launched and no show is discontinued/relaunched autonomously. The FSM owns NO playout + NO
+    # Liquidsoap change (REQ-OD-009): it only reads/writes the OD-007 ledger (lifecycle events) +
+    # the roster's FUTURE-selection state, so it can never cut an in-flight break or silence the
+    # stream. It rides the ONE OD-007 ledger (no new store) so it additionally requires
+    # ledger_enabled to persist; absent a ledger it is an in-memory FSM (still correct).
+    lifecycle_enabled: bool = field(default_factory=lambda: _env("BRAIN_LIFECYCLE_ENABLED", "0") not in ("0", "false", "no"))
+    # REQ-OB-013 voice-quarantine cooldown override (seconds). 0 = derive from the OD-010 Tier-1
+    # (rarest) cooldown so a returning voice is never mistaken for the old host mid-cycle. TUNABLE;
+    # that a retired voice is quarantined for the Tier-1 window is the FIXED rail.
+    lifecycle_voice_cooldown_seconds: float = field(default_factory=lambda: float(_env("BRAIN_LIFECYCLE_VOICE_COOLDOWN_SEC", "0")))
+
     @property
     def attempts_path(self) -> str:
         return os.path.join(self.db_dir, "attempts.json")

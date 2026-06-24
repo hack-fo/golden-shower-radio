@@ -263,6 +263,37 @@ def run() -> int:
         except Exception as exc:  # noqa: BLE001 - the scheduler is best-effort, never fatal to boot
             log_event(log, "main.scheduling_init_failed", error=str(exc))
             selection_refiner = no_orphan = None
+    # SPEC-RADIO-OPS-004 Group OB lifecycle: the Host/Show Lifecycle FSM + the always-staffed /
+    # voice-quarantine rails. [HARD] OFF by default + best-effort: built ONLY when
+    # cfg.lifecycle_enabled; otherwise None and nothing in the persona/show/schedule path changes
+    # (byte-identical). The FSM RIDES the ONE OD-007 ledger (lifecycle events, no new store),
+    # COMPOSES the OD-006 MeasuredChangeBudget at the OD-010 Tier-1 rarity tier, and REUSES the
+    # Roster (persona model + firewall), minting (autonomous staffing), the ShowEngine, and the
+    # schedule grid (reassign + always-staffed checks) — no fork. Owns no playout (REQ-OD-009): it
+    # only reads/writes the ledger + the roster's FUTURE-selection state, so it can never cut an
+    # in-flight break or silence the stream. When a slot is left host-less the rail degrades to the
+    # no-orphan house voice (consistent with REQ-OA-008).
+    lifecycle_engine = None
+    if cfg.lifecycle_enabled:
+        try:
+            from .sqlite_store import PersonaStore
+            from .persona import Roster
+            from .ledger import MeasuredChangeBudget
+            from .lifecycle import LifecycleEngine
+            lc_roster = Roster(store=PersonaStore(cfg.brain_db_path))
+            lc_budget = MeasuredChangeBudget(store=ledger_store) if od_ledger is not None else None
+            lc_cooldown = (cfg.lifecycle_voice_cooldown_seconds
+                           if cfg.lifecycle_voice_cooldown_seconds > 0 else None)
+            lifecycle_engine = LifecycleEngine(
+                roster=lc_roster, ledger=od_ledger, budget=lc_budget,
+                show_engine=show_engine, library=library,
+                voice_cooldown_seconds=lc_cooldown)
+            log_event(log, "main.lifecycle_ready",
+                      personas=len(lc_roster.all()),
+                      active_curators=len(lifecycle_engine.active_curators()))
+        except Exception as exc:  # noqa: BLE001 - the lifecycle FSM is best-effort, never fatal to boot
+            log_event(log, "main.lifecycle_init_failed", error=str(exc))
+            lifecycle_engine = None
     # KNOWLEDGE-008: the dated, sourced, relational editorial-knowledge store (SQLite in
     # /db). Best-effort - if disabled or the store can't open, the host simply talks from
     # genre/feel only. NEVER on the <1s /api/next pull path. Built before TalkDirector +

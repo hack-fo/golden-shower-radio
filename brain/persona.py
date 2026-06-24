@@ -197,6 +197,14 @@ class Persona:
     age: int = 0
     enabled: bool = True
     origin: str = "manual"  # "authored" (launch roster / growth gate) | "manual" (operator)
+    # OPS-004 Group OB lifecycle state (REQ-OB-010/011): the first-class existence-state of a
+    # CURATOR persona — "active" (default, on the air), "retiring" (sign-off authored, transition
+    # in flight), "retired" (ARCHIVED, REQ-OD-009 data-only — record kept, never deleted). Default
+    # "active" so EVERY existing/manually-created persona is byte-identical (additive/tolerant
+    # load) and the news anchor + the default-house path never carry a lifecycle. The lifecycle
+    # FSM (brain.lifecycle) OWNS these transitions through the OD-007 ledger; this field is the
+    # roster-local mirror of the most-recent ledger state so a reader needs no ledger replay.
+    lifecycle_status: str = "active"
     created_at: float = 0.0
     updated_at: float = 0.0
 
