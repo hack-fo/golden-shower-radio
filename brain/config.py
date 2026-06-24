@@ -512,6 +512,30 @@ class Config:
     # its window is the FIXED rail (the station does not loop the same handful of formats).
     segment_recency_window_seconds: float = field(default_factory=lambda: float(_env("BRAIN_SEGMENT_RECENCY_WINDOW_SEC", "86400")))
 
+    # --- SPEC-RADIO-OPS-004 Group OA: Program Director & 24h Scheduling -----------------------
+    # [HARD] OFF by default. With it off the FULL scheduler is never constructed: the picker calls
+    # library.pick_next UNCHANGED (the SelectionRefiner is never wired), the director plans nothing,
+    # and no schedule event is written — the director tick + the <1s playout pull are BYTE-IDENTICAL
+    # to before this SPEC. The no-orphan degrade-to-house-voice+music path (REQ-OA-008) is the safe
+    # default the playout consults when the schedule is empty. The schedule is a VIEW over the
+    # OD-007 ledger (no new store) so it additionally requires ledger_enabled to persist.
+    scheduling_enabled: bool = field(default_factory=lambda: _env("BRAIN_SCHEDULING_ENABLED", "0") not in ("0", "false", "no"))
+    # REQ-OA-009 — local time / date / location awareness (Tórshavn, Atlantic/Faroe). The timezone
+    # and location are configurable; all dayparting/clock decisions use this local timezone.
+    station_timezone: str = field(default_factory=lambda: _env("BRAIN_STATION_TZ", "Atlantic/Faroe"))
+    station_location: str = field(default_factory=lambda: _env("BRAIN_STATION_LOCATION", "Tórshavn, Faroe Islands"))
+    # REQ-OA-003c — the HARD artist rails (TUNABLE config; relaxed only under the empty-set
+    # degradation REQ-OA-003b with logging). Separation = min plays between same-artist plays;
+    # max-per-window = max same-artist plays within the rolling window.
+    selection_artist_separation: int = field(default_factory=lambda: int(_env("BRAIN_SELECTION_ARTIST_SEP", "3")))
+    selection_artist_max_per_window: int = field(default_factory=lambda: int(_env("BRAIN_SELECTION_ARTIST_MAX", "2")))
+    selection_artist_window: int = field(default_factory=lambda: int(_env("BRAIN_SELECTION_ARTIST_WINDOW", "20")))
+    # REQ-OA-003d — the off-schedule (unscheduled-lane) variety layers (TUNABLE, AI-evolvable).
+    selection_balance_window: int = field(default_factory=lambda: int(_env("BRAIN_SELECTION_BALANCE_WINDOW", "12")))
+    selection_target_ceiling: float = field(default_factory=lambda: float(_env("BRAIN_SELECTION_TARGET_CEILING", "0.34")))
+    selection_penalty_lambda: float = field(default_factory=lambda: float(_env("BRAIN_SELECTION_PENALTY_LAMBDA", "1.0")))
+    selection_adjacency_lambda: float = field(default_factory=lambda: float(_env("BRAIN_SELECTION_ADJACENCY_LAMBDA", "0.6")))
+
     @property
     def attempts_path(self) -> str:
         return os.path.join(self.db_dir, "attempts.json")

@@ -225,6 +225,44 @@ def run() -> int:
     director = Director(cfg, library, acquirer, state, stop_event, show_engine=show_engine,
                         seed=seed, diary=pl_diary, od_diary=od_diary, topic_bank=topic_bank,
                         segment_registry=segment_registry)
+    # SPEC-RADIO-OPS-004 Group OA: the Program Director + 24h schedule + the soft+hard separation
+    # SelectionRefiner + the no-orphan bootstrap. [HARD] OFF by default + best-effort: built ONLY
+    # when cfg.scheduling_enabled; otherwise all None and the picker calls library.pick_next
+    # UNCHANGED (the <1s playout pull is byte-identical). The schedule is a VIEW over the OD-007
+    # ledger (no new store) so it persists only when ledger_enabled too; absent a ledger it is an
+    # in-memory grid (still correct + never-silent via the no-orphan degrade-to-house-voice+music).
+    selection_refiner = None
+    no_orphan = None
+    if cfg.scheduling_enabled:
+        try:
+            from .schedule import (
+                LocalClock, Schedule, ProgramDirector, SelectionRefiner, SelectionConfig,
+                NoOrphanBootstrap,
+            )
+            from .ledger import MeasuredChangeBudget
+            local_clock = LocalClock(tz=cfg.station_timezone, location=cfg.station_location)
+            sched_budget = MeasuredChangeBudget(store=ledger_store) if od_ledger is not None else None
+            schedule_view = Schedule(od_ledger, budget=sched_budget, clock=local_clock)
+            program_director = ProgramDirector(
+                clock=local_clock, schedule=schedule_view, show_engine=show_engine,
+                ledger=od_ledger)
+            if schedule_view.is_empty():
+                program_director.plan_24h(trigger="startup")
+            no_orphan = NoOrphanBootstrap(schedule_view)
+            sel_cfg = SelectionConfig(
+                artist_separation=cfg.selection_artist_separation,
+                artist_max_per_window=cfg.selection_artist_max_per_window,
+                artist_window=cfg.selection_artist_window,
+                balance_window=cfg.selection_balance_window,
+                target_ceiling=cfg.selection_target_ceiling,
+                penalty_lambda=cfg.selection_penalty_lambda,
+                adjacency_lambda=cfg.selection_adjacency_lambda,
+            )
+            selection_refiner = SelectionRefiner(library, cfg=sel_cfg)
+            log_event(log, "main.scheduling_ready", blocks=len(schedule_view.blocks()))
+        except Exception as exc:  # noqa: BLE001 - the scheduler is best-effort, never fatal to boot
+            log_event(log, "main.scheduling_init_failed", error=str(exc))
+            selection_refiner = no_orphan = None
     # KNOWLEDGE-008: the dated, sourced, relational editorial-knowledge store (SQLite in
     # /db). Best-effort - if disabled or the store can't open, the host simply talks from
     # genre/feel only. NEVER on the <1s /api/next pull path. Built before TalkDirector +
@@ -276,7 +314,8 @@ def run() -> int:
     # throttled; degrades gracefully on a source outage. NEVER blocks playout.
     researcher = Researcher(cfg, library, knowledge, state, stop_event) if knowledge else None
 
-    httpd = make_server(cfg, library, state, knowledge=knowledge)
+    httpd = make_server(cfg, library, state, knowledge=knowledge,
+                        refiner=selection_refiner, no_orphan=no_orphan)
     http_thread = threading.Thread(target=httpd.serve_forever, name="http", daemon=True)
 
     def _shutdown(signum, _frame):

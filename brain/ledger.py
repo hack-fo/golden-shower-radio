@@ -105,11 +105,20 @@ PLAYBOOK_EVENT_TYPES: Tuple[str, ...] = (
     "playbook_seeded", "playbook_entry",
 )
 
+# Program-director / 24h-schedule events (Group OA — the schedule is a VIEW over THIS ledger,
+# no new store, REQ-OA-001/015). ``program_cycle`` records each planning cycle + its trigger +
+# the chosen run-mode (REQ-OA-001/013); the ``schedule_*`` / ``slot_*`` / ``persona_assigned``
+# events project to the current grid (REQ-OA-015 CRUD).
+PROGRAM_EVENT_TYPES: Tuple[str, ...] = (
+    "program_cycle", "schedule_planned", "slot_added", "slot_removed", "slot_moved",
+    "persona_assigned", "timeblock_reserved", "timeblock_restored",
+)
+
 # The full documented vocabulary (the union — the registered event-type set, REQ-OD-007).
 EVENT_VOCABULARY: Tuple[str, ...] = (
     CORE_EVENT_TYPES + HYPOTHESIS_EVENT_TYPES + TOPIC_EVENT_TYPES
     + SEGMENT_TYPE_EVENT_TYPES + LIFECYCLE_EVENT_TYPES + SEAM_EVENT_TYPES
-    + PLAYBOOK_EVENT_TYPES
+    + PLAYBOOK_EVENT_TYPES + PROGRAM_EVENT_TYPES
 )
 
 

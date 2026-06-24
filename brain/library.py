@@ -563,12 +563,20 @@ class Library:
         with self._lock:
             return list(self._tracks.keys())
 
-    def pick_next(self, exclude_path: Optional[str], recent_keys: List[str]) -> Optional[Track]:
-        """Least-recently-played track, avoiding the immediate previous track and
-        (best-effort) the recent window. Returns None if the library is empty."""
+    def legal_candidates(self, exclude_path: Optional[str],
+                         recent_keys: List[str]) -> List[Track]:
+        """The legal candidate set for the next pull, LEAST-RECENTLY-PLAYED first
+        (REQ-OA-003a). Extracted verbatim from ``pick_next``: candidates not in the
+        recent window and not the currently-playing file, with the same tiny-library
+        relaxations, sorted by ``(last_played, play_count)`` so the first element is
+        exactly what ``pick_next`` returns. This is the legal-and-ranked set the
+        OPS-004 SelectionRefiner (``brain.schedule``) re-scores for the soft separations
+        (REQ-OA-003 / REQ-OA-003c / REQ-OA-003d) — the hard no-repeat / LRP rail
+        (REQ-OA-003a) is produced HERE and is never relaxed by the soft layer.
+        """
         with self._lock:
             if not self._tracks:
-                return None
+                return []
             recent_set = set(recent_keys)
             # Candidates not in the recent window and not the currently-playing file.
             candidates = [
@@ -583,7 +591,19 @@ class Library:
                 candidates = list(self._tracks.values())
             # Least-recently-played first; never-played (last_played==0) sort first.
             candidates.sort(key=lambda t: (t.last_played, t.play_count))
-            return candidates[0]
+            return candidates
+
+    def pick_next(self, exclude_path: Optional[str], recent_keys: List[str]) -> Optional[Track]:
+        """Least-recently-played track, avoiding the immediate previous track and
+        (best-effort) the recent window. Returns None if the library is empty.
+
+        The hot-path default (REQ-OA-003a): the head of ``legal_candidates`` — byte-
+        identical to the pre-OPS-004 behaviour. The soft-separation re-scoring layer
+        (REQ-OA-003/003c/003d) rides ONLY through the OPS-004 SelectionRefiner over the
+        SAME ``legal_candidates`` set, behind ``scheduling_enabled`` (default OFF), so
+        with scheduling off this remains the unchanged picker."""
+        candidates = self.legal_candidates(exclude_path, recent_keys)
+        return candidates[0] if candidates else None
 
     def mark_played(self, track: Track) -> None:
         with self._lock:

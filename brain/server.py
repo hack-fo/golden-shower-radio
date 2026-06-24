@@ -202,10 +202,18 @@ class Picker:
     plays the talk MP3 like any other pulled file - no radio.liq change needed.
     """
 
-    def __init__(self, cfg: Config, library: Library, state):
+    def __init__(self, cfg: Config, library: Library, state, refiner=None, no_orphan=None):
         self.cfg = cfg
         self.library = library
         self.state = state
+        # SPEC-RADIO-OPS-004 Group OA (REQ-OA-003*): the soft+hard separation SelectionRefiner +
+        # the no-orphan bootstrap (the is_unscheduled gate for REQ-OA-003d). [HARD] OFF by default:
+        # when None (cfg.scheduling_enabled off) the music branch calls library.pick_next UNCHANGED
+        # — the <1s playout pull is BYTE-IDENTICAL to before this SPEC. When wired, the refiner
+        # re-scores the SAME legal-and-LRP-ranked candidate set; the hard no-repeat/LRP rail
+        # (REQ-OA-003a, produced by the library) is never relaxed by the soft layer.
+        self.refiner = refiner
+        self.no_orphan = no_orphan
 
     def pick(self) -> Optional[NextItem]:
         # --- Talk-clip branch: if a break is due AND a clip is pre-rendered, serve it.
@@ -243,7 +251,11 @@ class Picker:
         # air yet and is what we must avoid re-picking on the very next prefetch.
         exclude_path = self.state.last_committed_path()
         recent_keys = self.state.recent_keys(normalize_key)
-        track = self.library.pick_next(exclude_path, recent_keys)
+        if self.refiner is None:
+            # [HARD] BYTE-IDENTICAL default path (REQ-OA-003a): the unchanged LRP picker.
+            track = self.library.pick_next(exclude_path, recent_keys)
+        else:
+            track = self._pick_refined(exclude_path, recent_keys)
         if track is None:
             return None
         return NextItem(
@@ -254,6 +266,38 @@ class Picker:
             kind="music",
             track=track,
         )
+
+    def _pick_refined(self, exclude_path, recent_keys):
+        """The OPS-004 refined pick (REQ-OA-003*): re-score the library's legal-and-LRP-ranked
+        candidate set with the hard artist rails + soft separations + (off-schedule only) the
+        genre-family balance + smooth adjacency. Best-effort: any fault degrades to the unchanged
+        LRP head (continuity wins, REQ-OA-008). The is_unscheduled gate (REQ-OA-003d(c)) comes
+        from the no-orphan bootstrap; with none wired we default to the unscheduled lane."""
+        candidates = self.library.legal_candidates(exclude_path, recent_keys)
+        if not candidates:
+            return None
+        try:
+            recent = self.state.recent()
+            recent_artists = [r.get("artist", "") for r in recent if r.get("artist")]
+            last_track = None
+            if recent:
+                last_path = recent[0].get("path")
+                if last_path:
+                    last_track = self.library.track_for_path(last_path)
+            from . import schedule as _schedule
+            window_families = [
+                _schedule.genre_family(t)
+                for t in (self.library.track_for_path(r.get("path"))
+                          for r in recent if r.get("path")) if t is not None
+            ]
+            is_unscheduled = (self.no_orphan.is_unscheduled_now()
+                              if self.no_orphan is not None else True)
+            result = self.refiner.refine(
+                candidates, last_track=last_track, recent_artists=recent_artists,
+                window_families=window_families, is_unscheduled=is_unscheduled)
+            return result.track if result is not None else candidates[0]
+        except Exception:  # noqa: BLE001 - the refiner is best-effort; the LRP head always plays
+            return candidates[0]
 
     def commit(self, item: NextItem) -> None:
         """Advance ROTATION state at hand-out time so successive /api/next calls move
@@ -629,8 +673,8 @@ def _persona_from_request(persona_mod, body: dict):
 
 
 def make_server(cfg: Config, library: Library, state, knowledge=None,
-                roster=None) -> ThreadingHTTPServer:
-    picker = Picker(cfg, library, state)
+                roster=None, refiner=None, no_orphan=None) -> ThreadingHTTPServer:
+    picker = Picker(cfg, library, state, refiner=refiner, no_orphan=no_orphan)
     handler = type(
         "BoundHandler",
         (_Handler,),
