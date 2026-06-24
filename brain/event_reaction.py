@@ -42,8 +42,9 @@ class ReactionTier(str, Enum):
 @dataclass
 class ReactionCooldownState:
     """Per-tier in-memory cooldown tracking (REQ-RE-004)."""
-    last_interrupt_at: float = 0.0
-    last_mood_shift_at: float = 0.0
+    # -inf sentinel: no reaction has fired yet; first can_react always passes.
+    last_interrupt_at: float = field(default_factory=lambda: float("-inf"))
+    last_mood_shift_at: float = field(default_factory=lambda: float("-inf"))
 
 
 # @MX:ANCHOR: [AUTO] EventReactionPolicy — the RE significance→reaction gate.
@@ -71,7 +72,10 @@ class EventReactionPolicy:
         The AI assigns significance at parse time; this reads the float 0..1 hint and maps
         it onto the three tiers. Thresholds are TUNABLE via config (the AI may evolve them).
         """
-        sig = float(event_data.get("significance", 0.0))
+        try:
+            sig = float(event_data.get("significance", 0.0))
+        except (TypeError, ValueError):
+            return SignificanceTier.ROUTINE
         major_threshold = float(getattr(self._cfg, "event_significance_major_threshold", 0.8))
         notable_threshold = float(getattr(self._cfg, "event_significance_notable_threshold", 0.4))
         if sig >= major_threshold:
