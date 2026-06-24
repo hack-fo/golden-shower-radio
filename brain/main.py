@@ -139,6 +139,29 @@ def run() -> int:
         except Exception as exc:  # noqa: BLE001 - the topic-bank is best-effort, never fatal
             log_event(log, "main.topic_bank_init_failed", error=str(exc))
             topic_bank = None
+    # OPS-004 Group OY (REQ-OY-001/004/007): the segment-type registry — a VIEW over the ONE
+    # OD-007 ledger. [HARD] OFF by default + best-effort: built ONLY when segment_registry_enabled
+    # AND a live ledger exist; otherwise None and the director consults nothing (byte-identical).
+    # On first init the five starter types are seeded (REQ-OY-004, idempotent). Taxonomy edits are
+    # Tier-2-throttled via the OD-006 MeasuredChangeBudget (durable state in the same events.db).
+    # It never gates the music picker — read as additive context + health surfaced via the existing
+    # logs (REQ-OY-007 / NFR-O-6). A build fault leaves it None, never failing boot.
+    segment_registry = None
+    if cfg.segment_registry_enabled and od_ledger is not None:
+        try:
+            from .segment_registry import SegmentRegistry
+            from .ledger import MeasuredChangeBudget
+            seg_budget = MeasuredChangeBudget(store=ledger_store)
+            segment_registry = SegmentRegistry(
+                od_ledger, budget=seg_budget,
+                recency_window_seconds=cfg.segment_recency_window_seconds)
+            if not segment_registry.is_seeded():
+                seeded_types = segment_registry.seed()
+                log_event(log, "main.segment_registry_seeded", types=seeded_types)
+            log_event(log, "main.segment_registry_ready")
+        except Exception as exc:  # noqa: BLE001 - the registry is best-effort, never fatal to boot
+            log_event(log, "main.segment_registry_init_failed", error=str(exc))
+            segment_registry = None
     show_engine = None
     if cfg.shows_enabled:
         try:
@@ -200,7 +223,8 @@ def run() -> int:
             log_event(log, "main.pl_diary_init_failed", error=str(exc))
             pl_diary = None
     director = Director(cfg, library, acquirer, state, stop_event, show_engine=show_engine,
-                        seed=seed, diary=pl_diary, od_diary=od_diary, topic_bank=topic_bank)
+                        seed=seed, diary=pl_diary, od_diary=od_diary, topic_bank=topic_bank,
+                        segment_registry=segment_registry)
     # KNOWLEDGE-008: the dated, sourced, relational editorial-knowledge store (SQLite in
     # /db). Best-effort - if disabled or the store can't open, the host simply talks from
     # genre/feel only. NEVER on the <1s /api/next pull path. Built before TalkDirector +

@@ -32,7 +32,8 @@ log = logging.getLogger("brain.director")
 
 class Director:
     def __init__(self, cfg: Config, library: Library, acquirer: Acquirer, state, stop_event: threading.Event,
-                 show_engine=None, seed=None, diary=None, od_diary=None, topic_bank=None):
+                 show_engine=None, seed=None, diary=None, od_diary=None, topic_bank=None,
+                 segment_registry=None):
         self.cfg = cfg
         self.library = library
         self.acquirer = acquirer
@@ -71,6 +72,14 @@ class Director:
         # (REQ-OX-005 / NFR-O-6) — it NEVER gates the music picker. Exception-isolated so a bank
         # fault never breaks the tick (the never-block rail).
         self.topic_bank = topic_bank
+        # OPS-004 Group OY (REQ-OY-007): the segment-type registry — the FORMAT inventory the
+        # director reads to shape what it plans next, a VIEW over the ONE OD-007 ledger. OPTIONAL +
+        # backward-compatible: [HARD] when None (cfg.segment_registry_enabled off, or ledger off)
+        # the tick consults NOTHING and is byte-identical to before this SPEC. When wired, the
+        # registry health snapshot is surfaced via the existing structured logs (REQ-OY-007 /
+        # NFR-O-6) — it NEVER gates the music picker. Exception-isolated so a registry fault never
+        # breaks the tick (the never-block rail).
+        self.segment_registry = segment_registry
         self._cycle = 0
         self._thread: threading.Thread | None = None
 
@@ -231,6 +240,15 @@ class Director:
                 self.topic_bank.health()
             except Exception as exc:  # noqa: BLE001 - a bank fault never breaks the tick
                 log_event(log, "director.topic_bank_error", error=str(exc))
+        # OPS-004 REQ-OY-007: surface the segment-type registry FORMAT inventory health via the
+        # EXISTING structured logs / health surface (no new observability subsystem) so the format
+        # inventory is observable to the PD/show-prep. Off (segment_registry None) => no read,
+        # byte-identical. Exception-isolated — a registry read fault never breaks the tick.
+        if self.segment_registry is not None:
+            try:
+                self.segment_registry.health()
+            except Exception as exc:  # noqa: BLE001 - a registry fault never breaks the tick
+                log_event(log, "director.segment_registry_error", error=str(exc))
 
     def _loop(self) -> None:
         # First scan picks up anything already on disk before the first LLM call.

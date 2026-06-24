@@ -495,6 +495,23 @@ class Config:
     # themes per run (bounded like REQ-OH-006) so the bank grows under control. TUNABLE.
     topic_replenish_bound: int = field(default_factory=lambda: int(_env("BRAIN_TOPIC_REPLENISH_BOUND", "8")))
 
+    # --- OPS-004 Group OY: the segment-type registry (a VIEW over the OD-007 ledger) ---
+    # The segment-type registry (brain/segment_registry.py) is the persisted, queryable inventory
+    # of segment-type DEFINITIONS (deep_dive / news_analysis / story / listener_mailbag /
+    # music_essay + any type the AI adds) — the structural TWIN of the topic-bank (Group OX): OX
+    # persists WHAT to talk about, the registry persists HOW the talk is structured. It is a
+    # segment-type projection of ``segment_type_*`` events on the ONE OD-007 ledger — NO new store.
+    # [HARD] OFF by default: with it off the director never consults the registry and the tick +
+    # playout path stay BYTE-IDENTICAL. With ``ledger_enabled`` off the ledger is never constructed,
+    # so the registry is empty/no-op regardless. Flipping it ON seeds the five starter types +
+    # lets the director read the registry as additive context (REQ-OY-007) — it never gates the
+    # music picker. Taxonomy edits are Tier-2-throttled via the OD-006 budget (REQ-OY-002).
+    segment_registry_enabled: bool = field(default_factory=lambda: _env("BRAIN_SEGMENT_REGISTRY_ENABLED", "0") not in ("0", "false", "no"))
+    # REQ-OY-007 freshness/rotation tunable: a format rests this many seconds before it is
+    # re-preferred (the recency window). TUNABLE; that a recently-aired format rotates away within
+    # its window is the FIXED rail (the station does not loop the same handful of formats).
+    segment_recency_window_seconds: float = field(default_factory=lambda: float(_env("BRAIN_SEGMENT_RECENCY_WINDOW_SEC", "86400")))
+
     @property
     def attempts_path(self) -> str:
         return os.path.join(self.db_dir, "attempts.json")
