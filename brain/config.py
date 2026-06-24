@@ -704,6 +704,25 @@ class Config:
     # byte-identical). TUNABLE; the organization scheme is the AI's to choose/evolve.
     library_organize_enabled: bool = field(default_factory=lambda: _env("BRAIN_LIBRARY_ORGANIZE_ENABLED", "0") not in ("0", "false", "no"))
 
+    # --- SKIP-028: SkipGovernor + control channel ---
+    # REQ-SG-002 rate-limit: max accepted skips per rolling window (TUNABLE).
+    skip_rate_limit_count: int = field(default_factory=lambda: int(_env("BRAIN_SKIP_RATE_COUNT", "10")))
+    skip_rate_limit_window_seconds: float = field(default_factory=lambda: float(_env("BRAIN_SKIP_RATE_WINDOW_SEC", "3600")))
+    # REQ-SG-003 consecutive-skip cooldown: max run of skips with no natural completion (TUNABLE).
+    skip_consecutive_max: int = field(default_factory=lambda: int(_env("BRAIN_SKIP_CONSECUTIVE_MAX", "5")))
+    skip_consecutive_cooldown_seconds: float = field(default_factory=lambda: float(_env("BRAIN_SKIP_CONSECUTIVE_COOLDOWN_SEC", "300")))
+    # REQ-SG-004 vetting-storm backoff: burst threshold + backoff duration (TUNABLE).
+    skip_vetting_storm_burst: int = field(default_factory=lambda: int(_env("BRAIN_SKIP_VETTING_STORM_BURST", "3")))
+    skip_vetting_storm_window_seconds: float = field(default_factory=lambda: float(_env("BRAIN_SKIP_VETTING_STORM_WINDOW_SEC", "60")))
+    skip_vetting_storm_backoff_seconds: float = field(default_factory=lambda: float(_env("BRAIN_SKIP_VETTING_STORM_BACKOFF_SEC", "600")))
+    # REQ-SG-005 min-airtime guard: minimum seconds on air before non-vetting skip (TUNABLE).
+    skip_min_airtime_seconds: float = field(default_factory=lambda: float(_env("BRAIN_SKIP_MIN_AIRTIME_SEC", "30")))
+    # REQ-SC-001 harbor endpoint: liquidsoap's gsr-internal control input (TUNABLE).
+    skip_control_host: str = field(default_factory=lambda: _env("BRAIN_SKIP_CONTROL_HOST", "liquidsoap"))
+    skip_control_port: int = field(default_factory=lambda: int(_env("BRAIN_SKIP_CONTROL_PORT", "7138")))
+    skip_control_path: str = field(default_factory=lambda: _env("BRAIN_SKIP_CONTROL_PATH", "/api/skip_cmd"))
+    skip_control_timeout_seconds: float = field(default_factory=lambda: float(_env("BRAIN_SKIP_CONTROL_TIMEOUT_SEC", "2.0")))
+
     @property
     def attempts_path(self) -> str:
         return os.path.join(self.db_dir, "attempts.json")

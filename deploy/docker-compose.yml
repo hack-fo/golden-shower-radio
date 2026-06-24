@@ -49,6 +49,10 @@ services:
     volumes:
       - ./config/radio.liq:/radio.liq:ro
       - ../data/music:/music:ro
+    # SKIP-028 REQ-SC-001/NFR-S-5: harbor port is gsr-network-only (brain→liquidsoap).
+    # No public ports.expose binding — reachable only within the gsr Docker network.
+    expose:
+      - "7138"
     networks: [gsr]
 
   brain:

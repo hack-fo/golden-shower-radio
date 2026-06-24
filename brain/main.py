@@ -33,6 +33,7 @@ from .logging_setup import log_event, setup_logging
 from .research import Researcher
 from . import seeding
 from .server import make_server
+from .skipguard import SkipGovernor
 from .shows import ShowEngine
 from .state import StationState
 from .talk import TalkDirector
@@ -481,8 +482,13 @@ def run() -> int:
     # in (BRAIN_FILENAME_RENAME_ENABLED + the write-files discipline) and never touches the
     # in-flight file. Best-effort + bounded; NEVER on the <1s /api/next pull path.
     filename_worker = FilenameWorker(cfg, library, state, stop_event)
+    # SKIP-028 REQ-SG-001: single unbypassable chokepoint for all skips.
+    # StationState is passed so the governor can read the current airing path
+    # for expect_path compare-and-skip (REQ-SK-003) and min-airtime guard (REQ-SG-005).
+    skip_governor = SkipGovernor(cfg, state_obj=state)
     httpd = make_server(cfg, library, state, knowledge=knowledge,
-                        refiner=selection_refiner, no_orphan=no_orphan)
+                        refiner=selection_refiner, no_orphan=no_orphan,
+                        skip_governor=skip_governor)
     http_thread = threading.Thread(target=httpd.serve_forever, name="http", daemon=True)
 
     def _shutdown(signum, _frame):

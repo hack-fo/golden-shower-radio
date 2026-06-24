@@ -7,6 +7,8 @@ Endpoints:
   POST /api/airing      Liquidsoap reports the item it JUST put on air (form fields:
                         artist, title, kind, [path]); sets the GROUND-TRUTH now_playing.
                         Also accepted as GET with the same query params.
+  POST /api/skip        SKIP-028 forceful on-air skip, gated by SkipGovernor. Returns
+                        JSON {accepted, reason, refusal_cause, airing_path, expect_path}.
   GET  /status          JSON station state.
   GET  /api/nowplaying  JSON {now_playing, recent, library, downloading}.
   GET  /                the station website (swappable HTML from StationState).
@@ -336,6 +338,7 @@ class _Handler(BaseHTTPRequestHandler):
     picker: Picker = None  # type: ignore
     knowledge = None  # KNOWLEDGE-008 store (optional; None when disabled) for /status
     roster = None  # SPEC-RADIO-PROGRAMMING-007 Group PR persona roster (optional; None = none configured)
+    skip_governor = None  # SPEC-RADIO-SKIP-028 SkipGovernor (optional; None = skip disabled)
 
     server_version = "GSRBrain/1.0"
 
@@ -365,6 +368,8 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             if path == "/api/airing":
                 self._handle_airing(split.query)
+            elif path == "/api/skip":
+                self._handle_skip()
             elif path == "/api/personas":
                 # SPEC-RADIO-PROGRAMMING-007 REQ-PR-010/011: create a persona.
                 self._handle_persona_create()
@@ -507,7 +512,38 @@ class _Handler(BaseHTTPRequestHandler):
         changed = self.state.set_on_air(artist, title, kind=kind, path=path, album=album)
         if changed:
             log_event(log, "server.airing", artist=artist, title=title, kind=kind)
+            # REQ-SG-008: a new airing report that was not from a skip = natural completion.
+            # We notify the governor to reset the consecutive counter.
+            if self.skip_governor is not None:
+                try:
+                    self.skip_governor.on_natural_completion()
+                except Exception:  # noqa: BLE001
+                    pass
         self._send(200, b"ok", "text/plain; charset=utf-8")
+
+    def _handle_skip(self) -> None:
+        """SKIP-028 POST /api/skip — governor-gated restart-free forceful skip (REQ-SK-001).
+
+        Body: JSON {reason, expect_path?}. Returns JSON accept/refuse verdict (REQ-SK-004).
+        A refused skip is a normal outcome (200) with accepted=false — not a server error.
+        """
+        if self.skip_governor is None:
+            self._json({"accepted": False, "reason": "",
+                        "refusal_cause": "skip_not_configured",
+                        "airing_path": "", "expect_path": ""})
+            return
+        body = self._read_json_body()
+        reason = str(body.get("reason", "") or "").strip()
+        expect_path = str(body.get("expect_path", "") or "").strip()
+        decision = self.skip_governor.decide(reason, expect_path=expect_path, source="api")
+        self._json({
+            "accepted": decision.accepted,
+            "reason": decision.reason,
+            "refusal_cause": decision.refusal_cause,
+            "airing_path": decision.airing_path,
+            "expect_path": decision.expect_path,
+            "skip_count": decision.skip_count,
+        })
 
     def _handle_status(self) -> None:
         self._json(
@@ -673,13 +709,14 @@ def _persona_from_request(persona_mod, body: dict):
 
 
 def make_server(cfg: Config, library: Library, state, knowledge=None,
-                roster=None, refiner=None, no_orphan=None) -> ThreadingHTTPServer:
+                roster=None, refiner=None, no_orphan=None,
+                skip_governor=None) -> ThreadingHTTPServer:
     picker = Picker(cfg, library, state, refiner=refiner, no_orphan=no_orphan)
     handler = type(
         "BoundHandler",
         (_Handler,),
         {"cfg": cfg, "library": library, "state": state, "picker": picker,
-         "knowledge": knowledge, "roster": roster},
+         "knowledge": knowledge, "roster": roster, "skip_governor": skip_governor},
     )
     httpd = ThreadingHTTPServer((cfg.http_host, cfg.http_port), handler)
     httpd.daemon_threads = True

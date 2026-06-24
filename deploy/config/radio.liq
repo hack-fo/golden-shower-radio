@@ -49,6 +49,25 @@ end
 
 source = request.dynamic.list(id="gsr", prefetch=2, retry_delay=2.0, next_track)
 
+# SKIP-028 (REQ-SC-001/002/004): harbor/TCP control input liquidsoap LISTENS ON.
+# The brain POSTs to http://liquidsoap:7138/api/skip_cmd (gsr-network-only, never public).
+# Liquidsoap is the command CONSUMER — it owns the input and decides what to do with it.
+# REQ-SC-005: PRE-cross injection point (gsr source skip) chosen first per spec decision D-1.
+# The output remains mksafe-guarded (REQ-SC-004): no skip command can silence the stream.
+let _ = harbor.http.register(
+  port=7138,
+  method="POST",
+  "/api/skip_cmd",
+  fun(_request) ->
+    begin
+      source.skip(source)
+      log("skip: forceful skip command received — advancing gsr source")
+      {status_code=200,
+       headers=[("Content-Type", "text/plain")],
+       data="ok"}
+    end
+)
+
 # --- Per-kind transition --------------------------------------------------------
 # `cross` hands the transition function two records {db_level, metadata, source} for
 # the OUTGOING (old) and INCOMING (new) items. We branch on mix_mode:
