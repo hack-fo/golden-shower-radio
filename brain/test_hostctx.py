@@ -28,22 +28,57 @@ from brain.talk import TalkDirector
 
 def test_characterize_build_talk_prompt_no_year_album_is_unchanged():
     """With a plain backsell context (no year/album, no grounded facts), the prompt carries
-    the existing back-announce + intro lines and NONE of the HOSTCTX-016 year/album/curiosa
-    scaffolding. This pins the additive-only rail (NFR-H-2 / AC-HW-001 empty-safe)."""
+    the existing back-announce line and NONE of the HOSTCTX-016 year/album/curiosa scaffolding.
+    This pins the additive-only rail (NFR-H-2 / AC-HW-001 empty-safe).
+
+    UPDATED for SPEC-RADIO-PROGRAMMING-007 REQ-PV-008 (the mandatory frontsell code-fix): the
+    between-song prompt NO LONGER emits the "Coming up next: {title} by {artist}" block — that
+    was a currently-airing banned-phrase regression (REQ-PC-004/REQ-PV-006) that named the
+    upcoming track. A between-song break is now fed a `next_mood` HINT (never a name); a bare
+    context with no next_mood simply offers no frontsell. The just-played back-announce is
+    unchanged. Justification: REQ-PV-008 is the one deliberate behavior change in Group PV; the
+    name is reserved for the FOLLOWING break's backsell (REQ-PC-001)."""
     ctx = {
         "last_artist": "Joy Division",
         "last_title": "Atmosphere",
+        # next_artist/next_title are deliberately ignored for a between-song break now
+        # (they are only honoured by the WELCOME opening path). REQ-PV-008.
         "next_artist": "New Order",
         "next_title": "Temptation",
         "station_name": "Golden Shower Radio",
     }
     prompt = llm._build_talk_prompt(ctx)
     assert 'You just played: "Atmosphere" by Joy Division.' in prompt
-    assert 'Coming up next: "Temptation" by New Order.' in prompt
+    # REQ-PV-008 [HARD]: the "Coming up next" name block + "name the artist and title" upcoming
+    # instruction are REMOVED on the between-song path (the live banned-phrase regression fix).
+    assert "Coming up next" not in prompt
+    assert "Temptation" not in prompt
+    assert "New Order" not in prompt
+    assert "name the artist and title" not in prompt
     # No HOSTCTX-016 surface when there is no enriched year/album/curiosa.
     assert "released" not in prompt.lower()
     assert "off the album" not in prompt.lower()
     assert "curiosa" not in prompt.lower()
+
+
+def test_characterize_between_song_frontsell_is_tease_by_feeling():
+    """SPEC-RADIO-PROGRAMMING-007 REQ-PV-007/008 / AC-PV-007/008 / B-14: a between-song break
+    teases the next track ONLY by feeling (the supplied next_mood hint), never by name, and
+    never with the banned filler. This pins the REPLACEMENT behavior for the removed "Coming up
+    next" block."""
+    ctx = {
+        "last_artist": "Joy Division", "last_title": "Atmosphere",
+        "next_mood": "lower, slower, late-night",
+    }
+    prompt = llm._build_talk_prompt(ctx)
+    # The feeling is offered ...
+    assert "lower, slower, late-night" in prompt
+    # ... as a tease-by-feeling, with the banned filler explicitly forbidden ...
+    low = prompt.lower()
+    assert "do not name the artist or title" in low
+    assert '"coming up"' in low or "coming up" in low  # named only inside the FORBID instruction
+    # ... and no upcoming track NAME is present.
+    assert "Temptation" not in prompt
 
 
 def test_characterize_welcome_prompt_unaffected_by_year_album():
