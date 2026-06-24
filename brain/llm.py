@@ -713,7 +713,7 @@ def generate_talk_script(model: str, context: Dict, persona=None) -> str:
 # IDENTITY layer (SPEC-RADIO-SEEDING-029 Step 2): autonomous persona-identity design.
 #
 # When the station MINTS a persona on its own (brain.minting), it already has a grounded
-# taste charter (from brain.seeding over the real library) and an unused voice. The only
+# taste charter (from brain.persona_seeding over the real library) and an unused voice. The only
 # free-text choice left is the persona's IDENTITY: a display name + a short personality.
 # This is the cheap "Mode A" one-shot generation - SAME tools-off, one-turn, subscription
 # auth config as curation/talk so it stays cheap on the 5h quota. On ANY error / empty

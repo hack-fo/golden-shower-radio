@@ -62,7 +62,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from . import llm
 from . import persona as P
-from . import seeding
+from . import persona_seeding as seeding
 from .logging_setup import log_event
 from .voice import KOKORO_ENGLISH_VOICES
 

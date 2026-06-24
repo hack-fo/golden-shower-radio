@@ -281,8 +281,8 @@ orchestrator can build the gaps to full coverage. (Detailed gap analysis: `resea
 | PD-004 | `_Region.top_sub_genres/top_eras/top_tags` + `_MAX_*` caps | Implemented |
 | PD-005 | `_decade` | Implemented |
 | PD-006 | `_charter_from_region` + `derive_charters` walk | Implemented |
-| PD-007 | `_overlap_ok` primary-territory check | Implemented |
-| PD-008 | `_overlap_ok` + `_pool_overlap_charters` | Implemented (see gap G1: reuses firewall *measure* re-implemented locally) |
+| PD-007 | `_overlap_ok` calls firewall `P.charter_territory_collision` | Implemented (G1 CLOSED: shared territory measure) |
+| PD-008 | `_overlap_ok` calls firewall `P.charter_pool_overlap` | Implemented (G1 CLOSED: single shared authoritative measure in `persona.py`) |
 | PD-009 | `_overlap_ok` tag-trim explore-away | Implemented |
 | PD-010 | `derive_charters` `overlap_cap` default `P.DEFAULT_OVERLAP_CAP` | Implemented |
 | PD-011 | `derive_charters` returns `<= n` | Implemented |
@@ -290,7 +290,7 @@ orchestrator can build the gaps to full coverage. (Detailed gap analysis: `resea
 | PD-013 | pure functions; no store writes | Implemented |
 | PD-014 | additive module; no existing path changed | Implemented |
 | PD-015 | `_all_tracks` try/except → `[]` | Implemented |
-| PD-016 | local `_norm` mirrors firewall `_norm` | Implemented (see gap G2: parallel `_norm`, not the firewall's) |
+| PD-016 | local `_norm` mirrors firewall `_norm` | Implemented (G2 CLOSED: `test_norm_parity_with_firewall` pins them identical) |
 | PD-017 | emits `P.TasteCharter` | Implemented |
 | PD-018 | `seeding.charters_derived` log event | Implemented |
 | PK-001 | `rank_tracks` | Implemented |
@@ -306,35 +306,44 @@ orchestrator can build the gaps to full coverage. (Detailed gap analysis: `resea
 The capability is functionally present but UNDER-SPECIFIED and UNDER-TESTED relative to "full". The
 orchestrator should build these to full coverage:
 
-- **G1 — Distinctness-oracle drift risk (NFR-PD-3).** `_pool_overlap_charters` and `_overlap_ok` re-derive
-  the firewall's Jaccard / primary-territory logic LOCALLY (over `TasteCharter`s) rather than calling the
-  firewall's own `pool_overlap` / `territory_collision` (which take `Persona`s). The math matches today, but
-  two copies can drift. FULL coverage = a single shared overlap/territory measure both the firewall and this
-  engine call, OR a characterization test that locks the two implementations to identical results over a
-  catalog matrix.
+- **G1 — Distinctness-oracle drift risk (NFR-PD-3). [CLOSED]** Resolved by the SINGLE-SOURCE-OF-TRUTH path:
+  `persona.py` now owns the authoritative charter-level measures `charter_territory_collision(a, b)` and
+  `charter_pool_overlap(a, b)`. BOTH the admission firewall (via the thin `territory_collision` /
+  `pool_overlap` Persona wrappers) AND this engine's `_overlap_ok` call THEM — the engine's local
+  `_pool_overlap_charters` is deleted and its local primary-territory comparison removed. The two cannot
+  drift because there is one implementation. Locked further by `test_engine_distinctness_decision_equals_the_firewall`,
+  a charter-pair matrix asserting the engine's accept/reject equals the firewall's Persona-wrapped verdict on
+  the anti-convergence axis.
 
-- **G2 — Normalization parity not test-pinned (REQ-PD-016).** This engine and the firewall each define their
-  own `_norm`. They are identical today; FULL coverage = a test asserting both normalize a descriptor-set
+- **G2 — Normalization parity not test-pinned (REQ-PD-016). [CLOSED]** Both `_norm`s remain (engine + firewall)
+  but `test_norm_parity_with_firewall` asserts they normalize a mixed case/whitespace/Unicode/non-string
   matrix identically, so a future edit to one cannot silently desync.
 
-- **G3 — Dedicated test module absent.** There is no `tests/test_persona_seeding.py` (or
-  `test_seeding_charter.py`) characterizing PD/PK against a fixture catalog. FULL coverage = a 1:1 REQ↔test
-  module (see `acceptance.md`) over a known small catalog exercising: region ordering, grounded descriptors,
-  no-shared-territory, pool-overlap reject, tag-trim explore-away, `<= n` grounding cap, read-only purity,
-  out-of-bounds exclusion, deterministic ties, and the limit.
+- **G3 — Dedicated test module. [CLOSED]** `brain/test_persona_seeding.py` (renamed + expanded from the former
+  `test_seeding.py`) is the 1:1 REQ↔AC suite over a known fixture catalog, covering every PD/PK/NFR-PD REQ:
+  region ordering, grounded descriptors, no-shared-territory, pool-overlap reject (non-tag-only), tag-trim
+  explore-away, default+override cap, `<= n` grounding cap, n<=0 no-enumerate, read-only purity (instrumented),
+  never-crash, malformed-row tolerance, out-of-bounds exclusion, positive-fit-only, deterministic ties, the
+  limit, log outcome, grounded signature artists, and the oracle/normalization matrices.
 
-- **G4 — Signature artists / moods not populated by derivation (NFR-PD-6 scope edge).** `TasteCharter`
-  carries `signature_artists` and `moods`; `rank_tracks` SCORES signature-artist matches (`_track_score`),
-  but `_charter_from_region` never POPULATES `signature_artists` or `moods` from the catalog. This is a
-  scope decision, not a bug: FULL coverage = EITHER deriving grounded signature artists (e.g. a region's most
-  frequent in-bounds artists) so the ranker's signature-artist reward is exercisable end-to-end, OR
-  explicitly documenting (here + in `## Exclusions`) that derivation leaves them empty and the ranker's
-  signature-artist branch is reserved for operator/LLM-authored charters. The orchestrator decides; this SPEC
-  flags it so the choice is deliberate.
+- **G4 — Signature artists / moods not populated by derivation (NFR-PD-6 scope edge). [RESOLVED]** Decision:
+  **derivation now DERIVES grounded `signature_artists`** (a region's most-frequent grounded artists, bounded
+  by `_MAX_SIGNATURE_ARTISTS`) so the ranker's signature-artist reward (`_track_score`) is exercised
+  end-to-end for derived charters and the charter is a richer, grounded host portrait. `signature_artists` is
+  NOT part of `candidate_descriptor_set` (genre/era/tags only), so populating it does NOT change the
+  firewall's distinctness decision — NFR-PD-3 / behaviour-preservation hold (a derived charter is exactly as
+  distinct as before). `moods` has no ANALYSIS-006 source dimension, so it stays **authored-only** (left
+  empty by derivation) — documented in `## Exclusions` below. (`_Region.top_artists` + `_charter_from_region`
+  populate `signature_artists`; `test_derive_charters_populate_grounded_signature_artists` /
+  `test_signature_artists_do_not_change_firewall_distinctness` / `test_derive_charters_leave_moods_empty`
+  pin the decision.)
 
-- **G5 — Module rename not yet performed (NFR-PD-7).** The module is still `brain/seeding.py`; the planned
-  `brain/persona_seeding.py` rename (with the `brain/minting.py` import update) is part of FULL delivery so
-  the `seeding` name is free for SEEDING-029. Behaviour-preserving relocation only.
+- **G5 — Module rename (NFR-PD-7). [CLOSED]** `brain/seeding.py` → `brain/persona_seeding.py` (and
+  `test_seeding.py` → `test_persona_seeding.py`) via `git mv` (history preserved). Importers updated:
+  `brain/minting.py` and `brain/shows.py` use `from . import persona_seeding as seeding` (call sites
+  unchanged); `brain/test_shows.py` likewise. The module docstring SPEC attribution + log-event namespace
+  (`persona_seeding.*`) updated. No dangling `import seeding` / `from .seeding` / `brain.seeding` references
+  remain. The bare `seeding` name is now free for SEEDING-029. Behaviour-preserving relocation only.
 
 ---
 
@@ -363,6 +372,12 @@ orchestrator should build these to full coverage:
   out of scope here. This engine derives the seed charter; it does not learn.
 - **Persisting derived charters.** Derivation is pure; a charter is persisted only when a persona carrying it
   is created by the PROGRAMMING-007 roster path. This engine writes nothing.
+- **Charter `moods` derivation (G4).** Derivation populates grounded `signature_artists` (a region's
+  most-frequent grounded artists) but leaves `moods` EMPTY: `moods` has no ANALYSIS-006 source dimension on a
+  `Track` (genre / sub_genre / year / tags are the only discrete dimensions present), so a grounded mood
+  cannot be lifted from the catalog without fabrication. `moods` therefore stays **authored-only** — filled
+  only by an operator/LLM-authored charter, never by this engine (preserving the GROUNDED-NEVER-FABRICATED
+  rail).
 
 ---
 

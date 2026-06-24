@@ -246,23 +246,47 @@ def _jaccard(a: set, b: set) -> float:
     return inter / union if union else 0.0
 
 
+# @MX:ANCHOR: [AUTO] the SINGLE charter-level distinctness math — one source of truth.
+# @MX:REASON: fan_in >= 3 (the Persona-level territory_collision + pool_overlap wrappers below
+#   AND the PERSONACHARTER-035 derivation engine in persona_seeding.py all measure distinctness
+#   through these two charter-level functions). NFR-PD-3 requires derivation and admission to
+#   decide distinctness IDENTICALLY; the engine must not carry a forked copy of the Jaccard /
+#   primary-territory rule that could drift. Both the admission gate (via the Persona wrappers)
+#   and the seeding engine call THESE — a charter the engine accepts as distinct is one the
+#   gate accepts on the anti-convergence axis, by construction. Locked by the engine-vs-firewall
+#   oracle-fidelity matrix test (AC-NFR-PD-3).
+# @MX:SPEC: SPEC-RADIO-PROGRAMMING-007 REQ-PR-004 / SPEC-RADIO-PERSONACHARTER-035 NFR-PD-3
+def charter_territory_collision(a: TasteCharter, b: TasteCharter) -> bool:
+    """Charter-level primary-territory equality (REQ-PR-004 LAYER-1): two charters may NEVER
+    share a PRIMARY genre territory. Empty primary territories do not collide (an unanchored
+    draft is caught by the min-fields check, not here). This is the AUTHORITATIVE rule both the
+    admission firewall and the PERSONACHARTER-035 derivation engine defer to (NFR-PD-3)."""
+    ct = _norm(a.primary_territory)
+    bt = _norm(b.primary_territory)
+    return bool(ct) and ct == bt
+
+
+def charter_pool_overlap(a: TasteCharter, b: TasteCharter) -> float:
+    """Charter-level candidate-pool overlap (REQ-PR-004): Jaccard over the two charters'
+    IN-BOUNDS descriptor sets across the ANALYSIS-006 discrete dimensions. The AUTHORITATIVE
+    overlap measure both the admission firewall and the PERSONACHARTER-035 derivation engine
+    use (NFR-PD-3) — neither carries a forked copy."""
+    return _jaccard(a.candidate_descriptor_set(), b.candidate_descriptor_set())
+
+
 def territory_collision(candidate: Persona, existing: Persona) -> bool:
     """LAYER-1 primary-territory equality (REQ-PR-004): two personas may NEVER share a
-    PRIMARY genre territory. Empty primary territories do not collide (an unanchored draft
-    is caught by the min-fields check, not here)."""
-    ct = _norm(candidate.charter.primary_territory)
-    et = _norm(existing.charter.primary_territory)
-    return bool(ct) and ct == et
+    PRIMARY genre territory. Thin Persona-level wrapper over the authoritative
+    ``charter_territory_collision`` (single source of truth, NFR-PD-3)."""
+    return charter_territory_collision(candidate.charter, existing.charter)
 
 
 def pool_overlap(candidate: Persona, existing: Persona) -> float:
     """The candidate-pool overlap proxy (REQ-PR-004): Jaccard over the two charters'
-    IN-BOUNDS descriptor sets across the ANALYSIS-006 discrete dimensions. Bounds — but
-    PERMITS — thematic/genre adjacency under the cap ('slight crossover OK')."""
-    return _jaccard(
-        candidate.charter.candidate_descriptor_set(),
-        existing.charter.candidate_descriptor_set(),
-    )
+    IN-BOUNDS descriptor sets across the ANALYSIS-006 discrete dimensions. Thin Persona-level
+    wrapper over the authoritative ``charter_pool_overlap`` (single source of truth, NFR-PD-3).
+    Bounds — but PERMITS — thematic/genre adjacency under the cap ('slight crossover OK')."""
+    return charter_pool_overlap(candidate.charter, existing.charter)
 
 
 # --------------------------------------------------------------------------- #

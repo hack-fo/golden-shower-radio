@@ -1,8 +1,17 @@
-"""SPEC-RADIO-SEEDING-029 (Step 1, build-plan) — per-persona taste SEEDING.
+"""SPEC-RADIO-PERSONACHARTER-035 — per-persona taste-CHARTER DERIVATION.
 
 This module gives each persona a DISTINCT, GROUNDED musical taste so an autonomously
-minted persona is never empty. It is the foundation Step 2 (autonomous minting) consumes:
-mint designs a persona's identity, this module designs its TASTE from the real library.
+minted persona is never empty. It is the foundation PROGRAMMING-007 autonomous minting
+(``brain/minting.py``, REQ-PR-008) consumes: mint designs a persona's identity, this module
+designs its TASTE (a ``TasteCharter``) from the real library.
+
+This was historically named ``brain/seeding.py`` and loosely attributed to SEEDING-029's
+build-plan, but per-persona charter derivation is a SEPARATE concern from SEEDING-029's
+OPERATOR cold-start seed. PERSONACHARTER-035 names the capability and frees the bare
+``seeding`` name for SEEDING-029. SEEDING-029 biases WHAT the station as a whole leans
+toward (operator, one-time); this module derives WHO each host distinctly is within the
+catalog (AI, per-host). The two are complementary halves of "taste seeding" with no
+mechanical overlap (see SPEC §2).
 
 WHAT IT DOES
 ------------
@@ -35,8 +44,8 @@ DISCIPLINE
 SCOPE BOUNDARY
 --------------
 This module owns the catalog-clustering + charter-derivation + what-I'd-play ranking. It does
-NOT mint personas (Step 2 — it CALLS this), does NOT schedule shows (OPS-004 / SHOWS-020), and
-does NOT own the firewall (``persona`` module — referenced, not re-owned).
+NOT mint personas (PROGRAMMING-007 minting CALLS this), does NOT schedule shows (OPS-004 /
+SHOWS-020), and does NOT own the firewall (``persona`` module — referenced, not re-owned).
 """
 
 from __future__ import annotations
@@ -48,7 +57,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from . import persona as P
 from .logging_setup import log_event
 
-log = logging.getLogger("brain.seeding")
+log = logging.getLogger("brain.persona_seeding")
 
 
 # How many of a region's co-occurring sub-genres / eras / tags to lift into a charter. Kept
@@ -58,6 +67,13 @@ log = logging.getLogger("brain.seeding")
 _MAX_SECONDARY_GENRES = 3
 _MAX_ERAS = 3
 _MAX_TAGS = 5
+# A region's most-representative (most frequent) grounded artists become the charter's
+# signature artists — the host's "who I spin" portrait. Kept small (signature, not census,
+# NFR-PD-6) and GROUNDED in the region's real tracks (never fabricated). The ranker rewards a
+# signature-artist match (REQ-PK-003), so deriving these exercises that branch end-to-end for
+# derived charters. ``moods`` has no ANALYSIS-006 source dimension and stays authored-only
+# (see SPEC ## Exclusions).
+_MAX_SIGNATURE_ARTISTS = 3
 
 
 def _norm(s: Any) -> str:
@@ -84,7 +100,7 @@ def _all_tracks(library: Any) -> List[Any]:
     try:
         return list(library.query())
     except Exception as exc:  # noqa: BLE001 - never crash on a library hiccup
-        log_event(log, "seeding.library_read_error", error=str(exc))
+        log_event(log, "persona_seeding.library_read_error", error=str(exc))
         return []
 
 
@@ -105,6 +121,7 @@ class _Region:
         self._sub_genres: Counter = Counter()
         self._eras: Counter = Counter()
         self._tags: Counter = Counter()
+        self._artists: Counter = Counter()
 
     def add(self, track: Any) -> None:
         self.count += 1
@@ -118,6 +135,11 @@ class _Region:
             t = _norm(tag)
             if t:
                 self._tags[t] += 1
+        # Count the DISPLAY artist (keyed case-insensitively) so the signature reads as a
+        # real, readable name; every artist counted is from a real region track (grounded).
+        artist = str(getattr(track, "artist", "") or "").strip()
+        if artist:
+            self._artists[artist] += 1
 
     def top_sub_genres(self, n: int) -> List[str]:
         return [g for g, _ in self._sub_genres.most_common(n)]
@@ -127,6 +149,9 @@ class _Region:
 
     def top_tags(self, n: int) -> List[str]:
         return [t for t, _ in self._tags.most_common(n)]
+
+    def top_artists(self, n: int) -> List[str]:
+        return [a for a, _ in self._artists.most_common(n)]
 
 
 def cluster_library(library: Any) -> List[_Region]:
@@ -157,31 +182,39 @@ def cluster_library(library: Any) -> List[_Region]:
 
 def _charter_from_region(region: _Region) -> P.TasteCharter:
     """Build a grounded ``TasteCharter`` anchored on a region. The primary territory is the
-    region's genre; the in-bounds genres/eras/tags are EXPLORED from the region's real tracks
-    (every descriptor came from a catalog track — grounded, never invented)."""
+    region's genre; the in-bounds genres/eras/tags AND the signature artists are EXPLORED from
+    the region's real tracks (every descriptor and every artist came from a catalog track —
+    grounded, never invented). ``signature_artists`` is the region's most-frequent grounded
+    artists (REQ-PK-003 rewards them); ``moods`` is left authored-only (no catalog source —
+    see SPEC ## Exclusions). Note: ``signature_artists`` is NOT part of
+    ``candidate_descriptor_set`` (genre/era/tags only), so populating it does not change the
+    firewall's distinctness decision (NFR-PD-3 preserved)."""
     in_genres = [region.genre] + region.top_sub_genres(_MAX_SECONDARY_GENRES)
     return P.TasteCharter(
         primary_territory=region.genre,
         in_genres=in_genres,
         in_eras=region.top_eras(_MAX_ERAS),
         in_tags=region.top_tags(_MAX_TAGS),
+        signature_artists=region.top_artists(_MAX_SIGNATURE_ARTISTS),
     )
 
 
 def _overlap_ok(candidate: P.TasteCharter, accepted: List[P.TasteCharter],
                 overlap_cap: float) -> Tuple[bool, P.TasteCharter]:
-    """Run the candidate charter against the EXISTING firewall's distinctness oracle
-    (``territory_collision`` via primary-territory equality + ``pool_overlap`` Jaccard over
-    the ANALYSIS-006 descriptor sets) against every accepted charter. When the only conflict
-    is tag overlap, EXPLORE away from it by trimming the shared tags (the explore half of
+    """Run the candidate charter against the EXISTING firewall's distinctness oracle against
+    every accepted charter. Distinctness is decided by the AUTHORITATIVE charter-level measures
+    in the ``persona`` firewall — ``P.charter_territory_collision`` (primary-territory equality)
+    and ``P.charter_pool_overlap`` (Jaccard over the ANALYSIS-006 descriptor sets) — NOT a forked
+    copy, so derivation and admission cannot drift (NFR-PD-3). When the only conflict is tag
+    overlap, EXPLORE away from it by trimming the shared tags (the explore half of
     cluster-and-explore) and re-checking. Returns ``(ok, possibly_trimmed_charter)``."""
     cand = candidate
     for other in accepted:
         # Primary-territory collision is structural (genre regions are distinct by
         # construction) — if it ever fires, the candidate cannot be made distinct.
-        if _norm(cand.primary_territory) == _norm(other.primary_territory):
+        if P.charter_territory_collision(cand, other):
             return False, cand
-        if _pool_overlap_charters(cand, other) >= overlap_cap:
+        if P.charter_pool_overlap(cand, other) >= overlap_cap:
             # Explore away: drop tags shared with the conflicting charter, then re-measure.
             shared = {_norm(t) for t in cand.in_tags} & {_norm(t) for t in other.in_tags}
             if shared:
@@ -194,20 +227,9 @@ def _overlap_ok(candidate: P.TasteCharter, accepted: List[P.TasteCharter],
                     signature_artists=list(cand.signature_artists),
                     moods=list(cand.moods),
                 )
-            if _pool_overlap_charters(cand, other) >= overlap_cap:
+            if P.charter_pool_overlap(cand, other) >= overlap_cap:
                 return False, cand
     return True, cand
-
-
-def _pool_overlap_charters(a: P.TasteCharter, b: P.TasteCharter) -> float:
-    """Jaccard over the two charters' in-bounds descriptor sets — the SAME measure the
-    firewall's ``pool_overlap`` applies, reused here so derivation and admission agree."""
-    sa = a.candidate_descriptor_set()
-    sb = b.candidate_descriptor_set()
-    if not sa and not sb:
-        return 0.0
-    union = len(sa | sb)
-    return (len(sa & sb) / union) if union else 0.0
 
 
 def derive_charters(library: Any, n: int,
@@ -235,7 +257,7 @@ def derive_charters(library: Any, n: int,
         ok, trimmed = _overlap_ok(candidate, accepted, overlap_cap)
         if ok:
             accepted.append(trimmed)
-    log_event(log, "seeding.charters_derived", requested=n, derived=len(accepted))
+    log_event(log, "persona_seeding.charters_derived", requested=n, derived=len(accepted))
     return accepted
 
 

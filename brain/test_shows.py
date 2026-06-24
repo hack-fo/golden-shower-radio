@@ -31,13 +31,13 @@ import pytest  # noqa: E402
 from brain import llm  # noqa: E402
 from brain import minting  # noqa: E402
 from brain import persona as P  # noqa: E402
-from brain import seeding  # noqa: E402
+from brain import persona_seeding as seeding  # noqa: E402
 from brain import shows  # noqa: E402
 from brain.library import Library, Track, normalize_key  # noqa: E402
 
 
 # --------------------------------------------------------------------------- #
-# Helpers (mirror test_seeding / test_minting fixtures)
+# Helpers (mirror test_persona_seeding / test_minting fixtures)
 # --------------------------------------------------------------------------- #
 
 def _lib(tmp_path) -> Library:
@@ -117,7 +117,7 @@ def test_build_show_returns_ordered_grounded_block(tmp_path):
 def test_show_tracks_are_the_personas_ranking_in_order(tmp_path):
     """The show's track order IS the persona's deterministic rank_tracks order (no re-sort,
     no new selection policy) — the show reuses Step 1's grounded ranking."""
-    from brain import seeding
+    from brain import persona_seeding as seeding
 
     lib = _house_library(tmp_path)
     persona = _house_persona()

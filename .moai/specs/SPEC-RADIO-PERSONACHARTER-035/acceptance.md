@@ -3,9 +3,9 @@
 Each acceptance criterion is a Given-When-Then scenario mapping 1:1 to a requirement in `spec.md`. The
 fixture for every scenario is a small KNOWN in-memory library (the "fixture catalog") with deterministic
 genre / sub_genre / year / tags / artist on each `Track`, plus a `Roster` from `brain/persona.py`. The
-engine under test is the per-persona charter-derivation module (`brain/seeding.py` today,
-`brain/persona_seeding.py` after the rename) — its `cluster_library` / `derive_charters` / `rank_tracks`
-entry points and their helpers.
+engine under test is the per-persona charter-derivation module (`brain/persona_seeding.py`, renamed from the
+former `brain/seeding.py`) — its `cluster_library` / `derive_charters` / `rank_tracks` entry points and their
+helpers. The dedicated 1:1 REQ↔AC suite lives at `brain/test_persona_seeding.py`.
 
 > Convention: "the engine" = the PERSONACHARTER-035 derivation module. "the firewall" = the PROGRAMMING-007
 > `persona` module's distinctness oracle. "the fixture catalog" = a deterministic test library.
@@ -245,7 +245,7 @@ entry points and their helpers.
 
 ## Traceability Matrix
 
-| REQ | Acceptance | Existing code symbol (in `brain/seeding.py`) |
+| REQ | Acceptance | Code symbol (in `brain/persona_seeding.py`) |
 | --- | --- | --- |
 | REQ-PD-001 | AC-PD-001 | `cluster_library`, `_Region.add` |
 | REQ-PD-002 | AC-PD-002 | `cluster_library` (genre-less skip) |
@@ -254,7 +254,7 @@ entry points and their helpers.
 | REQ-PD-005 | AC-PD-005 | `_decade` |
 | REQ-PD-006 | AC-PD-006 | `_charter_from_region`, `derive_charters` |
 | REQ-PD-007 | AC-PD-007 | `_overlap_ok` (primary-territory) |
-| REQ-PD-008 | AC-PD-008 | `_overlap_ok`, `_pool_overlap_charters` |
+| REQ-PD-008 | AC-PD-008 | `_overlap_ok` → `P.charter_pool_overlap` (shared, G1) |
 | REQ-PD-009 | AC-PD-009 | `_overlap_ok` (tag-trim explore-away) |
 | REQ-PD-010 | AC-PD-010 | `derive_charters` `overlap_cap` param |
 | REQ-PD-011 | AC-PD-011 | `derive_charters` (`<= n`) |
@@ -274,7 +274,7 @@ entry points and their helpers.
 | REQ-PK-007 | AC-PK-007 | `rank_tracks` (read-only) |
 | NFR-PD-1 | AC-NFR-PD-1 | deterministic ordering throughout |
 | NFR-PD-2 | AC-NFR-PD-2 | grounded descriptors / ranked tracks |
-| NFR-PD-3 | AC-NFR-PD-3 | `_overlap_ok` / `_pool_overlap_charters` vs firewall (gap G1) |
+| NFR-PD-3 | AC-NFR-PD-3 | shared `P.charter_*` measures + engine-vs-firewall matrix (G1 CLOSED) |
 | NFR-PD-4 | AC-NFR-PD-4 | pure functions |
 | NFR-PD-5 | AC-NFR-PD-5 | `_all_tracks` resilience; tolerant getattr |
 | NFR-PD-6 | AC-NFR-PD-6 | `_MAX_SECONDARY_GENRES/_MAX_ERAS/_MAX_TAGS` |

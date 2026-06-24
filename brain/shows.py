@@ -66,7 +66,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-from . import seeding
+from . import persona_seeding as seeding
 from .logging_setup import log_event
 
 log = logging.getLogger("brain.shows")
