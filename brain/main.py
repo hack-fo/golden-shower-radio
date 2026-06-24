@@ -33,7 +33,9 @@ from .logging_setup import log_event, setup_logging
 from .research import Researcher
 from . import seeding
 from .server import make_server
+from .banlist import BanList
 from .skipguard import SkipGovernor
+from .vetting import OffensiveRequestVerdict, VetCascade, VettingGate
 from .shows import ShowEngine
 from .state import StationState
 from .talk import TalkDirector
@@ -482,13 +484,32 @@ def run() -> int:
     # in (BRAIN_FILENAME_RENAME_ENABLED + the write-files discipline) and never touches the
     # in-flight file. Best-effort + bounded; NEVER on the <1s /api/next pull path.
     filename_worker = FilenameWorker(cfg, library, state, stop_event)
+    # VETTING-027 REQ-VG-001: wire VettingGate when vetting_enabled is True.
+    # BanList + VetCascade share the same instance across both gates
+    # (pre-download in acquirer, pre-play in library) so ban state is never split.
+    if cfg.vetting_enabled:
+        _vet_cascade = VetCascade(cfg)
+        _ban_list = BanList(cfg.banned_path)
+        _vetting_gate = VettingGate(
+            _vet_cascade, _ban_list,
+            cooldown_seconds=cfg.vetting_ban_cooldown_seconds,
+        )
+        acquirer.vetting_gate = _vetting_gate
+        library.vetting_gate = _vetting_gate
+        log_event(log, "main.vetting_enabled", banned_path=cfg.banned_path)
     # SKIP-028 REQ-SG-001: single unbypassable chokepoint for all skips.
     # StationState is passed so the governor can read the current airing path
     # for expect_path compare-and-skip (REQ-SK-003) and min-airtime guard (REQ-SG-005).
     skip_governor = SkipGovernor(cfg, state_obj=state)
+    # VETTING-027 REQ-VG-003: offensive_verdict stub — wired to make_server so
+    # REQUEST-011 can call self.offensive_verdict.check(text) when listener
+    # requests land. OffensiveRequestVerdict is always instantiated (stateless,
+    # zero-cost); the gate is a no-op until REQUEST-011 is built.
+    offensive_verdict = OffensiveRequestVerdict()
     httpd = make_server(cfg, library, state, knowledge=knowledge,
                         refiner=selection_refiner, no_orphan=no_orphan,
-                        skip_governor=skip_governor)
+                        skip_governor=skip_governor,
+                        offensive_verdict=offensive_verdict)
     http_thread = threading.Thread(target=httpd.serve_forever, name="http", daemon=True)
 
     def _shutdown(signum, _frame):

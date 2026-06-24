@@ -129,6 +129,11 @@ class Track:
     low_confidence_flags: List[str] = field(default_factory=list)
     analysis_error: str = ""             # last failure reason (failed records still play)
 
+    # -- VETTING-027 Tier 3: speech-vs-music (ANALYSIS-006 dependency, REQ-VC-004) -
+    # Populated by ANALYSIS-006 when it adds speech detection; None = not yet available
+    # (degrades gracefully — Tier 3 skipped when None, cascade uses Tiers 1-2 only).
+    speech_likelihood: Optional[float] = None
+
     # -- ENRICH-012: core-tag enrichment bookkeeping -----------------------------
     # enrich_version is the idempotent gate for the core-tag enrichment worker
     # (brain/enrich.py): 0 = never enriched; once a track has been processed it is
@@ -280,6 +285,24 @@ def _read_tags(path: str) -> Dict[str, str]:
     return {"artist": artist.strip(), "title": title.strip(), "album": album.strip()}
 
 
+def _track_to_vet_signals(t: Track) -> Any:
+    """Convert a Track to a VetSignals for the pre-play gate (VETTING-027 REQ-VG-002).
+
+    Imported lazily to avoid a circular import (vetting → library would be circular
+    since vetting may eventually need normalize_key). Using Any as return type here
+    because VetSignals is in a sibling module; callers hold the concrete type.
+    """
+    from .vetting import VetSignals  # lazy import — avoids module-level circular dep
+    duration = t.true_end if t.true_end is not None else t.cue_out
+    return VetSignals(
+        filename=os.path.basename(t.path),
+        title=t.title,
+        artist=t.artist,
+        duration_s=duration,
+        speech_likelihood=t.speech_likelihood,
+    )
+
+
 class Library:
     """Thread-safe music library with a persisted index.
 
@@ -305,6 +328,9 @@ class Library:
         self._store = None  # sqlite_store.TrackStore when backend == "sqlite"
         self._init_backend()
         self._load()
+        # VETTING-027 REQ-VG-002: optional pre-play VettingGate (set by main.py when
+        # vetting_enabled). When None the gate is a no-op (REQ-VB-006 disabled path).
+        self.vetting_gate: Any = None
 
     # -- persistence backend (DATASTORE-022) -------------------------------------
 
@@ -601,9 +627,33 @@ class Library:
         identical to the pre-OPS-004 behaviour. The soft-separation re-scoring layer
         (REQ-OA-003/003c/003d) rides ONLY through the OPS-004 SelectionRefiner over the
         SAME ``legal_candidates`` set, behind ``scheduling_enabled`` (default OFF), so
-        with scheduling off this remains the unchanged picker."""
+        with scheduling off this remains the unchanged picker.
+
+        VETTING-027 REQ-VG-002: when self.vetting_gate is set, banned tracks are skipped
+        and each candidate is run through the vet cascade; a confident non-music verdict
+        triggers a ban and moves to the next candidate (loop-breaker, REQ-VB-001).
+        Fail toward allow: any gate exception is swallowed and the candidate is played."""
         candidates = self.legal_candidates(exclude_path, recent_keys)
-        return candidates[0] if candidates else None
+        if self.vetting_gate is None:
+            return candidates[0] if candidates else None
+        # VETTING-027 pre-play gate: scan candidates in LRP order, skip banned/non-music.
+        for candidate in candidates:
+            try:
+                if self.vetting_gate.is_banned(candidate.key):
+                    log_event(log, "library.pick_skip_banned", key=candidate.key)
+                    continue
+                vet_result = self.vetting_gate.vet_and_maybe_ban(
+                    candidate.key,
+                    _track_to_vet_signals(candidate),
+                )
+                if vet_result.is_non_music:
+                    log_event(log, "library.pick_skip_non_music", key=candidate.key,
+                              reason=vet_result.reason)
+                    continue
+            except Exception:  # fail toward allow (REQ-VG-004)
+                pass
+            return candidate
+        return None
 
     def mark_played(self, track: Track) -> None:
         with self._lock:

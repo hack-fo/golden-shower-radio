@@ -710,13 +710,17 @@ def _persona_from_request(persona_mod, body: dict):
 
 def make_server(cfg: Config, library: Library, state, knowledge=None,
                 roster=None, refiner=None, no_orphan=None,
-                skip_governor=None) -> ThreadingHTTPServer:
+                skip_governor=None, offensive_verdict=None) -> ThreadingHTTPServer:
+    # VETTING-027 REQ-VG-003: offensive_verdict is the OffensiveRequestVerdict instance.
+    # It is a no-op stub here until REQUEST-011 (listener request feature) ships and
+    # calls self.offensive_verdict.check(text) before honoring a listener request.
     picker = Picker(cfg, library, state, refiner=refiner, no_orphan=no_orphan)
     handler = type(
         "BoundHandler",
         (_Handler,),
         {"cfg": cfg, "library": library, "state": state, "picker": picker,
-         "knowledge": knowledge, "roster": roster, "skip_governor": skip_governor},
+         "knowledge": knowledge, "roster": roster, "skip_governor": skip_governor,
+         "offensive_verdict": offensive_verdict},
     )
     httpd = ThreadingHTTPServer((cfg.http_host, cfg.http_port), handler)
     httpd.daemon_threads = True

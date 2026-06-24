@@ -723,9 +723,31 @@ class Config:
     skip_control_path: str = field(default_factory=lambda: _env("BRAIN_SKIP_CONTROL_PATH", "/api/skip_cmd"))
     skip_control_timeout_seconds: float = field(default_factory=lambda: float(_env("BRAIN_SKIP_CONTROL_TIMEOUT_SEC", "2.0")))
 
+    # ---- VETTING-027 — vet cascade + ban-list ----------------------------------
+    # REQ-VB-006: disabled by default → today's behavior preserved exactly.
+    vetting_enabled: bool = field(default_factory=lambda: _env("BRAIN_VETTING_ENABLED", "0") not in ("0", "false", "no"))
+    # Tier 2 keyword list (comma-sep env override; default covers common non-music markers).
+    vetting_keywords: str = field(default_factory=lambda: _env(
+        "BRAIN_VETTING_KEYWORDS",
+        "podcast,audiobook,interview,lecture,sermon,asmr,full episode,chapter,episode,commentary,"
+        "narration,reading,storytime,radio show,talk show,news,speech,spoken word,guided meditation,"
+        "self help,ted talk,standup comedy,documentary,audiofile"
+    ))
+    # Tier 3: speech_likelihood from ANALYSIS-006; threshold above which "speech_dominant" fires.
+    vetting_speech_threshold: float = field(default_factory=lambda: float(_env("BRAIN_VETTING_SPEECH_THRESHOLD", "0.80")))
+    # VK: minimum number of corroborating signals required for a ban verdict (default=2).
+    vetting_min_signals_for_ban: int = field(default_factory=lambda: int(_env("BRAIN_VETTING_MIN_SIGNALS", "2")))
+    # Soft ban cooldown (seconds); default 7 days.
+    vetting_ban_cooldown_seconds: float = field(default_factory=lambda: float(_env("BRAIN_VETTING_BAN_COOLDOWN_SEC", "604800")))
+
     @property
     def attempts_path(self) -> str:
         return os.path.join(self.db_dir, "attempts.json")
+
+    @property
+    def banned_path(self) -> str:
+        """VETTING-027 soft ban-list (REQ-VB-005 dual-substrate: JSON today, brain.db later)."""
+        return os.path.join(self.db_dir, "banned.json")
 
     @property
     def library_path(self) -> str:

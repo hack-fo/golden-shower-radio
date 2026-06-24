@@ -20,7 +20,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Deque, Dict, Optional
+from typing import Any, Deque, Dict, Optional
 
 from .config import Config
 from .library import Library, normalize_key
@@ -210,6 +210,9 @@ class Acquirer:
         # REQ-OH-008: optional DiskGuard (set by main.py when disk_guard_enabled). When None
         # the guard is a no-op; is_paused() is never called and enqueue() behaves as before.
         self.disk_guard = None
+        # VETTING-027 REQ-VG-001: optional VettingGate (set by main.py when vetting_enabled).
+        # When None the pre-download gate is a no-op (REQ-VB-006: disabled = today's behavior).
+        self.vetting_gate: Any = None
 
     # -- wishlist API ------------------------------------------------------------
 
@@ -229,6 +232,15 @@ class Acquirer:
         key = item.key
         if self.library.has_key(key) or self.attempts.should_skip(key):
             return False
+        # VETTING-027 REQ-VG-001: pre-download ban check (short-circuit if key is banned).
+        # Exception-isolated: a gate error never blocks legitimate acquisition (REQ-VG-004).
+        if self.vetting_gate is not None:
+            try:
+                if self.vetting_gate.is_banned(key):
+                    log_event(log, "acquire.enqueue_banned", key=key)
+                    return False
+            except Exception:  # noqa: BLE001
+                pass  # fail toward allow (REQ-VG-004)
         # REQ-OH-008: disk-guard pause check (never blocks playout).
         if self.disk_guard is not None and self.disk_guard.is_paused():
             log_event(log, "acquire.enqueue_paused_disk", key=key)
