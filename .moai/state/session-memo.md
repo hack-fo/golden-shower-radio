@@ -2,7 +2,7 @@
 
 ## P1: Session Context
 
-session_id: 83c8a618-9e27-42e7-a752-cb143277afbd
-cwd: /mnt/f/golden-shower-radio
+session_id: 897683bc-ad68-48c4-90d7-01b8a5f2adf0
+cwd: /home/charlie/golden-shower-radio
 event: PreCompact
 
