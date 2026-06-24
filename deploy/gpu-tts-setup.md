@@ -15,6 +15,15 @@ stays lean. Engine choice is verified to fit 8 GB (see Sources at bottom).
   comfortably. Resolve the exact TTS repo id from the mistralai/voxtral HF collection. A 4th A/B candidate.
 - Run ONE engine at a time for the A/B (no co-residency needed; both fit individually).
 - Kokoro (current primary) stays the baseline of the A/B; Piper stays the CPU fallback.
+- **OmniVoice** (k2-fsa, Apache-2.0, ~3.27 GB) — diffusion-LM zero-shot TTS, **600+ languages (incl. Faroese)**,
+  VOICE DESIGN by attributes (gender/age/pitch/accent — maps directly to the persona model) + voice cloning,
+  RTF 0.025. Strong persona fit.
+
+**FINAL LOCKED SET (user, 2026-06-24) — all on `/mnt/f/gsr-models/`; the VOICE-002 harness A/Bs these:**
+Kokoro (baseline, in image) · `Voxtral-TTS-2603` · `Qwen3-TTS-12Hz-*` (0.6B Base+CustomVoice; 1.7B
+Base+VoiceDesign+CustomVoice) · `OmniVoice` · `chatterbox-turbo`. MOSS-TTS evaluated + SKIPPED (flagship 17 GB /
+GGUF 68 GB / TTSD 16.7 GB too large for F:; MOSS-TTS-Local-Transformer ~6 GB a future option). No more engines —
+next is the VOICE-002 A/B harness + the listen test.
 
 ## Model storage — F: (/mnt/f, writable) [user-directed 2026-06-24]
 **DOWNLOADED already (2026-06-24):** Voxtral-TTS-2603 is on F: at `/mnt/f/gsr-models/Voxtral-TTS-2603`
