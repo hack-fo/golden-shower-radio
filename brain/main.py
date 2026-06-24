@@ -121,6 +121,24 @@ def run() -> int:
         except Exception as exc:  # noqa: BLE001 - the ledger is best-effort, never fatal to boot
             log_event(log, "main.ledger_init_failed", error=str(exc))
             od_ledger = od_diary = od_show_store = None
+    # OPS-004 Group OX (REQ-OX-001/005): the topic-bank inventory — a VIEW over the ONE OD-007
+    # ledger. [HARD] OFF by default + best-effort: built ONLY when topic_bank_enabled AND a live
+    # ledger exist; otherwise None and the director consults nothing (byte-identical). It never
+    # gates the music picker — it is read as additive context + its health is surfaced via the
+    # existing logs (REQ-OX-005 / NFR-O-6). A build fault leaves it None, never failing boot.
+    topic_bank = None
+    if cfg.topic_bank_enabled and od_ledger is not None:
+        try:
+            from .topic_bank import TopicBank
+            topic_bank = TopicBank(
+                od_ledger,
+                recency_window_seconds=cfg.topic_recency_window_seconds,
+                replenish_bound=cfg.topic_replenish_bound,
+            )
+            log_event(log, "main.topic_bank_ready")
+        except Exception as exc:  # noqa: BLE001 - the topic-bank is best-effort, never fatal
+            log_event(log, "main.topic_bank_init_failed", error=str(exc))
+            topic_bank = None
     show_engine = None
     if cfg.shows_enabled:
         try:
@@ -182,7 +200,7 @@ def run() -> int:
             log_event(log, "main.pl_diary_init_failed", error=str(exc))
             pl_diary = None
     director = Director(cfg, library, acquirer, state, stop_event, show_engine=show_engine,
-                        seed=seed, diary=pl_diary, od_diary=od_diary)
+                        seed=seed, diary=pl_diary, od_diary=od_diary, topic_bank=topic_bank)
     # KNOWLEDGE-008: the dated, sourced, relational editorial-knowledge store (SQLite in
     # /db). Best-effort - if disabled or the store can't open, the host simply talks from
     # genre/feel only. NEVER on the <1s /api/next pull path. Built before TalkDirector +

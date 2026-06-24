@@ -477,6 +477,24 @@ class Config:
     # isolated: any store fault degrades to in-memory and NEVER blocks the stream (NFR-O).
     ledger_enabled: bool = field(default_factory=lambda: _env("BRAIN_LEDGER_ENABLED", "0") not in ("0", "false", "no"))
 
+    # --- OPS-004 Group OX: the topic-bank inventory (a VIEW over the OD-007 ledger) ---
+    # The topic-bank (brain/topic_bank.py) is the persisted, queryable editorial-theme inventory
+    # the brain consults as the anti-repetition avoid-list (REQ-OX-002) + freshness/rotation
+    # source (REQ-OX-003), scoped station-globally AND per-persona/per-show (REQ-OX-006). It is a
+    # topic-specific projection of ``topic_*`` events on the ONE OD-007 ledger — NO new store.
+    # [HARD] OFF by default: with it off the director never consults the bank and the tick +
+    # playout path stay BYTE-IDENTICAL. Additionally, with ``ledger_enabled`` off the ledger is
+    # never constructed, so the bank is empty/no-op regardless. Flipping it ON merely lets the
+    # director read the bank as additive context (REQ-OX-005) — it never gates the music picker.
+    topic_bank_enabled: bool = field(default_factory=lambda: _env("BRAIN_TOPIC_BANK_ENABLED", "0") not in ("0", "false", "no"))
+    # REQ-OX-003 freshness/rotation tunable: a routine theme rests this many seconds per scope
+    # before it is re-airable (the recency window). TUNABLE; that a recently-aired theme is NOT
+    # looped within its window is the FIXED rail.
+    topic_recency_window_seconds: float = field(default_factory=lambda: float(_env("BRAIN_TOPIC_RECENCY_WINDOW_SEC", "604800")))
+    # REQ-OX-004 replenishment bound: the topic-discovery refresh adds at most this many candidate
+    # themes per run (bounded like REQ-OH-006) so the bank grows under control. TUNABLE.
+    topic_replenish_bound: int = field(default_factory=lambda: int(_env("BRAIN_TOPIC_REPLENISH_BOUND", "8")))
+
     @property
     def attempts_path(self) -> str:
         return os.path.join(self.db_dir, "attempts.json")

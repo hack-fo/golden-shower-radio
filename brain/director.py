@@ -32,7 +32,7 @@ log = logging.getLogger("brain.director")
 
 class Director:
     def __init__(self, cfg: Config, library: Library, acquirer: Acquirer, state, stop_event: threading.Event,
-                 show_engine=None, seed=None, diary=None, od_diary=None):
+                 show_engine=None, seed=None, diary=None, od_diary=None, topic_bank=None):
         self.cfg = cfg
         self.library = library
         self.acquirer = acquirer
@@ -63,6 +63,14 @@ class Director:
         # across cycles/restarts. The write is exception-isolated — a diary fault never breaks the
         # tick (the never-block rail).
         self.od_diary = od_diary
+        # OPS-004 Group OX (REQ-OX-005): the topic-bank inventory — the editorial-theme avoid-list
+        # + freshness/rotation source, a VIEW over the ONE OD-007 ledger. OPTIONAL + backward-
+        # compatible: [HARD] when None (cfg.topic_bank_enabled off, or ledger off) the tick
+        # consults NOTHING and is byte-identical to before this SPEC. When wired, the bank is read
+        # as ADDITIVE context and its health snapshot is surfaced via the existing structured logs
+        # (REQ-OX-005 / NFR-O-6) — it NEVER gates the music picker. Exception-isolated so a bank
+        # fault never breaks the tick (the never-block rail).
+        self.topic_bank = topic_bank
         self._cycle = 0
         self._thread: threading.Thread | None = None
 
@@ -214,6 +222,15 @@ class Director:
                 )
             except Exception as exc:  # noqa: BLE001 - a diary fault never breaks the tick
                 log_event(log, "director.diary_error", error=str(exc))
+        # OPS-004 REQ-OX-005: surface the topic-bank inventory health via the EXISTING structured
+        # logs / health surface (no new observability subsystem) so the thematic inventory is
+        # observable to the PD/show-prep. Off (topic_bank None) => no read, byte-identical.
+        # Exception-isolated — a bank read fault never breaks the tick.
+        if self.topic_bank is not None:
+            try:
+                self.topic_bank.health()
+            except Exception as exc:  # noqa: BLE001 - a bank fault never breaks the tick
+                log_event(log, "director.topic_bank_error", error=str(exc))
 
     def _loop(self) -> None:
         # First scan picks up anything already on disk before the first LLM call.
