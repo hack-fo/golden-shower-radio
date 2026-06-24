@@ -84,6 +84,36 @@ def run() -> int:
 
     library = Library(cfg.music_dir, cfg.library_path, backend=cfg.store_backend)
     acquirer = Acquirer(cfg, library, state, stop_event)
+    # OPS-004 Group OH: DiskGuard (REQ-OH-008) — free-disk watcher with hysteresis pause/resume.
+    # OFF by default (cfg.disk_guard_enabled False); when off, DiskGuard is a complete no-op and
+    # every caller sees is_paused()==False. When ON, a background thread polls disk_usage() at
+    # disk_watch_interval_seconds and pauses acquisition when free < pause threshold, resuming
+    # only when free > resume threshold ([HARD] resume > pause = hysteresis invariant enforced in
+    # DiskGuard.__init__). [HARD] Never affects playout — touches acquisition pipeline only.
+    # Best-effort: a construction fault leaves disk_guard None (byte-identical no-guard behaviour).
+    disk_guard = None
+    try:
+        from .disk_guard import DiskGuard as _DiskGuard
+        disk_guard = _DiskGuard(cfg, stop_event)
+        acquirer.disk_guard = disk_guard  # wired before start(); is_paused() guards enqueue
+        log_event(log, "main.disk_guard_ready", enabled=cfg.disk_guard_enabled)
+    except Exception as exc:  # noqa: BLE001 - disk guard is best-effort, never fatal to boot
+        log_event(log, "main.disk_guard_init_failed", error=str(exc))
+        disk_guard = None
+    # OPS-004 Group OH: WishlistStore (REQ-OH-007) — off-catalog discovery signal collector.
+    # An off-catalog listener request is a NON-BINDING discovery signal; [HARD] no acquisition
+    # fires from a single request. want_count accumulates from DISTINCT listeners; the director
+    # checks candidates() and decides whether and when to promote (curatorial discretion). Persists
+    # to db_dir/wishlist.json so want-counts survive restarts.
+    # Best-effort: a fault leaves wishlist_store None (no wishlist tracking, no acquisition block).
+    wishlist_store = None
+    try:
+        from .wishlist import WishlistStore as _WishlistStore
+        wishlist_store = _WishlistStore(cfg)
+        log_event(log, "main.wishlist_store_ready")
+    except Exception as exc:  # noqa: BLE001 - wishlist store is best-effort, never fatal to boot
+        log_event(log, "main.wishlist_store_init_failed", error=str(exc))
+        wishlist_store = None
     # SPEC-RADIO-SHOWS-020: the editorial show-variation engine (Groups SG/SX/SP/SD). OFF by
     # default (cfg.shows_enabled) and best-effort: an init hiccup leaves show_engine None and the
     # director + talk loops behave exactly as before this SPEC (byte-identical). When on, an
@@ -467,6 +497,8 @@ def run() -> int:
     signal.signal(signal.SIGTERM, _shutdown)
 
     http_thread.start()
+    if disk_guard is not None:
+        disk_guard.start()  # no-op when disk_guard_enabled=False
     acquirer.start()
     director.start()
     talk_director.start()
