@@ -33,6 +33,7 @@ the schema-level behavior (REQ-KS-001).
 
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 import threading
@@ -53,33 +54,47 @@ log = logging.getLogger("brain.knowledge")
 # Schema version. Bump to trigger an idempotent additive migration; never a wipe.
 SCHEMA_VERSION = 1
 
-# -- entity types (REQ-KS-002) -------------------------------------------------------
+# -- entity types (REQ-KS-002, REQ-KG-006) -------------------------------------------
 ENTITY_ARTIST = "artist"
-ENTITY_PERSON = "person"
+ENTITY_PERSON = "person"   # REQ-KG-006: individual person (band member, songwriter, etc.)
 ENTITY_RELEASE = "release"
 ENTITY_SONG = "song"
 ENTITY_LABEL = "label"
 ENTITY_GENRE = "genre"   # genre / scene / era share this type, distinguished by name
-ENTITY_PLACE = "place"
+ENTITY_PLACE = "place"   # REQ-KG-006: geographic place (recording studio city, hometown, etc.)
 ENTITY_TYPES = frozenset(
     {ENTITY_ARTIST, ENTITY_PERSON, ENTITY_RELEASE, ENTITY_SONG, ENTITY_LABEL,
      ENTITY_GENRE, ENTITY_PLACE}
 )
 
-# -- fact temporality (REQ-KS-004) ---------------------------------------------------
+# -- fact temporality (REQ-KS-004, REQ-KF-005) ---------------------------------------
 KIND_TIMELESS = "timeless"
 KIND_TIME_SENSITIVE = "time_sensitive"
+# REQ-KF-005: CONTEXTUAL facts (e.g. production notes, writing story) are never date-expired;
+# they accrue over time and use the TIMELESS refresh window. Distinct from TIMELESS because
+# they describe an iteratively-expanding editorial record rather than a stable historical fact.
+TEMPORALITY_CONTEXTUAL = "contextual"
 
 # -- consensus states (REQ-KS-006) ---------------------------------------------------
 CONSENSUS_PASSED = "passed"        # >= threshold verified sources agree -> airable-as-certain
 CONSENSUS_SINGLE = "single"        # one verified source only -> qualified ("reportedly...")
 CONSENSUS_CONFLICTING = "conflicting"  # verified sources disagree -> qualified / omitted
 
+# -- subjectivity classes (REQ-KS-008) -----------------------------------------------
+SUBJECTIVITY_FACTUAL = "FACTUAL"            # objective, verifiable claim
+SUBJECTIVITY_INTERPRETED = "INTERPRETED"    # interpretation of facts; source-dependent
+SUBJECTIVITY_EDITORIAL_OPINION = "EDITORIAL_OPINION"  # editorial/critical opinion; hedged
+
+# -- confidence grades (REQ-KS-008) --------------------------------------------------
+GRADE_HIGH = "HIGH"
+GRADE_MODERATE = "MODERATE"
+GRADE_LOW = "LOW"
+
 # -- edge provenance (REQ-KG-002) ----------------------------------------------------
 EDGE_SEED = "seed"            # imported from ANALYSIS-006 (genre/era dimension, similar)
 EDGE_RESEARCH = "research"    # researched (MusicBrainz member-of / side-project / label)
 
-# -- relationship edge types (REQ-KG-001). The SET is the rail; more are extensible. --
+# -- relationship edge types (REQ-KG-001, REQ-KG-006). The SET is the rail; extensible. --
 REL_MEMBER_OF = "member_of"
 REL_SIDE_PROJECT = "side_project"
 REL_COLLABORATOR = "collaborator"
@@ -93,37 +108,107 @@ REL_COVER = "cover"
 REL_SAMPLE = "sample"
 REL_REMIX = "remix"
 REL_CREDITED_TO = "credited_to"
+REL_RELEASED_ON = "released_on"          # track/song -> release
+# REQ-KG-006: richer track-to-track edge types
+REL_WRITING_CONNECTION = "writing_connection"   # shared songwriter / co-writing credit
+REL_THEMATIC_INFLUENCE = "thematic_influence"   # one track's theme inspired another
+
+VALID_RELS = frozenset({
+    REL_MEMBER_OF, REL_SIDE_PROJECT, REL_COLLABORATOR, REL_SIMILAR, REL_SIGNED_TO,
+    REL_GENRE, REL_SCENE, REL_ERA, REL_PLACE, REL_COVER, REL_SAMPLE, REL_REMIX,
+    REL_CREDITED_TO, REL_RELEASED_ON, REL_WRITING_CONNECTION, REL_THEMATIC_INFLUENCE,
+})
+
+# -- per-track editorial fact predicates (REQ-KS-007) --------------------------------
+PRED_RECORDING_SESSION = "recording_session"
+PRED_WRITING_STORY = "writing_story"
+PRED_LYRICAL_MEANING = "lyrical_meaning"    # plural-capable: multiple meanings/interpretations
+PRED_PRODUCTION_NOTES = "production_notes"
+PRED_ERA_CONTEXT = "era_context"
+
+# -- research job types (REQ-KR-006, REQ-KR-007) -------------------------------------
+JOB_ARTIST = "artist"
+JOB_TRACK = "track"
+JOB_ALBUM = "album"
+JOB_PRESHOW = "preshow"
 
 # --------------------------------------------------------------------------------
-# Verified-source allowlist (REQ-KS-006). Only these sources COUNT toward consensus.
-# A source outside this set may SEED a research lead but is not corroboration.
+# Verified-source allowlist (REQ-KS-006, REQ-KS-009). Only these sources COUNT toward
+# consensus. A source outside this set may SEED a research lead but is not corroboration.
 # Mirrors metadata.ALLOWLISTED_SOURCES in discipline, distinct membership (editorial).
 # --------------------------------------------------------------------------------
 SRC_MUSICBRAINZ = "musicbrainz"
 SRC_WIKIDATA = "wikidata"
 SRC_WIKIPEDIA = "wikipedia"
 SRC_LASTFM = "lastfm"
-SRC_OFFICIAL = "official"   # official artist / label pages
-SRC_PRESS = "press"         # reputable music press
+SRC_OFFICIAL = "official"           # official artist / label pages
+SRC_PRESS = "press"                 # reputable music press (generic)
+SRC_DISCOGS = "discogs"             # REQ-KS-009: structured data authoritative; free-text = hedged
+# REQ-KS-009: specific reputable press / editorial-blog sources
+SRC_GUARDIAN = "guardian"
+SRC_BBC = "bbc"
+SRC_PITCHFORK = "pitchfork"
+SRC_AQUARIUM_DRUNKARD = "aquarium_drunkard"
+SRC_BANDCAMP_DAILY = "bandcamp_daily"
+SRC_STEREOGUM = "stereogum"
+SRC_WHOSAMPLED = "whosampled"
 
-VERIFIED_SOURCES = frozenset(
-    {SRC_MUSICBRAINZ, SRC_WIKIDATA, SRC_WIKIPEDIA, SRC_LASTFM, SRC_OFFICIAL, SRC_PRESS}
-)
+VERIFIED_SOURCES = frozenset({
+    SRC_MUSICBRAINZ, SRC_WIKIDATA, SRC_WIKIPEDIA, SRC_LASTFM, SRC_OFFICIAL, SRC_PRESS,
+    SRC_DISCOGS, SRC_GUARDIAN, SRC_BBC, SRC_PITCHFORK,
+    SRC_AQUARIUM_DRUNKARD, SRC_BANDCAMP_DAILY, SRC_STEREOGUM, SRC_WHOSAMPLED,
+})
 
 # Authoritative structured sources weigh MORE in the per-fact confidence (REQ-KS-006,
 # R-K-9). They do NOT auto-pass a single-source fact: a strong single authority earns a
 # higher confidence but stays QUALIFIED until corroborated (the SPEC's reliability rail).
 AUTHORITATIVE_SOURCES = frozenset({SRC_MUSICBRAINZ, SRC_WIKIDATA})
 
-# Per-source base confidence before the corroboration boost. Authoritative > crowd/press.
-_SOURCE_WEIGHT: Dict[str, float] = {
-    SRC_MUSICBRAINZ: 0.45,
-    SRC_WIKIDATA: 0.45,
-    SRC_WIKIPEDIA: 0.35,
-    SRC_OFFICIAL: 0.35,
-    SRC_LASTFM: 0.25,
-    SRC_PRESS: 0.25,
+# REQ-KS-009: reliability-ranked source tiers.
+# AUTHORITATIVE-STRUCTURED = weight 2.0 (structured data, machine-readable provenance)
+# REPUTABLE-PRESS           = weight 1.0 (editorial journalism, editorial-reviewed)
+# EDITORIAL-BLOG            = weight 0.5 (enthusiast editorial, band camp daily, blogs)
+# CROWD                     = weight 0.25 (aggregated crowd tags, social signals)
+TIER_AUTHORITATIVE_STRUCTURED = "AUTHORITATIVE-STRUCTURED"
+TIER_REPUTABLE_PRESS = "REPUTABLE-PRESS"
+TIER_EDITORIAL_BLOG = "EDITORIAL-BLOG"
+TIER_CROWD = "CROWD"
+
+SOURCE_TIERS: Dict[str, str] = {
+    SRC_MUSICBRAINZ:       TIER_AUTHORITATIVE_STRUCTURED,
+    SRC_WIKIDATA:          TIER_AUTHORITATIVE_STRUCTURED,
+    SRC_DISCOGS:           TIER_AUTHORITATIVE_STRUCTURED,
+    SRC_OFFICIAL:          TIER_REPUTABLE_PRESS,
+    SRC_WIKIPEDIA:         TIER_REPUTABLE_PRESS,
+    SRC_GUARDIAN:          TIER_REPUTABLE_PRESS,
+    SRC_BBC:               TIER_REPUTABLE_PRESS,
+    SRC_PITCHFORK:         TIER_REPUTABLE_PRESS,
+    SRC_PRESS:             TIER_REPUTABLE_PRESS,
+    SRC_AQUARIUM_DRUNKARD: TIER_EDITORIAL_BLOG,
+    SRC_BANDCAMP_DAILY:    TIER_EDITORIAL_BLOG,
+    SRC_STEREOGUM:         TIER_EDITORIAL_BLOG,
+    SRC_WHOSAMPLED:        TIER_EDITORIAL_BLOG,
+    SRC_LASTFM:            TIER_CROWD,
 }
+
+_TIER_WEIGHT: Dict[str, float] = {
+    TIER_AUTHORITATIVE_STRUCTURED: 2.0,
+    TIER_REPUTABLE_PRESS: 1.0,
+    TIER_EDITORIAL_BLOG: 0.5,
+    TIER_CROWD: 0.25,
+}
+
+# Per-source base confidence derived from tier weights, normalised into [0..1] range
+# for backward compat with the existing _confidence() accumulation logic.
+# Legacy weight scale was 0.25-0.45; new scale maps tier -> weight / 4.0 (fits same range).
+SOURCE_WEIGHTS: Dict[str, float] = {
+    src: _TIER_WEIGHT.get(SOURCE_TIERS.get(src, TIER_CROWD), 0.25) / 4.0
+    for src in VERIFIED_SOURCES
+}
+
+# Keep _SOURCE_WEIGHT as the internal name used in _confidence(); it now derives from
+# SOURCE_WEIGHTS for backward compatibility.
+_SOURCE_WEIGHT: Dict[str, float] = SOURCE_WEIGHTS
 
 
 def current_faroe_date() -> date:
@@ -278,17 +363,20 @@ class KnowledgeStore:
                     UNIQUE(etype, norm_key)
                 );
                 CREATE TABLE IF NOT EXISTS facts (
-                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                    entity_id  INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
-                    predicate  TEXT NOT NULL,
-                    value      TEXT NOT NULL,
-                    kind       TEXT NOT NULL,    -- timeless | time_sensitive
-                    as_of      TEXT NOT NULL,    -- retrieval / last-verified date
-                    valid_until TEXT,            -- expiry for time_sensitive facts
-                    consensus  TEXT NOT NULL DEFAULT 'single',
-                    confidence REAL NOT NULL DEFAULT 0.0,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
+                    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entity_id         INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+                    predicate         TEXT NOT NULL,
+                    value             TEXT NOT NULL,
+                    kind              TEXT NOT NULL,    -- timeless | time_sensitive | contextual
+                    as_of             TEXT NOT NULL,    -- retrieval / last-verified date
+                    valid_until       TEXT,             -- expiry for time_sensitive facts
+                    consensus         TEXT NOT NULL DEFAULT 'single',
+                    confidence        REAL NOT NULL DEFAULT 0.0,
+                    subjectivity_class TEXT DEFAULT 'FACTUAL',  -- REQ-KS-008
+                    confidence_grade  TEXT,                     -- REQ-KS-008: HIGH|MODERATE|LOW
+                    disagreement      TEXT,                     -- REQ-KS-008: free-text note
+                    created_at        TEXT NOT NULL,
+                    updated_at        TEXT NOT NULL,
                     UNIQUE(entity_id, predicate, value)
                 );
                 CREATE TABLE IF NOT EXISTS fact_sources (
@@ -311,13 +399,37 @@ class KnowledgeStore:
                     created_at TEXT NOT NULL,
                     UNIQUE(src_id, dst_id, rel)
                 );
+                CREATE TABLE IF NOT EXISTS research_jobs (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entity_id    INTEGER NOT NULL,
+                    job_type     TEXT NOT NULL,      -- artist | track | album | preshow
+                    status       TEXT NOT NULL DEFAULT 'pending',
+                    metadata     TEXT,               -- JSON blob (timeout_seconds etc.)
+                    created_at   TEXT NOT NULL,
+                    started_at   TEXT,
+                    completed_at TEXT,
+                    error        TEXT
+                );
                 CREATE INDEX IF NOT EXISTS idx_facts_entity ON facts(entity_id);
                 CREATE INDEX IF NOT EXISTS idx_facts_kind ON facts(kind);
                 CREATE INDEX IF NOT EXISTS idx_edges_src ON edges(src_id);
                 CREATE INDEX IF NOT EXISTS idx_edges_dst ON edges(dst_id);
                 CREATE INDEX IF NOT EXISTS idx_entities_lib ON entities(lib_key);
+                CREATE INDEX IF NOT EXISTS idx_rjobs_entity ON research_jobs(entity_id);
+                CREATE INDEX IF NOT EXISTS idx_rjobs_status ON research_jobs(status);
                 """
             )
+            # REQ-KS-008: additive migration for existing DBs — add columns if absent.
+            # SQLite does not support "ADD COLUMN IF NOT EXISTS"; use try/except instead.
+            for _col_sql in [
+                "ALTER TABLE facts ADD COLUMN subjectivity_class TEXT DEFAULT 'FACTUAL'",
+                "ALTER TABLE facts ADD COLUMN confidence_grade TEXT",
+                "ALTER TABLE facts ADD COLUMN disagreement TEXT",
+            ]:
+                try:
+                    cur.execute(_col_sql)
+                except Exception:  # noqa: BLE001 - column already exists
+                    pass
             cur.execute(
                 "INSERT OR IGNORE INTO meta(key, value) VALUES('schema_version', ?)",
                 (str(SCHEMA_VERSION),),
@@ -427,6 +539,9 @@ class KnowledgeStore:
         as_of: Optional[str] = None,
         valid_until: Optional[str] = None,
         default_window_days: Optional[int] = None,
+        subjectivity_class: str = SUBJECTIVITY_FACTUAL,   # REQ-KS-008; backward-compat default
+        confidence_grade: Optional[str] = None,           # REQ-KS-008; optional
+        disagreement: Optional[str] = None,               # REQ-KS-008; optional free-text
     ) -> Optional[int]:
         """Attach a dated, sourced fact to an entity. Idempotent + non-duplicating.
 
@@ -436,12 +551,17 @@ class KnowledgeStore:
         and folds in any NEW sources rather than duplicating (REQ-KR-003).
 
         ``sources`` is a list of ``(source, url)``; only allowlisted sources count toward
-        consensus, but a lead source may still be recorded. ``kind`` is timeless or
-        time_sensitive; a time_sensitive fact gets a validity window — from ``valid_until``
-        if supplied, else ``as_of + default_window_days`` (REQ-KF-001). Recomputes the
-        entity's consensus for this predicate after the write (REQ-KS-006).
+        consensus, but a lead source may still be recorded. ``kind`` is timeless,
+        time_sensitive, or contextual (REQ-KF-005); a time_sensitive fact gets a validity
+        window — from ``valid_until`` if supplied, else ``as_of + default_window_days``
+        (REQ-KF-001). Contextual facts use the TIMELESS refresh window and are never
+        date-expired. Recomputes consensus for this predicate after the write (REQ-KS-006).
+
+        REQ-KS-008: ``subjectivity_class`` defaults to FACTUAL for backward compat.
+        Discogs free-text predicates should be stored with INTERPRETED + GRADE_LOW (see
+        ``is_discogs_free_text()``).
         """
-        if kind not in (KIND_TIMELESS, KIND_TIME_SENSITIVE):
+        if kind not in (KIND_TIMELESS, KIND_TIME_SENSITIVE, TEMPORALITY_CONTEXTUAL):
             raise ValueError(f"unknown fact kind: {kind}")
         clean_sources = [
             (str(s).strip(), str(u).strip())
@@ -458,7 +578,15 @@ class KnowledgeStore:
                       predicate=predicate)
             return None
 
+        # REQ-KR-008: Discogs free-text notes are always hedged, never consensus-upgradeable.
+        if is_discogs_free_text(
+            next((s for s, _ in clean_sources), ""), predicate
+        ):
+            subjectivity_class = SUBJECTIVITY_INTERPRETED
+            confidence_grade = GRADE_LOW
+
         # Derive the validity window for a time-sensitive fact (REQ-KF-001).
+        # Contextual and timeless facts never expire (valid_until = None).
         if kind == KIND_TIME_SENSITIVE:
             vu = _parse_date(valid_until)
             if vu is None and default_window_days is not None:
@@ -468,7 +596,7 @@ class KnowledgeStore:
                 vu = base + timedelta(days=int(default_window_days))
             valid_until = vu.isoformat() if vu else None
         else:
-            valid_until = None  # timeless facts never expire
+            valid_until = None  # timeless and contextual facts never expire
 
         now = self._now()
         with self._lock:
@@ -481,16 +609,21 @@ class KnowledgeStore:
             if row is not None:
                 fact_id = int(row["id"])
                 cur.execute(
-                    """UPDATE facts SET kind=?, as_of=?, valid_until=?, updated_at=?
+                    """UPDATE facts SET kind=?, as_of=?, valid_until=?,
+                           subjectivity_class=?, confidence_grade=?, disagreement=?,
+                           updated_at=?
                        WHERE id=?""",
-                    (kind, as_of, valid_until, now, fact_id),
+                    (kind, as_of, valid_until, subjectivity_class, confidence_grade,
+                     disagreement, now, fact_id),
                 )
             else:
                 cur.execute(
                     """INSERT INTO facts(entity_id, predicate, value, kind, as_of,
-                           valid_until, created_at, updated_at)
-                       VALUES(?,?,?,?,?,?,?,?)""",
-                    (entity_id, predicate, value, kind, as_of, valid_until, now, now),
+                           valid_until, subjectivity_class, confidence_grade, disagreement,
+                           created_at, updated_at)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                    (entity_id, predicate, value, kind, as_of, valid_until,
+                     subjectivity_class, confidence_grade, disagreement, now, now),
                 )
                 fact_id = int(cur.lastrowid)
             for src, url in clean_sources:
@@ -503,12 +636,55 @@ class KnowledgeStore:
         self._recompute_consensus(entity_id, predicate)
         return fact_id
 
+    def add_track_editorial(
+        self,
+        entity_id: int,
+        field: str,
+        value: str,
+        sources: Sequence[Tuple[str, str]],
+        *,
+        as_of: Optional[str] = None,
+        subjectivity_class: str = SUBJECTIVITY_INTERPRETED,
+        confidence_grade: Optional[str] = None,
+        disagreement: Optional[str] = None,
+    ) -> Optional[int]:
+        """Store a per-track editorial field as a CONTEXTUAL fact (REQ-KS-007).
+
+        Accepted ``field`` values: recording_session, writing_story, lyrical_meaning,
+        production_notes, era_context.  ``lyrical_meaning`` is plural-capable — multiple
+        rows may exist for the same entity_id because ``add_fact()`` keys on
+        (entity_id, predicate, VALUE) and each distinct interpretation has a distinct value
+        string.  Stores as CONTEXTUAL kind (never date-expired, REQ-KF-005).
+        """
+        _EDITORIAL_FIELDS = {
+            PRED_RECORDING_SESSION, PRED_WRITING_STORY, PRED_LYRICAL_MEANING,
+            PRED_PRODUCTION_NOTES, PRED_ERA_CONTEXT,
+        }
+        if field not in _EDITORIAL_FIELDS:
+            raise ValueError(
+                f"unknown editorial field: {field!r}. "
+                f"Must be one of {sorted(_EDITORIAL_FIELDS)}"
+            )
+        return self.add_fact(
+            entity_id, field, value,
+            kind=TEMPORALITY_CONTEXTUAL,
+            sources=sources,
+            as_of=as_of,
+            subjectivity_class=subjectivity_class,
+            confidence_grade=confidence_grade,
+            disagreement=disagreement,
+        )
+
     def _recompute_consensus(self, entity_id: int, predicate: str) -> None:
         """Recompute + cache consensus state + confidence for one predicate group.
 
         Groups every value for ``predicate`` by its verified sources and runs
         ``classify_consensus``; writes the resulting state + confidence onto each fact so
         /status counts + the grounding feed read a consistent, cached state (REQ-KS-006).
+
+        REQ-KR-008: if ALL agreeing verified sources for a value are SRC_DISCOGS, cap the
+        consensus at SINGLE_SOURCE — Discogs structured data can contribute to consensus
+        only when corroborated by a non-Discogs verified source.
         """
         try:
             with self._lock:
@@ -540,6 +716,12 @@ class KnowledgeStore:
                         state, conf = CONSENSUS_SINGLE, 0.0
                     else:
                         state, conf = meta["consensus"], meta["confidence"]
+                        # REQ-KR-008: cap Discogs-only agreement at SINGLE (never PASSED).
+                        if (
+                            state == CONSENSUS_PASSED
+                            and all(s == SRC_DISCOGS for s in meta.get("sources", []))
+                        ):
+                            state = CONSENSUS_SINGLE
                     cur.execute(
                         "UPDATE facts SET consensus=?, confidence=?, updated_at=? WHERE id=?",
                         (state, conf, now, fid),
@@ -576,11 +758,21 @@ class KnowledgeStore:
         A time-sensitive fact past its validity window is STALE (dropped/re-cast). A
         non-stale but single-source/conflicting fact is QUALIFIED ("reportedly..."), never
         certain. Recency and consensus are independent; both required for certain.
+
+        REQ-KF-005: CONTEXTUAL facts (kind == TEMPORALITY_CONTEXTUAL) are NEVER stale —
+        they skip the date-expiry gate entirely. They still pass through the consensus gate
+        and can be certain (if consensus-passed) or qualified (if single/conflicting).
+        Returns "fresh_contextual" only for the stale gate; normal certain/qualified
+        classification still applies through the consensus branch.
         """
-        if fact.get("kind") == KIND_TIME_SENSITIVE:
+        kind = fact.get("kind")
+        if kind == KIND_TIME_SENSITIVE:
             vu = _parse_date(fact.get("valid_until"))
             if vu is not None and today > vu:
                 return "stale"
+        # CONTEXTUAL: never date-expired (REQ-KF-005); fall through to consensus gate.
+        # No explicit "fresh_contextual" short-circuit — certain/qualified is the right
+        # on-air classification; "fresh_contextual" would be an internal artefact.
         return "certain" if fact.get("consensus") == CONSENSUS_PASSED else "qualified"
 
     def facts_due_for_refresh(
@@ -593,8 +785,9 @@ class KnowledgeStore:
         """Facts whose as-of date exceeds the per-class freshness threshold (REQ-KF-004).
 
         Time-sensitive facts use the (tighter) ``time_sensitive_days`` threshold; timeless
-        facts the (much longer) ``timeless_days``. Returned facts are flagged due-for-refresh
-        so a refresh research job re-verifies them. Read-safe.
+        facts the (much longer) ``timeless_days``. REQ-KF-005: CONTEXTUAL facts use the
+        TIMELESS refresh window (they accrue but are never date-expired). Returned facts are
+        flagged due-for-refresh so a refresh research job re-verifies them. Read-safe.
         """
         today = today or current_faroe_date()
         from datetime import timedelta
@@ -604,11 +797,14 @@ class KnowledgeStore:
         try:
             with self._lock:
                 cur = self._conn.cursor()
+                # CONTEXTUAL is treated like TIMELESS for the refresh window (REQ-KF-005).
                 cur.execute(
                     """SELECT f.*, e.name AS entity_name, e.etype AS entity_type
                        FROM facts f JOIN entities e ON e.id=f.entity_id
-                       WHERE (f.kind=? AND f.as_of < ?) OR (f.kind=? AND f.as_of < ?)""",
-                    (KIND_TIME_SENSITIVE, ts_cut, KIND_TIMELESS, tl_cut),
+                       WHERE (f.kind=? AND f.as_of < ?)
+                          OR (f.kind IN (?, ?) AND f.as_of < ?)""",
+                    (KIND_TIME_SENSITIVE, ts_cut,
+                     KIND_TIMELESS, TEMPORALITY_CONTEXTUAL, tl_cut),
                 )
                 return [dict(r) for r in cur.fetchall()]
         except Exception as exc:  # noqa: BLE001
@@ -765,6 +961,9 @@ class KnowledgeStore:
                     "confidence": fact.get("confidence", 0.0),
                     "sources": sources,
                     "as_of": fact.get("as_of", ""),
+                    # REQ-KS-008: subjectivity metadata for talk-script hedging
+                    "subjectivity_class": fact.get("subjectivity_class") or SUBJECTIVITY_FACTUAL,
+                    "confidence_grade": fact.get("confidence_grade"),
                 }
             )
 
@@ -819,6 +1018,219 @@ class KnowledgeStore:
             log_event(log, "knowledge.stats_error", error=str(exc))
             return {"schema_version": SCHEMA_VERSION, "entities": 0, "facts": 0,
                     "consensus_passed": 0, "edges": 0, "pending_research": 0, "errored": 0}
+
+    # -- research jobs (REQ-KR-006, REQ-KR-007) ----------------------------------
+
+    def enqueue_research(
+        self,
+        entity_id: int,
+        job_type: str,
+        *,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> int:
+        """Enqueue a research job for an entity. Returns the new job_id (REQ-KR-006).
+
+        ``job_type`` is one of JOB_ARTIST, JOB_TRACK, JOB_ALBUM, JOB_PRESHOW.
+        ``metadata`` is an optional JSON-serializable dict (e.g. {"timeout_seconds": 300}).
+        Never raises; returns -1 on DB error.
+        """
+        now = self._now()
+        meta_str = json.dumps(metadata) if metadata else None
+        try:
+            with self._lock:
+                cur = self._conn.cursor()
+                cur.execute(
+                    """INSERT INTO research_jobs(entity_id, job_type, status, metadata,
+                           created_at)
+                       VALUES(?,?,?,?,?)""",
+                    (entity_id, job_type, "pending", meta_str, now),
+                )
+                self._conn.commit()
+                return int(cur.lastrowid)
+        except Exception as exc:  # noqa: BLE001
+            log_event(log, "knowledge.enqueue_research_error", error=str(exc))
+            return -1
+
+    def mark_research_complete(self, job_id: int, *, error: Optional[str] = None) -> None:
+        """Mark a research job as done or error (REQ-KR-006). Best-effort."""
+        now = self._now()
+        status = "error" if error else "done"
+        try:
+            with self._lock:
+                self._conn.execute(
+                    """UPDATE research_jobs SET status=?, completed_at=?, error=?,
+                           updated_at=? WHERE id=?""",
+                    (status, now, error or None, now, job_id),
+                )
+                self._conn.commit()
+        except Exception as exc:  # noqa: BLE001
+            # research_jobs table may not have updated_at; silently retry without it.
+            try:
+                with self._lock:
+                    self._conn.execute(
+                        """UPDATE research_jobs SET status=?, completed_at=?, error=?
+                               WHERE id=?""",
+                        (status, now, error or None, job_id),
+                    )
+                    self._conn.commit()
+            except Exception as exc2:  # noqa: BLE001
+                log_event(log, "knowledge.mark_research_complete_error",
+                          job_id=job_id, error=str(exc2))
+
+    def enqueue_preshow_research(
+        self,
+        entity_ids: List[int],
+        *,
+        timeout_seconds: float = 300.0,
+    ) -> List[int]:
+        """Enqueue JOB_PRESHOW for each entity_id in the pre-show lineup (REQ-KR-007).
+
+        Returns a list of job_ids in the same order as ``entity_ids``. Failed enqueues
+        yield -1 in the output list. Never raises.
+        """
+        meta = {"timeout_seconds": timeout_seconds}
+        return [self.enqueue_research(eid, JOB_PRESHOW, metadata=meta)
+                for eid in entity_ids]
+
+    # -- release-scoped grounding (REQ-KI-006) -----------------------------------
+
+    def grounding_for_release(
+        self,
+        artist_key: str,
+        album_title: str,
+        *,
+        today: Optional[date] = None,
+    ) -> Dict[str, Any]:
+        """Release-scoped grounding feed for in-depth album shows (REQ-KI-006).
+
+        Returns:
+            {
+                "release": {facts dict keyed by predicate, filtered by freshness+consensus},
+                "tracks": [list of per-track fact dicts],
+                "edges": [list of release-level edge dicts],
+                "has_facts": bool,
+            }
+
+        Same freshness + consensus gate as grounding_for_artist. Empty-safe: returns
+        {"has_facts": False, "release": {}, "tracks": [], "edges": []} on miss. Never raises.
+        """
+        _empty: Dict[str, Any] = {
+            "has_facts": False, "release": {}, "tracks": [], "edges": []
+        }
+        try:
+            today = today or current_faroe_date()
+            from .library import normalize_key as _nk
+
+            # 1. Resolve release entity by trying several norm_key strategies.
+            release_ent = (
+                self.get_entity(ENTITY_RELEASE, _nk("", album_title))
+                or self.get_entity(ENTITY_RELEASE, _nk(artist_key, album_title))
+            )
+            if release_ent is None:
+                return _empty
+            release_id = int(release_ent["id"])
+
+            # 2. Collect fresh, consensus-gated facts for the release itself.
+            release_facts: Dict[str, Any] = {}
+            for fact in self.facts_for(release_id):
+                status = self.fact_status(fact, today)
+                if status == "stale":
+                    continue
+                sources = [s.get("source", "") for s in fact.get("sources", [])]
+                release_facts[fact.get("predicate", "")] = {
+                    "value": fact.get("value", ""),
+                    "certain": status == "certain",
+                    "hedge": "" if status == "certain" else _hedge_for(fact, sources),
+                    "subjectivity_class": fact.get("subjectivity_class") or SUBJECTIVITY_FACTUAL,
+                    "confidence_grade": fact.get("confidence_grade"),
+                    "sources": sources,
+                    "as_of": fact.get("as_of", ""),
+                }
+
+            # 3. Collect tracks linked to this release via edges.
+            track_edges = self.edges_from(
+                release_id, rels=[REL_RELEASED_ON, REL_CREDITED_TO]
+            )
+            # Also check reverse: tracks that have REL_RELEASED_ON pointing TO this release.
+            track_data: List[Dict[str, Any]] = []
+            try:
+                with self._lock:
+                    cur = self._conn.cursor()
+                    cur.execute(
+                        """SELECT ed.*, e.id AS track_entity_id, e.name AS track_name
+                           FROM edges ed JOIN entities e ON e.id=ed.src_id
+                           WHERE ed.dst_id=? AND ed.rel IN (?, ?)""",
+                        (release_id, REL_RELEASED_ON, REL_CREDITED_TO),
+                    )
+                    track_rows = [dict(r) for r in cur.fetchall()]
+            except Exception:  # noqa: BLE001
+                track_rows = []
+
+            for tr in track_rows:
+                tid = int(tr["track_entity_id"])
+                track_facts_raw: Dict[str, Any] = {}
+                for fact in self.facts_for(tid):
+                    status = self.fact_status(fact, today)
+                    if status == "stale":
+                        continue
+                    sources = [s.get("source", "") for s in fact.get("sources", [])]
+                    track_facts_raw[fact.get("predicate", "")] = {
+                        "value": fact.get("value", ""),
+                        "certain": status == "certain",
+                        "hedge": "" if status == "certain" else _hedge_for(fact, sources),
+                        "subjectivity_class": fact.get("subjectivity_class") or SUBJECTIVITY_FACTUAL,
+                        "confidence_grade": fact.get("confidence_grade"),
+                        "sources": sources,
+                        "as_of": fact.get("as_of", ""),
+                    }
+                track_data.append({
+                    "name": tr.get("track_name", ""),
+                    "entity_id": tid,
+                    "facts": track_facts_raw,
+                })
+
+            # 4. Release-level edges (credited_to, recorded_at, signed_to).
+            release_edges = []
+            for edge in self.edges_from(
+                release_id,
+                rels=[REL_CREDITED_TO, REL_PLACE, REL_SIGNED_TO, REL_GENRE, REL_ERA],
+            ):
+                release_edges.append({
+                    "rel": edge.get("rel", ""),
+                    "target": edge.get("dst_name", ""),
+                    "target_type": edge.get("dst_type", ""),
+                    "target_lib_key": edge.get("dst_lib_key") or "",
+                    "provenance": edge.get("provenance", ""),
+                })
+
+            has_facts = bool(release_facts or track_data or release_edges)
+            return {
+                "has_facts": has_facts,
+                "release": release_facts,
+                "tracks": track_data,
+                "edges": release_edges,
+            }
+        except Exception as exc:  # noqa: BLE001 - never raises into caller
+            log_event(log, "knowledge.grounding_for_release_error", error=str(exc))
+            return _empty
+
+
+def is_discogs_free_text(source: str, predicate: str) -> bool:
+    """Return True when a Discogs fact is free-text notes that must always be hedged (REQ-KR-008).
+
+    Discogs structured fields (track listing, release date, label, catalog number, format)
+    are authoritative and can participate in consensus. Free-text notes (any predicate
+    containing "notes", "description", or stored as the literal "discogs_notes") are
+    unvetted crowd-edited prose and must NEVER reach CONSENSUS_PASSED alone.
+    """
+    if source != SRC_DISCOGS:
+        return False
+    _FREE_TEXT_PREDICATES = {
+        "discogs_notes", "notes", "description", "release_notes",
+        "artist_notes", "label_notes",
+    }
+    p = predicate.lower()
+    return p in _FREE_TEXT_PREDICATES or "notes" in p or "description" in p
 
 
 def _hedge_for(fact: Dict[str, Any], sources: Sequence[str]) -> str:

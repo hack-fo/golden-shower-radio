@@ -401,6 +401,322 @@ def test_researcher_fill_path_stubbed():
 
 
 # ---------------------------------------------------------------------------
+# v0.3.0 tests — KS-007/008/009, KF-005, KR-006/007/008, KG-006, KI-006
+# ---------------------------------------------------------------------------
+
+# KS-007 — per-track editorial fields
+def test_ks007_track_editorial_fields():
+    with tempfile.TemporaryDirectory() as tmp:
+        st = _store(tmp)
+        eid = st.upsert_entity(K.ENTITY_SONG, "Song A", norm_key=normalize_key("artist", "Song A"))
+
+        # lyrical_meaning is plural-capable: two distinct interpretations stored separately.
+        fid1 = st.add_track_editorial(
+            eid, K.PRED_LYRICAL_MEANING, "interpretation of loss",
+            [(K.SRC_PRESS, "https://press/a")],
+        )
+        fid2 = st.add_track_editorial(
+            eid, K.PRED_LYRICAL_MEANING, "metaphor for exile",
+            [(K.SRC_OFFICIAL, "https://official/a")],
+        )
+        assert fid1 is not None and fid2 is not None
+        assert fid1 != fid2, "each lyrical_meaning interpretation must be a distinct row"
+
+        # Other editorial fields work too.
+        fid3 = st.add_track_editorial(
+            eid, K.PRED_PRODUCTION_NOTES, "recorded on 8-track in 1992",
+            [(K.SRC_PRESS, "https://press/b")],
+        )
+        assert fid3 is not None
+
+        # Kind must be CONTEXTUAL (never date-expired).
+        facts = {f["predicate"]: f for f in st.facts_for(eid) if f["predicate"] == K.PRED_PRODUCTION_NOTES}
+        assert facts[K.PRED_PRODUCTION_NOTES]["kind"] == K.TEMPORALITY_CONTEXTUAL
+
+        # Unknown field raises.
+        try:
+            st.add_track_editorial(eid, "bad_field", "v", [(K.SRC_PRESS, "https://p")])
+            assert False, "expected ValueError"
+        except ValueError:
+            pass
+        st.close()
+
+
+# KS-008 — subjectivity class + confidence grade + disagreement
+def test_ks008_subjectivity_metadata():
+    with tempfile.TemporaryDirectory() as tmp:
+        st = _store(tmp)
+        eid = st.upsert_entity(K.ENTITY_ARTIST, "Artist K", norm_key=normalize_key("Artist K", ""))
+
+        # FACTUAL by default (backward compat).
+        fid = st.add_fact(eid, "hometown", "Glasgow",
+                          kind=K.KIND_TIMELESS,
+                          sources=[(K.SRC_MUSICBRAINZ, "https://mb/k"),
+                                   (K.SRC_WIKIDATA, "https://wd/k")],
+                          as_of="2026-06-22")
+        assert fid is not None
+        f = st.facts_for(eid)[0]
+        assert f.get("subjectivity_class") == K.SUBJECTIVITY_FACTUAL
+
+        # EDITORIAL_OPINION + GRADE_MODERATE stored and retrieved.
+        eid2 = st.upsert_entity(K.ENTITY_ARTIST, "Artist L",
+                                norm_key=normalize_key("Artist L", ""))
+        fid2 = st.add_fact(
+            eid2, "genre_feel", "post-punk adjacent",
+            kind=K.KIND_TIMELESS,
+            sources=[(K.SRC_PITCHFORK, "https://pf/l")],
+            as_of="2026-06-22",
+            subjectivity_class=K.SUBJECTIVITY_EDITORIAL_OPINION,
+            confidence_grade=K.GRADE_MODERATE,
+            disagreement="some say industrial",
+        )
+        assert fid2 is not None
+        f2 = st.facts_for(eid2)[0]
+        assert f2["subjectivity_class"] == K.SUBJECTIVITY_EDITORIAL_OPINION
+        assert f2["confidence_grade"] == K.GRADE_MODERATE
+        assert f2["disagreement"] == "some say industrial"
+
+        # grounding_for_artist includes subjectivity_class + confidence_grade.
+        g = st.grounding_for_artist(normalize_key("Artist L", ""), today=date(2026, 6, 22))
+        gf = g["grounded_facts"][0]
+        assert gf["subjectivity_class"] == K.SUBJECTIVITY_EDITORIAL_OPINION
+        assert gf["confidence_grade"] == K.GRADE_MODERATE
+        st.close()
+
+
+# KS-009 — reliability-ranked source tiers
+def test_ks009_source_tiers():
+    # Verify tier membership.
+    assert K.SOURCE_TIERS[K.SRC_MUSICBRAINZ] == K.TIER_AUTHORITATIVE_STRUCTURED
+    assert K.SOURCE_TIERS[K.SRC_DISCOGS] == K.TIER_AUTHORITATIVE_STRUCTURED
+    assert K.SOURCE_TIERS[K.SRC_GUARDIAN] == K.TIER_REPUTABLE_PRESS
+    assert K.SOURCE_TIERS[K.SRC_PITCHFORK] == K.TIER_REPUTABLE_PRESS
+    assert K.SOURCE_TIERS[K.SRC_AQUARIUM_DRUNKARD] == K.TIER_EDITORIAL_BLOG
+    assert K.SOURCE_TIERS[K.SRC_BANDCAMP_DAILY] == K.TIER_EDITORIAL_BLOG
+    assert K.SOURCE_TIERS[K.SRC_WHOSAMPLED] == K.TIER_EDITORIAL_BLOG
+    assert K.SOURCE_TIERS[K.SRC_LASTFM] == K.TIER_CROWD
+
+    # AUTHORITATIVE_STRUCTURED sources must have higher weight than EDITORIAL_BLOG.
+    assert K.SOURCE_WEIGHTS[K.SRC_MUSICBRAINZ] > K.SOURCE_WEIGHTS[K.SRC_AQUARIUM_DRUNKARD]
+    # All expected sources are in SOURCE_WEIGHTS.
+    for src in (K.SRC_GUARDIAN, K.SRC_BBC, K.SRC_PITCHFORK, K.SRC_STEREOGUM,
+                K.SRC_AQUARIUM_DRUNKARD, K.SRC_BANDCAMP_DAILY, K.SRC_WHOSAMPLED,
+                K.SRC_DISCOGS):
+        assert src in K.SOURCE_WEIGHTS, f"{src} missing from SOURCE_WEIGHTS"
+
+
+# KF-005 — CONTEXTUAL currency class
+def test_kf005_contextual_never_stale():
+    with tempfile.TemporaryDirectory() as tmp:
+        st = _store(tmp)
+        eid = st.upsert_entity(K.ENTITY_SONG, "Song B", norm_key=normalize_key("artist", "song b"))
+
+        # Contextual fact stored far in the past — should NOT be stale.
+        old_date = (date(2026, 6, 22) - timedelta(days=3000)).isoformat()
+        fid = st.add_fact(eid, K.PRED_WRITING_STORY, "written during a breakup",
+                          kind=K.TEMPORALITY_CONTEXTUAL,
+                          sources=[(K.SRC_PRESS, "https://press/b")],
+                          as_of=old_date)
+        assert fid is not None
+        fact = [f for f in st.facts_for(eid) if f["predicate"] == K.PRED_WRITING_STORY][0]
+        assert fact["kind"] == K.TEMPORALITY_CONTEXTUAL
+
+        # fact_status must never return "stale" for contextual, even years later.
+        status = K.KnowledgeStore.fact_status(fact, date(2026, 6, 22))
+        assert status != "stale", f"CONTEXTUAL fact must not be stale; got {status!r}"
+        # It IS qualified (single source), not certain.
+        assert status == "qualified"
+
+        # facts_due_for_refresh: contextual uses the TIMELESS window.
+        # Store a contextual fact with a very old as-of that exceeds timeless_days=180.
+        # It SHOULD appear in the refresh list (old but not expired).
+        very_old = (date(2026, 6, 22) - timedelta(days=200)).isoformat()
+        fid2 = st.add_fact(eid, K.PRED_ERA_CONTEXT, "90s UK rave scene",
+                           kind=K.TEMPORALITY_CONTEXTUAL,
+                           sources=[(K.SRC_PRESS, "https://p2")],
+                           as_of=very_old)
+        assert fid2 is not None
+        due = st.facts_due_for_refresh(
+            today=date(2026, 6, 22), time_sensitive_days=3, timeless_days=180
+        )
+        preds = {d["predicate"] for d in due}
+        assert K.PRED_ERA_CONTEXT in preds, "old contextual fact should be due for refresh"
+        # The writing_story (3000 days old) should also appear.
+        assert K.PRED_WRITING_STORY in preds
+        st.close()
+
+
+# KR-006 + KR-007 — research job queue
+def test_kr006_research_jobs():
+    with tempfile.TemporaryDirectory() as tmp:
+        st = _store(tmp)
+        eid = st.upsert_entity(K.ENTITY_ARTIST, "Research A",
+                               norm_key=normalize_key("Research A", ""))
+
+        # Enqueue an artist job.
+        jid = st.enqueue_research(eid, K.JOB_ARTIST, metadata={"source": "mb"})
+        assert jid > 0
+
+        # Mark complete.
+        st.mark_research_complete(jid)
+
+        # Enqueue a preshow batch.
+        eid2 = st.upsert_entity(K.ENTITY_ARTIST, "Research B",
+                                norm_key=normalize_key("Research B", ""))
+        eid3 = st.upsert_entity(K.ENTITY_ARTIST, "Research C",
+                                norm_key=normalize_key("Research C", ""))
+        jids = st.enqueue_preshow_research([eid2, eid3], timeout_seconds=120.0)
+        assert len(jids) == 2
+        assert all(j > 0 for j in jids), f"all job ids must be positive: {jids}"
+
+        # Mark one preshow job as errored.
+        st.mark_research_complete(jids[0], error="provider timeout")
+
+        # Verify rows exist in the DB.
+        with st._lock:
+            cur = st._conn.cursor()
+            cur.execute("SELECT COUNT(*) AS n FROM research_jobs")
+            n = cur.fetchone()["n"]
+        assert n >= 3, f"expected at least 3 research_jobs rows, got {n}"
+        st.close()
+
+
+# KR-008 — Discogs free-text notes always hedged
+def test_kr008_discogs_free_text_capped():
+    # is_discogs_free_text() helper.
+    assert K.is_discogs_free_text(K.SRC_DISCOGS, "discogs_notes") is True
+    assert K.is_discogs_free_text(K.SRC_DISCOGS, "release_notes") is True
+    assert K.is_discogs_free_text(K.SRC_DISCOGS, "description") is True
+    assert K.is_discogs_free_text(K.SRC_DISCOGS, "track_listing") is False  # structured
+    assert K.is_discogs_free_text(K.SRC_MUSICBRAINZ, "discogs_notes") is False  # wrong src
+
+    with tempfile.TemporaryDirectory() as tmp:
+        st = _store(tmp)
+        eid = st.upsert_entity(K.ENTITY_RELEASE, "Album Z",
+                               norm_key=normalize_key("", "Album Z"))
+
+        # Two Discogs sources agreeing on a free-text notes predicate must NOT reach PASSED.
+        st.add_fact(eid, "discogs_notes", "great album from the 90s",
+                    kind=K.KIND_TIMELESS,
+                    sources=[(K.SRC_DISCOGS, "https://discogs.com/a"),
+                             (K.SRC_DISCOGS, "https://discogs.com/b")],
+                    as_of="2026-06-22")
+        # Since add_fact applies the Discogs check on the FIRST source only, and
+        # _recompute_consensus caps Discogs-only agreement at SINGLE, we check consensus.
+        fact = [f for f in st.facts_for(eid) if f["predicate"] == "discogs_notes"][0]
+        assert fact["consensus"] != K.CONSENSUS_PASSED, (
+            "Discogs-only free-text should never reach CONSENSUS_PASSED"
+        )
+
+        # Structured Discogs fact + MusicBrainz CAN reach consensus.
+        st.add_fact(eid, "release_date", "1994-03-02",
+                    kind=K.KIND_TIMELESS,
+                    sources=[(K.SRC_DISCOGS, "https://discogs.com/c"),
+                             (K.SRC_MUSICBRAINZ, "https://mb/c")],
+                    as_of="2026-06-22")
+        rd_fact = [f for f in st.facts_for(eid) if f["predicate"] == "release_date"][0]
+        # "release_date" is not a free-text predicate; Discogs+MB can yield PASSED.
+        assert rd_fact["consensus"] == K.CONSENSUS_PASSED, (
+            "Discogs+MusicBrainz structured fact should reach CONSENSUS_PASSED"
+        )
+        st.close()
+
+
+# KG-006 — richer track-to-track edge types + ENTITY_PERSON/ENTITY_PLACE
+def test_kg006_richer_edges():
+    # New relationship constants exist.
+    assert hasattr(K, "REL_COVER")
+    assert hasattr(K, "REL_SAMPLE")
+    assert hasattr(K, "REL_WRITING_CONNECTION")
+    assert hasattr(K, "REL_THEMATIC_INFLUENCE")
+    # New entity type constants exist.
+    assert K.ENTITY_PERSON == "person"
+    assert K.ENTITY_PLACE == "place"
+    # VALID_RELS contains all expected types.
+    for rel in (K.REL_COVER, K.REL_SAMPLE, K.REL_WRITING_CONNECTION,
+                K.REL_THEMATIC_INFLUENCE, K.REL_MEMBER_OF, K.REL_RELEASED_ON):
+        assert rel in K.VALID_RELS, f"{rel} not in VALID_RELS"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        st = _store(tmp)
+        song_a = st.upsert_entity(K.ENTITY_SONG, "Song A",
+                                  norm_key=normalize_key("artist_a", "song_a"))
+        song_b = st.upsert_entity(K.ENTITY_SONG, "Song B",
+                                  norm_key=normalize_key("artist_b", "song_b"))
+        person = st.upsert_entity(K.ENTITY_PERSON, "A Songwriter",
+                                  norm_key=normalize_key("a songwriter", ""))
+        place = st.upsert_entity(K.ENTITY_PLACE, "Glasgow",
+                                 norm_key=normalize_key("glasgow", ""))
+
+        # Cover + sample edges between songs.
+        eid1 = st.add_edge(song_b, song_a, K.REL_COVER, provenance=K.EDGE_RESEARCH,
+                           source=K.SRC_MUSICBRAINZ, url="https://mb/cover")
+        eid2 = st.add_edge(song_a, song_b, K.REL_THEMATIC_INFLUENCE,
+                           provenance=K.EDGE_RESEARCH)
+        assert eid1 is not None and eid2 is not None
+
+        # ENTITY_PERSON and ENTITY_PLACE are valid entity types.
+        assert person > 0 and place > 0
+
+        # WRITING_CONNECTION person edge.
+        eid3 = st.add_edge(song_a, person, K.REL_WRITING_CONNECTION,
+                           provenance=K.EDGE_RESEARCH)
+        assert eid3 is not None
+        edges = st.edges_from(song_a)
+        rels = {e["rel"] for e in edges}
+        assert K.REL_THEMATIC_INFLUENCE in rels
+        assert K.REL_WRITING_CONNECTION in rels
+        st.close()
+
+
+# KI-006 — release-scoped grounding accessor
+def test_ki006_grounding_for_release():
+    with tempfile.TemporaryDirectory() as tmp:
+        st = _store(tmp)
+
+        # Miss: unknown release returns empty-safe dict, never raises.
+        result = st.grounding_for_release("nobody", "unknown album", today=date(2026, 6, 22))
+        assert result == {"has_facts": False, "release": {}, "tracks": [], "edges": []}
+
+        # Build a release entity with facts.
+        rel_eid = st.upsert_entity(K.ENTITY_RELEASE, "Test Album",
+                                   norm_key=normalize_key("", "Test Album"))
+        st.add_fact(rel_eid, "release_year", "1994", kind=K.KIND_TIMELESS,
+                    sources=[(K.SRC_MUSICBRAINZ, "https://mb/ta"),
+                             (K.SRC_WIKIDATA, "https://wd/ta")],
+                    as_of="2026-06-22")
+
+        # Build a track linked to this release via REL_RELEASED_ON (reverse edge).
+        track_eid = st.upsert_entity(K.ENTITY_SONG, "Track 1",
+                                     norm_key=normalize_key("artist", "track 1"))
+        st.add_track_editorial(track_eid, K.PRED_PRODUCTION_NOTES,
+                               "recorded at Rockfield",
+                               [(K.SRC_PRESS, "https://press/t1")],
+                               as_of="2026-06-22")
+        # Track points at the release via REL_RELEASED_ON edge.
+        st.add_edge(track_eid, rel_eid, K.REL_RELEASED_ON, provenance=K.EDGE_RESEARCH)
+
+        # Add a credited_to edge from release to an entity.
+        label_eid = st.upsert_entity(K.ENTITY_LABEL, "Warp Records",
+                                     norm_key=normalize_key("warp records", ""))
+        st.add_edge(rel_eid, label_eid, K.REL_SIGNED_TO, provenance=K.EDGE_RESEARCH)
+
+        g = st.grounding_for_release("test artist", "Test Album", today=date(2026, 6, 22))
+        assert g["has_facts"] is True
+        assert "release_year" in g["release"]
+        assert g["release"]["release_year"]["certain"] is True
+        # Track facts appear in the tracks list.
+        track_names = [t["name"] for t in g["tracks"]]
+        assert "Track 1" in track_names
+        track = next(t for t in g["tracks"] if t["name"] == "Track 1")
+        assert K.PRED_PRODUCTION_NOTES in track["facts"]
+        # Edges appear.
+        edge_rels = {e["rel"] for e in g["edges"]}
+        assert K.REL_SIGNED_TO in edge_rels
+        st.close()
+
+
+# ---------------------------------------------------------------------------
 # tiny built-in runner (works with or without pytest)
 # ---------------------------------------------------------------------------
 def _run_all() -> int:
