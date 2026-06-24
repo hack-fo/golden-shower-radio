@@ -365,6 +365,20 @@ class TalkDirector:
             log_event(log, "talk.pv_lint_ctx_error", error=str(exc))
             return None
 
+    def _ear_lint_context(self):
+        """Build the Group PS ear-writing Tier-1 lint context (REQ-PS-001..005) that rides the
+        PG-005 gate, or ``None`` when PS ear-writing lints are OFF (so the gate is byte-identical
+        to the Group PG/PV form). Presence of this context opts the break into the script-side
+        ear-writing lints; the thresholds are TUNABLE config (ear_writing.EarLintContext)."""
+        if not getattr(self.cfg, "ear_writing_lint_enabled", False):
+            return None
+        try:
+            from . import ear_writing
+            return ear_writing.EarLintContext()
+        except Exception as exc:  # noqa: BLE001 - ear lint context is best-effort, never blocks talk
+            log_event(log, "talk.ear_lint_ctx_error", error=str(exc))
+            return None
+
     def _apply_quality_gate(self, context: dict, persona, script: str) -> Optional[str]:
         """Run the generated break through the Group PG two-tier quality gate (REQ-PG-005).
 
@@ -394,10 +408,13 @@ class TalkDirector:
             # SPEC-RADIO-PROGRAMMING-007 Group PV (REQ-PV-010/012/016/017): the PV delivery-craft
             # lints ride the SAME PG-005 gate. pv_ctx is None when PV is off => byte-identical.
             pv_ctx = self._pv_lint_context(persona, context)
+            # SPEC-RADIO-PROGRAMMING-007 Group PS (REQ-PS-001..005): the script-side ear-writing
+            # lints ride the SAME gate. ear_ctx is None when PS lints off => byte-identical.
+            ear_ctx = self._ear_lint_context()
 
             outcome = grounding.run_gate(
                 script, contract, regenerate=_regenerate, adversarial=adversarial,
-                pv_ctx=pv_ctx,
+                pv_ctx=pv_ctx, ear_ctx=ear_ctx,
             )
             if outcome.skipped:
                 log_event(log, "talk.gate_skip",

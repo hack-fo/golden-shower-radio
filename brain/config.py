@@ -415,6 +415,16 @@ class Config:
     # do not gate behaviour). When ON, the host's links follow the explicit craft anatomy + rotation.
     craft_playbook_enabled: bool = field(default_factory=lambda: _env("BRAIN_CRAFT_PLAYBOOK_ENABLED", "0") not in ("0", "false", "no"))
 
+    # --- PROGRAMMING-007 Group PS: script-side ear-writing lints (REQ-PS-001..005) ---
+    # When ON, the Group PS SCRIPT-side ear-writing lints RIDE the SAME PG-005 quality gate as
+    # the PG/PV lints: over-long sentences (PS-001), missing contractions + crowd address
+    # (PS-002), breath punctuation + monotone rhythm (PS-003), oversized blank-line blocks
+    # (PS-004), and raw digits (PS-005). OFF by default so the gate stays BYTE-IDENTICAL to the
+    # PG/PV form: with this off, the talk path passes no EarLintContext and the gate is unchanged.
+    # The ear-writing RAILS prompt text (brain.ear_writing.ear_writing_rails) is the SINGLE SOURCE
+    # OF TRUTH PV reads regardless of this flag (it replaces a fork, it does not gate behaviour).
+    ear_writing_lint_enabled: bool = field(default_factory=lambda: _env("BRAIN_EAR_WRITING_LINT_ENABLED", "0") not in ("0", "false", "no"))
+
     @property
     def attempts_path(self) -> str:
         return os.path.join(self.db_dir, "attempts.json")

@@ -33,6 +33,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
+from . import ear_writing as _ear_writing
 from .logging_setup import log_event
 
 log = logging.getLogger("brain.llm")
@@ -375,17 +376,11 @@ _VOICE_EXEMPLARS = (
 )
 
 # REQ-PV-002 / REQ-PV-004 — the ear-writing rails + the calibrated delivery DO-set carried IN
-# the live prompt. The blank-line block instruction is the REQ-PS-004 coordination contract
-# (VOICE-002 chunks at the blank lines) — it MUST be present and not broken. TUNABLE wording.
-_EAR_WRITING_RAILS = (
-    "Always use contractions. One thought per sentence, about twenty words or fewer. "
-    "Punctuate for breath — commas for short pauses, an em-dash for a beat, an ellipsis for a "
-    "longer one — and vary your sentence length. Spell numbers and dates as you'd say them. "
-    "Structure the script as one- or two-sentence blocks separated by blank lines.",
-    "Lead with one plain, owned reaction, then one concrete grounded detail you can actually "
-    "point to — a flat true sentence beats an impressive one. At most one vivid detail; never "
-    "an adjective pile. Talk to one listener, never a crowd. Hook, then body, then a clean exit.",
-)
+# the live prompt. The rails text is OWNED by Group PS (brain.ear_writing) — the SINGLE SOURCE
+# OF TRUTH; PV reads it from there (the inline fork is eliminated, the same single-source pattern
+# as the PC daypart presets and the PI anchor block). The blank-line block instruction is the
+# REQ-PS-004 coordination contract (VOICE-002 chunks at the blank lines) — present, not broken.
+_EAR_WRITING_RAILS = _ear_writing.ear_writing_rails()
 
 
 def _craft_prompt_blocks(context: Dict) -> List[str]:
