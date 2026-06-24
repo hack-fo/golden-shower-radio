@@ -724,6 +724,169 @@ class EventsStore:
 
 
 # --------------------------------------------------------------------------- #
+# events.db — event_ledger + change_budget (SPEC-RADIO-OPS-004 Group OD)
+# --------------------------------------------------------------------------- #
+
+
+class LedgerStore:
+    """``event_ledger`` + ``change_budget`` tables in ``events.db`` — the OPS-004 Group OD
+    keystone persistence (SPEC-RADIO-OPS-004 REQ-OD-007 / REQ-OD-006 / REQ-OD-008).
+
+    THE ONE LEDGER (REQ-OD-007): an APPEND-ONLY, ordered event log with an IDEMPOTENT
+    per-event ID, so a replay or retry of the same event does NOT duplicate it. History is
+    never overwritten — corrections are NEW events. Everything Group OD persists is a VIEW
+    over this one table: the director diary (REQ-OD-008, ``diary_entry`` events), the
+    topic-bank (Group OX, ``topic_*`` events), the segment-type registry (Group OY,
+    ``segment_type_*`` events), the persona/show lifecycle (Group OB, ``persona_*`` /
+    ``show_*`` events), AND the PROGRAMMING-007 store seams' write-throughs (the PL
+    acquisition diary, the CL sequencing journal, show records) — NO new store per view.
+
+    THE MEASURED-CHANGE STATE (REQ-OD-006): ``change_budget`` is the DURABLE rate-limiter +
+    cooldown STATE the measured self-change loops read/write. The PROGRAMMING-007 PL/CL loops
+    OWN the loop LOGIC and COMPOSE the persona_voice ImprovementLoop engine; this store only
+    PERSISTS the per-tier last-applied timestamp + applied-change count so the cooldown and
+    rolling-window rate cap survive restarts (REQ-OD-010 rarity tiers share this one table,
+    keyed by tier).
+
+    Lives in ``events.db`` (append-heavy, isolated blast cell) and SHARES that file's one
+    connection + WAL write lock (REQ-DP-003). An idempotent event re-append is a no-op via
+    the ``event_id`` PRIMARY KEY (``INSERT OR IGNORE``). Resilience (NFR-O / NFR-D-5): every
+    write is the caller's to tolerate — ledger.py wraps these so a store fault degrades to
+    in-memory and NEVER blocks the stream.
+    """
+
+    def __init__(self, db_path: str):
+        self.handle = _conn_for(db_path)
+        _ensure_meta(self.handle)
+        with self.handle.lock:
+            self.handle.conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS event_ledger (
+                    seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id   TEXT NOT NULL UNIQUE,
+                    event_type TEXT NOT NULL,
+                    persona_id TEXT DEFAULT '',
+                    at         REAL NOT NULL,
+                    data       TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_ledger_type ON event_ledger(event_type, seq);
+                CREATE INDEX IF NOT EXISTS idx_ledger_persona ON event_ledger(persona_id, seq);
+                CREATE TABLE IF NOT EXISTS change_budget (
+                    tier            TEXT PRIMARY KEY,
+                    last_applied_at REAL DEFAULT 0,
+                    applied_count   INTEGER DEFAULT 0,
+                    window_start    REAL DEFAULT 0,
+                    window_count    INTEGER DEFAULT 0
+                );
+                """
+            )
+            self.handle.conn.commit()
+
+    # --- event_ledger (REQ-OD-007) --------------------------------------- #
+
+    def append_event(self, event_id: str, event_type: str, at: float,
+                     data: Dict[str, Any], persona_id: str = "") -> bool:
+        """Append ONE ledger event idempotently. Returns True if a NEW row was written,
+        False if the ``event_id`` already existed (a replay/retry — no duplicate, REQ-OD-007).
+
+        ``INSERT OR IGNORE`` makes the idempotency the database's job: the same event_id is
+        physically appendable exactly once. History is append-only — there is no UPDATE path.
+        """
+        blob = json.dumps(data, ensure_ascii=False)
+        with self.handle.lock:
+            cur = self.handle.conn.execute(
+                """INSERT OR IGNORE INTO event_ledger(event_id, event_type, persona_id, at, data)
+                   VALUES(?,?,?,?,?)""",
+                (event_id, event_type, str(persona_id or ""), float(at), blob),
+            )
+            self.handle.conn.commit()
+            return bool(cur.rowcount)
+
+    def has_event(self, event_id: str) -> bool:
+        with self.handle.lock:
+            cur = self.handle.conn.cursor()
+            cur.execute("SELECT 1 FROM event_ledger WHERE event_id=? LIMIT 1", (event_id,))
+            return cur.fetchone() is not None
+
+    def events(self, *, event_type: Optional[str] = None, persona_id: Optional[str] = None,
+               limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Read events back in append order (oldest first), optionally filtered by type and/or
+        persona. The continuity read-surface the playbook + director read back (REQ-OD-007/008).
+        ``limit`` (when set) returns the most-recent N in append order."""
+        where = []
+        params: List[Any] = []
+        if event_type is not None:
+            where.append("event_type=?")
+            params.append(event_type)
+        if persona_id is not None:
+            where.append("persona_id=?")
+            params.append(persona_id)
+        clause = (" WHERE " + " AND ".join(where)) if where else ""
+        with self.handle.lock:
+            cur = self.handle.conn.cursor()
+            if limit is not None and limit > 0:
+                cur.execute(
+                    f"SELECT event_id, event_type, persona_id, at, data FROM event_ledger"
+                    f"{clause} ORDER BY seq DESC LIMIT ?",
+                    (*params, int(limit)),
+                )
+                rows = list(reversed(cur.fetchall()))
+            else:
+                cur.execute(
+                    f"SELECT event_id, event_type, persona_id, at, data FROM event_ledger"
+                    f"{clause} ORDER BY seq ASC",
+                    tuple(params),
+                )
+                rows = cur.fetchall()
+        out: List[Dict[str, Any]] = []
+        for r in rows:
+            try:
+                data = json.loads(r["data"])
+            except (json.JSONDecodeError, TypeError):
+                data = {}
+            out.append({
+                "event_id": r["event_id"], "event_type": r["event_type"],
+                "persona_id": r["persona_id"], "at": r["at"], "data": data,
+            })
+        return out
+
+    def event_count(self) -> int:
+        with self.handle.lock:
+            cur = self.handle.conn.cursor()
+            cur.execute("SELECT COUNT(*) AS n FROM event_ledger")
+            return int(cur.fetchone()["n"])
+
+    # --- change_budget (REQ-OD-006 durable rate-limit/cooldown state) ----- #
+
+    def get_budget(self, tier: str) -> Optional[Dict[str, Any]]:
+        with self.handle.lock:
+            cur = self.handle.conn.cursor()
+            cur.execute(
+                "SELECT last_applied_at, applied_count, window_start, window_count "
+                "FROM change_budget WHERE tier=?",
+                (tier,),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+    def set_budget(self, tier: str, *, last_applied_at: float, applied_count: int,
+                   window_start: float, window_count: int) -> None:
+        with self.handle.lock:
+            self.handle.conn.execute(
+                """INSERT INTO change_budget(tier, last_applied_at, applied_count,
+                       window_start, window_count) VALUES(?,?,?,?,?)
+                   ON CONFLICT(tier) DO UPDATE SET
+                       last_applied_at=excluded.last_applied_at,
+                       applied_count=excluded.applied_count,
+                       window_start=excluded.window_start,
+                       window_count=excluded.window_count""",
+                (tier, float(last_applied_at), int(applied_count),
+                 float(window_start), int(window_count)),
+            )
+            self.handle.conn.commit()
+
+
+# --------------------------------------------------------------------------- #
 # brain.db — personas (SPEC-RADIO-PROGRAMMING-007 Group PR / REQ-PR-012)
 # --------------------------------------------------------------------------- #
 

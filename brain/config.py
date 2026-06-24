@@ -464,6 +464,19 @@ class Config:
     craft_evolution_cooldown_seconds: float = field(default_factory=lambda: float(_env("BRAIN_CRAFT_EVOLUTION_COOLDOWN_SEC", "86400")))
     craft_canary_window: int = field(default_factory=lambda: int(_env("BRAIN_CRAFT_CANARY_WINDOW", "10")))
 
+    # --- OPS-004 Group OD: self-learning playbook + the ONE append-only event ledger ---
+    # Master switch for the Group OD keystone (brain/ledger.py): the append-only event ledger
+    # (REQ-OD-007), the director diary (REQ-OD-008), the measured-change budget + rarity tiers
+    # (REQ-OD-006/010), the data-only write rail (REQ-OD-009), and the persistent playbook KB
+    # (REQ-OD-001..005). [HARD] OFF by default: with it off the ledger is NEVER constructed, the
+    # PROGRAMMING-007 store seams receive NO ledger-backed store (they keep their in-memory
+    # behaviour), the diary is never written, and the director tick + playout path stay
+    # BYTE-IDENTICAL to before this SPEC. Additive + opt-in; flipping it ON merely wires the
+    # store seams to the durable events.db ledger (the loops gating their USE remain independently
+    # off behind taste_learning_enabled / craft_learning_enabled). The ledger is exception-
+    # isolated: any store fault degrades to in-memory and NEVER blocks the stream (NFR-O).
+    ledger_enabled: bool = field(default_factory=lambda: _env("BRAIN_LEDGER_ENABLED", "0") not in ("0", "false", "no"))
+
     @property
     def attempts_path(self) -> str:
         return os.path.join(self.db_dir, "attempts.json")

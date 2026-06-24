@@ -32,7 +32,7 @@ log = logging.getLogger("brain.director")
 
 class Director:
     def __init__(self, cfg: Config, library: Library, acquirer: Acquirer, state, stop_event: threading.Event,
-                 show_engine=None, seed=None, diary=None):
+                 show_engine=None, seed=None, diary=None, od_diary=None):
         self.cfg = cfg
         self.library = library
         self.acquirer = acquirer
@@ -56,6 +56,14 @@ class Director:
         # (the show lens, itself [] with shows off). The seed is fed ONLY as the NON-BINDING
         # seed_reference (REQ-SF-004) — it never gates the picker, so the golden rule always wins.
         self.seed = seed
+        # OPS-004 Group OD (REQ-OD-008): the director diary — cross-run editorial continuity.
+        # OPTIONAL + backward-compatible: [HARD] when None (cfg.ledger_enabled off) the tick
+        # writes NO diary entry and is byte-identical to before this SPEC. When wired, a per-tick
+        # note is appended to the ONE OD-007 ledger so the director picks up its own through-line
+        # across cycles/restarts. The write is exception-isolated — a diary fault never breaks the
+        # tick (the never-block rail).
+        self.od_diary = od_diary
+        self._cycle = 0
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
@@ -190,6 +198,22 @@ class Director:
             library=self.library.count(),
             pending=self.acquirer.pending(),
         )
+        # OPS-004 REQ-OD-008: at the end of a cycle, write a director-diary entry onto the ONE
+        # ledger so the editorial through-line carries across runs/restarts. Off (od_diary None)
+        # => no write, byte-identical. The note CONTENT is operational here (the seed/show is the
+        # editorial through-line); that a per-cycle note is recorded is the fixed rail. Exception-
+        # isolated so a diary fault never breaks the tick.
+        if self.od_diary is not None:
+            self._cycle += 1
+            try:
+                self.od_diary.write(
+                    f"cycle {self._cycle}: queued {queued}/{len(batch)}, "
+                    f"library {self.library.count()}",
+                    threads=self._seed_reference(),
+                    cycle=self._cycle,
+                )
+            except Exception as exc:  # noqa: BLE001 - a diary fault never breaks the tick
+                log_event(log, "director.diary_error", error=str(exc))
 
     def _loop(self) -> None:
         # First scan picks up anything already on disk before the first LLM call.

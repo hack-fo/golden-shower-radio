@@ -16,6 +16,7 @@ import logging
 import os
 import signal
 import threading
+import time
 
 from . import llm
 from .acquire import Acquirer
@@ -89,6 +90,37 @@ def run() -> int:
     # active show's lens biases curation (non-binding) + its theme/grounded talking points feed
     # the talk context. It consumes the Last.fm research client (Group LF) + the human-DJ signal
     # registry (Groups SK/SM) as angle FUEL; both are themselves key/flag-gated + graceful.
+    # SPEC-RADIO-OPS-004 Group OD: the ONE append-only event ledger (REQ-OD-007) + the director
+    # diary (REQ-OD-008) + the persistent playbook KB (REQ-OD-001..005). [HARD] OFF by default
+    # (cfg.ledger_enabled): with it off ``od_ledger`` / ``od_diary`` / ``od_show_store`` stay None
+    # and EVERY downstream wiring below is signature-identical to before this SPEC (the seam
+    # write-throughs are simply absent — the PL diary / CL journal / show engine keep their
+    # in-memory behaviour, the loops gating their USE remain independently off). When ON, this
+    # wires the store seams to the durable events.db ledger — the activation connective tissue —
+    # without running any loop. Best-effort: a ledger init fault leaves it None and degrades to
+    # the prior behaviour, never failing boot (NFR-O / NFR-D-5).
+    od_ledger = None
+    od_diary = None
+    od_show_store = None
+    if cfg.ledger_enabled:
+        try:
+            from .sqlite_store import LedgerStore
+            from .ledger import DirectorDiary, EventLedger, Playbook, ShowLedgerStore, SeamWriter
+            from .playbook import craft_context as _craft_context
+            ledger_store = LedgerStore(cfg.events_db_path)
+            od_ledger = EventLedger(store=ledger_store)
+            od_diary = DirectorDiary(od_ledger)
+            od_show_store = ShowLedgerStore(od_ledger)
+            # REQ-OD-002: plan-time seed the playbook KB from the CraftPlaybook content + the
+            # music-history/newscasting dimensions (idempotent — re-seeding never duplicates).
+            playbook = Playbook(od_ledger)
+            if not playbook.is_seeded():
+                seeded = playbook.seed(craft_context=_craft_context())
+                log_event(log, "main.playbook_seeded", entries=seeded)
+            log_event(log, "main.ledger_ready", events=od_ledger.count())
+        except Exception as exc:  # noqa: BLE001 - the ledger is best-effort, never fatal to boot
+            log_event(log, "main.ledger_init_failed", error=str(exc))
+            od_ledger = od_diary = od_show_store = None
     show_engine = None
     if cfg.shows_enabled:
         try:
@@ -96,6 +128,7 @@ def run() -> int:
                 cfg, llm=llm,
                 lastfm=LastfmResearch(cfg),
                 humandj=HumanDjRegistry(cfg),
+                store=od_show_store,
             )
         except Exception as exc:  # noqa: BLE001 - the show engine is best-effort, never fatal
             log_event(log, "main.show_engine_init_failed", error=str(exc))
@@ -130,8 +163,26 @@ def run() -> int:
                 except Exception as exc:  # noqa: BLE001 - one bad enqueue never blocks boot
                     log_event(log, "main.seed_enqueue_error", error=str(exc))
             log_event(log, "main.seed_acquisition", enqueued=queued, total=len(seed.references))
+    # PROGRAMMING-007 Group PL acquisition diary (REQ-PL-003/010), wired to the ONE OD-007
+    # ledger via a SeamWriter when BOTH the ledger AND taste learning are on. [HARD] Both gates
+    # independent + off by default: with taste_learning_enabled off the diary is None and the
+    # tick passes no exclusion sets (byte-identical); with ledger off the diary (if any) has no
+    # store and stays in-memory. Only when BOTH are on does the diary persist through the ledger
+    # — the activation connective tissue (the loop gating its USE is taste_learning_enabled).
+    pl_diary = None
+    if cfg.taste_learning_enabled:
+        try:
+            from .taste import AcquisitionDiary
+            from .ledger import SeamWriter
+            diary_store = (SeamWriter(od_ledger, "acquisition_diary",
+                                      key_fields=("persona_id", "artist", "title", "at"))
+                           if od_ledger is not None else None)
+            pl_diary = AcquisitionDiary(store=diary_store, clock=time.time)
+        except Exception as exc:  # noqa: BLE001 - the diary is best-effort, never fatal to boot
+            log_event(log, "main.pl_diary_init_failed", error=str(exc))
+            pl_diary = None
     director = Director(cfg, library, acquirer, state, stop_event, show_engine=show_engine,
-                        seed=seed)
+                        seed=seed, diary=pl_diary, od_diary=od_diary)
     # KNOWLEDGE-008: the dated, sourced, relational editorial-knowledge store (SQLite in
     # /db). Best-effort - if disabled or the store can't open, the host simply talks from
     # genre/feel only. NEVER on the <1s /api/next pull path. Built before TalkDirector +
