@@ -638,6 +638,32 @@ class Config:
     # playing (REQ-OF-006 / REQ-PG-005 graceful-skip). TUNABLE.
     min_script_words: int = field(default_factory=lambda: int(_env("BRAIN_MIN_SCRIPT_WORDS", "0")))
 
+    # --- SPEC-RADIO-ORCH-005: nervous system (Groups RL/RW/RE/RC/RD/RA/RN/RI) ---------------
+    # [HARD] All ORCH-005 flags are OFF by default; the director tick + playout stay
+    # BYTE-IDENTICAL when off. world_model_enabled gates the WorldModelBuilder sensor read;
+    # listener_memory_enabled gates the ListenerMemory VIEW construction.
+    world_model_enabled: bool = field(default_factory=lambda: _env("BRAIN_WORLD_MODEL_ENABLED", "0") not in ("0", "false", "no"))
+    # Number of cheap ticks before a planning tick (LLM _cognize + cross-store check).
+    planning_tick_interval: int = field(default_factory=lambda: int(_env("BRAIN_PLANNING_TICK_INTERVAL", "20")))
+    # BRAIN_NEWS_FEEDS: JSON array of FeedEntry records (id/url/kind/locality_tier/etc.).
+    # Default: faroese (kvf/dimma) + nordic (svt) + intl (apnews) seed set (REQ-RN-011).
+    news_feeds_json: str = field(default_factory=lambda: _env("BRAIN_NEWS_FEEDS", ""))
+    news_feeds_user_agent: str = field(default_factory=lambda: _env("BRAIN_NEWS_USER_AGENT", "GoldenShowerRadio/1.0 (news feed poller; +radio)"))
+    # [HARD] OFF by default — scraping is disabled unless terms permit (REQ-RN-012).
+    news_scrape_enabled: bool = field(default_factory=lambda: _env("BRAIN_NEWS_SCRAPE_ENABLED", "0") not in ("0", "false", "no"))
+    # OPTIONAL Guardian API enrichment (REQ-RN-012). Empty = disabled.
+    guardian_api_key: str = field(default_factory=lambda: _env("BRAIN_GUARDIAN_API_KEY", ""))
+    # Recency window (seconds) for the no-repeat guard (REQ-RN-003). Default 24 h.
+    news_story_recency_window_seconds: int = field(default_factory=lambda: int(_env("BRAIN_NEWS_STORY_RECENCY_SEC", "86400")))
+    # Staleness threshold (seconds): fetched items older than this are not candidates.
+    news_staleness_threshold_seconds: int = field(default_factory=lambda: int(_env("BRAIN_NEWS_STALENESS_SEC", "43200")))
+    # Cooldown (seconds) between event reactions of the same significance tier (REQ-RE-005).
+    event_reaction_cooldown_seconds: int = field(default_factory=lambda: int(_env("BRAIN_EVENT_REACTION_COOLDOWN_SEC", "1800")))
+    # Cooldown (seconds) between mood-shift reactions (REQ-RE-003 notable tier).
+    mood_shift_cooldown_seconds: int = field(default_factory=lambda: int(_env("BRAIN_MOOD_SHIFT_COOLDOWN_SEC", "3600")))
+    # [HARD] OFF by default — the ListenerMemory VIEW is only constructed when on.
+    listener_memory_enabled: bool = field(default_factory=lambda: _env("BRAIN_LISTENER_MEMORY_ENABLED", "0") not in ("0", "false", "no"))
+
     # --- OPS-004 Group OH: Library Management & Acquisition Policy ---
     # REQ-OH-006 bounded download queue: the acquisition wishlist queue is bounded to this
     # maximum item count; new enqueue() calls return False (deferred) when the queue is at

@@ -27,6 +27,23 @@ from . import seeding
 from . import taste
 from .logging_setup import log_event
 
+# ORCH-005 imports — all optional; when None the tick is byte-identical to before ORCH-005.
+try:
+    from .world_model import WorldModelBuilder
+    from .action_surface import ActionSurface
+    from .news_feeds import FeedPoller, NewsFeedsConfig
+    from .news_ledger import NewsLedger
+    from .listener_memory import ListenerMemory
+    from .event_reaction import EventReactionPolicy
+except ImportError:  # pragma: no cover — only during isolated unit tests without new modules
+    WorldModelBuilder = None  # type: ignore[assignment,misc]
+    ActionSurface = None  # type: ignore[assignment,misc]
+    FeedPoller = None  # type: ignore[assignment,misc]
+    NewsFeedsConfig = None  # type: ignore[assignment,misc]
+    NewsLedger = None  # type: ignore[assignment,misc]
+    ListenerMemory = None  # type: ignore[assignment,misc]
+    EventReactionPolicy = None  # type: ignore[assignment,misc]
+
 log = logging.getLogger("brain.director")
 
 
@@ -106,6 +123,97 @@ class Director:
         self.imaging_system = imaging_system
         self._cycle = 0
         self._thread: threading.Thread | None = None
+        # ORCH-005 (REQ-RL-001/002/007): perception/cognition/action nervous system.
+        # All OPTIONAL + backward-compatible: when None the tick is BYTE-IDENTICAL to before.
+        self._world_model_builder = None
+        self._action_surface = None
+        self._news_feed_poller = None
+        self._news_feed_config = None
+        self._orch_news_ledger = None
+        self._event_reaction_policy = None
+
+    def wire_orch(self, *, world_model_builder=None, action_surface=None,
+                  news_feed_poller=None, news_feed_config=None,
+                  orch_news_ledger=None, event_reaction_policy=None) -> None:
+        """Wire ORCH-005 modules post-construction (REQ-RL-001). All optional; caller sets
+        only what it has. No-op when all are None — existing behavior preserved."""
+        if world_model_builder is not None:
+            self._world_model_builder = world_model_builder
+        if action_surface is not None:
+            self._action_surface = action_surface
+        if news_feed_poller is not None:
+            self._news_feed_poller = news_feed_poller
+        if news_feed_config is not None:
+            self._news_feed_config = news_feed_config
+        if orch_news_ledger is not None:
+            self._orch_news_ledger = orch_news_ledger
+        if event_reaction_policy is not None:
+            self._event_reaction_policy = event_reaction_policy
+
+    def _perceive(self):
+        """Build world model snapshot (REQ-RL-001 perception phase). None when disabled."""
+        if self._world_model_builder is None:
+            return None
+        try:
+            return self._world_model_builder.build()
+        except Exception as exc:  # noqa: BLE001
+            log_event(log, "director.perceive_error", error=str(exc))
+            return None
+
+    def _cognize(self, wm) -> None:
+        """Cognition phase: cross-store maintenance (REQ-RL-007). No-op when disabled."""
+        if self._action_surface is None or wm is None:
+            return
+        try:
+            self._cross_store_maintenance(wm)
+        except Exception as exc:  # noqa: BLE001
+            log_event(log, "director.cognize_error", error=str(exc))
+
+    def _cross_store_maintenance(self, wm) -> None:
+        """Cross-store imbalance check + dispatch (REQ-RL-007).
+
+        Reads the integrated world model, detects imbalances across inventories, and
+        dispatches targeted maintenance ONLY through the existing ActionSurface. [HARD] No
+        new action kinds, no new stores — dispatches only via REQ-RA-001 actions, bounded
+        by OPS-004 REQ-OD-006 measured-change rails (the ActionSurface's ledger records it).
+        """
+        # Library coverage vs wishlist low-watermark → trigger acquisition if low
+        if not wm.library_stats_stale:
+            track_count = wm.library_stats.get("track_count", 0)
+            pending = wm.acquisition_state.get("pending", 0) if not wm.acquisition_state_stale else 0
+            if (track_count + pending) < self.cfg.wishlist_low_watermark:
+                self._action_surface.trigger_acquisition(reason="cross_store:low_library_coverage")
+
+        # Listener response demand vs talk buffer → schedule a talk break if demand signals
+        if not wm.listener_response_memory_stale:
+            demand = wm.listener_response_memory.get("demand_items", [])
+            if demand:
+                self._action_surface.enqueue_talk({"source": "cross_store_maintenance",
+                                                   "demand_items": demand})
+
+        log_event(log, "director.cross_store_check",
+                  library_stale=wm.library_stats_stale,
+                  topic_stale=wm.topic_bank_inventory_stale,
+                  listener_stale=wm.listener_response_memory_stale)
+
+    def _poll_news_feeds(self) -> None:
+        """Poll news feeds on the cheap-tick cadence (REQ-RN-008). Never the pull path."""
+        if self._news_feed_poller is None or self._orch_news_ledger is None:
+            return
+        if self._news_feed_config is None:
+            return
+        try:
+            items = self._news_feed_poller.poll_all(self._news_feed_config)
+            for item in items:
+                self._orch_news_ledger.record_fetched(
+                    story_id=item.story_key(),
+                    source_name=item.source_name,
+                    source_url=item.url,
+                    headline=item.headline,
+                    locality_tier=item.locality_tier,
+                )
+        except Exception as exc:  # noqa: BLE001
+            log_event(log, "director.news_feed_poll_error", error=str(exc))
 
     def start(self) -> None:
         self._thread = threading.Thread(target=self._loop, name="director", daemon=True)
@@ -337,8 +445,13 @@ class Director:
     def _loop(self) -> None:
         # First scan picks up anything already on disk before the first LLM call.
         self.library.scan()
-        # Kick off an immediate batch so the station starts filling right away.
+        # Initial planning tick: perception → existing LLM curation → cognition.
+        # ORCH-005: _perceive builds world model; _safe_tick runs the LLM batch;
+        # _cognize runs cross-store maintenance. When ORCH-005 is unwired all three
+        # are no-ops and behaviour is BYTE-IDENTICAL to before this SPEC.
+        wm = self._perceive()
         self._safe_tick()
+        self._cognize(wm)
 
         next_scheduled = time.time() + self.cfg.director_interval_seconds
         while not self.stop_event.is_set():
@@ -346,10 +459,19 @@ class Director:
             self.stop_event.wait(15.0)
             if self.stop_event.is_set():
                 break
+
+            # --- CHEAP TICK (REQ-RL-002): no LLM call ---
+            # Scan library, refresh world model, poll news feeds. These run every 15s.
             try:
                 self.library.scan()
             except Exception as exc:  # noqa: BLE001
                 log_event(log, "director.scan_error", error=str(exc))
+
+            # Perception: build world model snapshot (cheap sensors only when not planning).
+            wm = self._perceive()
+
+            # News feed polling rides the cheap cadence (REQ-RN-008 — NOT a new loop).
+            self._poll_news_feeds()
 
             backlog = self.acquirer.pending()
             library = self.library.count()
@@ -363,7 +485,9 @@ class Director:
             low = (backlog + library) < self.cfg.wishlist_low_watermark
             due = now >= next_scheduled
             if low or due:
+                # --- PLANNING TICK (REQ-RL-002): LLM curation + cognition ---
                 self._safe_tick()
+                self._cognize(wm)
                 next_scheduled = time.time() + self.cfg.director_interval_seconds
 
     def _safe_tick(self) -> None:

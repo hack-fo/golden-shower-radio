@@ -117,10 +117,21 @@ PROGRAM_EVENT_TYPES: Tuple[str, ...] = (
 # News & newscasting events (Group OG — the AI's evolving trusted-source list + air/skip audit
 # is a news-typed VIEW over THIS ledger, no new store, REQ-OG-002/005/009). ``news_source_*``
 # project the current trusted-source list; ``news_aired`` / ``news_skipped`` audit each newscast
-# slot's outcome (aired-with-attribution vs skipped-without-blocking).
+# slot's outcome (aired-with-attribution vs skipped-without-blocking). ``news_fetched`` records
+# each feed-poller fetch so the ORCH-005 news ledger (Group RN) can build candidates without a
+# second store (REQ-RN-001 — all news events on the ONE OD-007 ledger).
 NEWS_EVENT_TYPES: Tuple[str, ...] = (
     "news_source_added", "news_source_removed", "news_source_evaluated",
-    "news_aired", "news_skipped",
+    "news_aired", "news_skipped", "news_fetched",
+)
+
+# ORCH-005 orchestration events — the nervous-system groups (Groups RL/RW/RE/RC/RD/RA/RN/RI).
+# ``listener_response`` is the ORCH-005 action-outcome event the ListenerMemory VIEW writes when
+# the director takes an action on a pending listener signal (Group RI); ``event_reaction`` is the
+# director's graded reaction to an incoming world event (Group RE); ``special_event_declared``
+# marks a significant non-routine event that may shift the station's mood/format for a window.
+ORCH_EVENT_TYPES: Tuple[str, ...] = (
+    "listener_response", "event_reaction", "special_event_declared",
 )
 
 # Self-produced imaging & jingles events (Group OE — the station's own IDs/sweepers/jingles.
@@ -140,7 +151,7 @@ EVENT_VOCABULARY: Tuple[str, ...] = (
     CORE_EVENT_TYPES + HYPOTHESIS_EVENT_TYPES + TOPIC_EVENT_TYPES
     + SEGMENT_TYPE_EVENT_TYPES + LIFECYCLE_EVENT_TYPES + SEAM_EVENT_TYPES
     + PLAYBOOK_EVENT_TYPES + PROGRAM_EVENT_TYPES + NEWS_EVENT_TYPES
-    + IMAGING_EVENT_TYPES
+    + IMAGING_EVENT_TYPES + ORCH_EVENT_TYPES
 )
 
 
