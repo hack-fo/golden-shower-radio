@@ -428,6 +428,7 @@ class TalkDirector:
             outcome = grounding.run_gate(
                 script, contract, regenerate=_regenerate, adversarial=adversarial,
                 pv_ctx=pv_ctx, ear_ctx=ear_ctx,
+                min_words=getattr(self.cfg, "min_script_words", 0),
             )
             if outcome.skipped:
                 log_event(log, "talk.gate_skip",

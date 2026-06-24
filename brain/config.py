@@ -629,6 +629,55 @@ class Config:
     # filling the remainder under sidechain ducking. 1.0 == dry voice only (no bed). TUNABLE.
     imaging_dry_ratio: float = field(default_factory=lambda: float(_env("BRAIN_IMAGING_DRY_RATIO", "0.70")))
 
+    # --- OPS-004 Group OF: Liveliness & Quality Constraints ---
+    # REQ-OF-006 word-target minimum: the script quality gate (brain/grounding.py run_gate)
+    # rejects a generated break below this TOTAL word count and regenerates it (the word-minimum
+    # check rides the SAME regenerate-then-skip loop as anti-slop + forbidden-fact). 0 == no
+    # minimum (the default; OFF preserves byte-identical gate behaviour). When > 0 a too-short
+    # script FAILS Tier-1 and is regenerated once; a second FAIL SKIPS the break — music keeps
+    # playing (REQ-OF-006 / REQ-PG-005 graceful-skip). TUNABLE.
+    min_script_words: int = field(default_factory=lambda: int(_env("BRAIN_MIN_SCRIPT_WORDS", "0")))
+
+    # --- OPS-004 Group OH: Library Management & Acquisition Policy ---
+    # REQ-OH-006 bounded download queue: the acquisition wishlist queue is bounded to this
+    # maximum item count; new enqueue() calls return False (deferred) when the queue is at
+    # capacity, so the brain never amasses an uncontrolled download pile. 0 == unbounded
+    # (default; preserves byte-identical behaviour). TUNABLE.
+    max_acquire_queue: int = field(default_factory=lambda: int(_env("BRAIN_MAX_ACQUIRE_QUEUE", "0")))
+    # REQ-OH-006 throttle floor: acquisition is also throttled when the library has fewer
+    # than this many tracks (below the floor, acquire freely; above it, apply the queue cap).
+    # 0 == no floor. TUNABLE.
+    acquire_throttle_library_floor: int = field(default_factory=lambda: int(_env("BRAIN_ACQUIRE_THROTTLE_LIBRARY_FLOOR", "0")))
+    # REQ-OH-007 wishlist want-count: an off-catalog request becomes an acquisition candidate
+    # only after this many DISTINCT listeners have requested the same track. 1 == promote on
+    # first request (Director still decides). TUNABLE; [HARD] auto-acquire on a single request
+    # is prohibited — Director's curatorial discretion is always the final gate.
+    wishlist_min_want_count: int = field(default_factory=lambda: int(_env("BRAIN_WISHLIST_MIN_WANT_COUNT", "2")))
+    # REQ-OH-005 Bandcamp recommendation: optional webhook URL to POST buy-this recommendations
+    # when the AI finds music it wants but cannot obtain via slskd/yt-dlp. Empty string == log-
+    # only (no HTTP call). TUNABLE.
+    bandcamp_webhook: str = field(default_factory=lambda: _env("BRAIN_BANDCAMP_WEBHOOK", ""))
+    # REQ-OH-008 disk-guard with hysteresis: master switch. OFF by default preserves byte-
+    # identical behaviour. When ON, a background watcher monitors free disk on the download
+    # volume; when free space falls below ``disk_pause_min_free_gb`` acquisition is PAUSED;
+    # it RESUMES only when free space rises above ``disk_resume_min_free_gb`` (strictly higher
+    # — the hysteresis gap prevents rapid flapping). The guard NEVER affects playout.
+    disk_guard_enabled: bool = field(default_factory=lambda: _env("BRAIN_DISK_GUARD_ENABLED", "0") not in ("0", "false", "no"))
+    # REQ-OH-004/OH-008 disk thresholds (GB). [HARD] resume must be > pause (hysteresis).
+    # These are TUNABLE; the hysteresis invariant is the FIXED rail.
+    disk_pause_min_free_gb: float = field(default_factory=lambda: float(_env("BRAIN_DISK_PAUSE_FREE_GB", "2.0")))
+    disk_resume_min_free_gb: float = field(default_factory=lambda: float(_env("BRAIN_DISK_RESUME_FREE_GB", "3.0")))
+    # REQ-OH-008 watcher poll interval (seconds). TUNABLE.
+    disk_watch_interval_seconds: float = field(default_factory=lambda: float(_env("BRAIN_DISK_WATCH_INTERVAL_SEC", "60.0")))
+    # REQ-OH-004 eviction: master switch for the least-value eviction worker. OFF by default.
+    # When ON, the DiskGuard triggers eviction when the pause threshold is crossed to free space
+    # by removing least-played + lower-quality-duplicate tracks. TUNABLE.
+    library_evict_enabled: bool = field(default_factory=lambda: _env("BRAIN_LIBRARY_EVICT_ENABLED", "0") not in ("0", "false", "no"))
+    # REQ-OH-003 library folder organization: when ON the brain moves newly downloaded files
+    # into a clean Artist/Title subfolder structure within music_dir. OFF = flat (default,
+    # byte-identical). TUNABLE; the organization scheme is the AI's to choose/evolve.
+    library_organize_enabled: bool = field(default_factory=lambda: _env("BRAIN_LIBRARY_ORGANIZE_ENABLED", "0") not in ("0", "false", "no"))
+
     @property
     def attempts_path(self) -> str:
         return os.path.join(self.db_dir, "attempts.json")

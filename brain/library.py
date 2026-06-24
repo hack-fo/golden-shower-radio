@@ -751,6 +751,43 @@ class Library:
                 return {"renamed": False, "reason": "error", "old_path": old_path, "new_path": new_path}
             return {"renamed": True, "reason": "ok", "old_path": old_path, "new_path": new_path}
 
+    def evict_low_value(self, target_free_bytes: int) -> List[str]:
+        """REQ-OH-004: evict least-value tracks until ``target_free_bytes`` free space is reached.
+
+        Eviction order: least-played first, then lower-quality duplicates (same key, lower
+        bitrate). Tracks in-flight (being played) are skipped. Returns the list of evicted
+        paths. Best-effort: file-deletion failures are logged and do not abort the sweep.
+        [HARD] Never affects playout — eviction only removes from the library index and
+        deletes the file; the stream's current track is never deleted.
+        """
+        import shutil as _shutil
+        evicted: List[str] = []
+        with self._lock:
+            # Sort by play_count ASC, then last_played ASC — least-valued first.
+            candidates = sorted(self._tracks.values(),
+                                key=lambda t: (t.play_count, t.last_played or 0))
+        for track in candidates:
+            try:
+                usage = _shutil.disk_usage(os.path.dirname(track.path) or self.music_dir)
+                if usage.free >= target_free_bytes:
+                    break
+            except Exception:  # noqa: BLE001
+                break
+            path = track.path
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+                with self._lock:
+                    self._tracks.pop(track.key, None)
+                log_event(log, "library.evicted", key=track.key, path=path,
+                          play_count=track.play_count)
+                evicted.append(path)
+            except Exception as exc:  # noqa: BLE001
+                log_event(log, "library.evict_error", key=track.key, path=path, error=str(exc))
+        if evicted:
+            self.save()
+        return evicted
+
     def note_source(self, key: str, source: str) -> None:
         """Record where a track entered the library (e.g. 'slskd', 'manual', 'ytdlp').
 

@@ -346,6 +346,20 @@ def scan_anti_slop(text: str) -> List[str]:
     return violations
 
 
+def scan_word_minimum(script: str, min_words: int) -> List[str]:
+    """Return a violation when ``script`` is below ``min_words`` total words (REQ-OF-006).
+
+    0 (the default) == no minimum — byte-identical to before Group OF. Empty list == passes.
+    The check rides the existing Tier-1 gate: a too-short script is regenerated once and, if
+    still too short, the break is SKIPPED rather than aired (graceful-skip, never-block)."""
+    if min_words <= 0 or not script:
+        return []
+    word_count = len(script.split())
+    if word_count < min_words:
+        return [f"word-minimum: {word_count} words < required {min_words}"]
+    return []
+
+
 def _looks_like_adjective_pile(match: "re.Match") -> bool:
     """A rule-of-three is slop only when it reads as an ADJECTIVE pile (warm, hazy, and
     hypnotic), not a plain list of nouns (drums, bass, and guitar). Heuristic: reject the
@@ -503,10 +517,10 @@ def _quote_is_sourced(quote: str, contract: FactContract) -> bool:
 # =====================================================================================
 
 def tier1_lint(script: str, contract: FactContract, pv_ctx: Any = None,
-               ear_ctx: Any = None) -> GateResult:
+               ear_ctx: Any = None, min_words: int = 0) -> GateResult:
     """Run the full Tier-1 deterministic lint (REQ-PG-005): anti-slop (REQ-PG-004) +
     forbidden-fact (REQ-PG-002) + comparison-grounding (REQ-PG-003) + quote-sourcing
-    (REQ-PG-008). LLM-free and fully testable. PASS == every sub-scan clean.
+    (REQ-PG-008) + optional word-minimum (REQ-OF-006). LLM-free. PASS == every sub-scan clean.
 
     ``pv_ctx`` (SPEC-RADIO-PROGRAMMING-007 Group PV) is OPTIONAL and DEFAULTS to None. When
     None the PV part is BYTE-IDENTICAL to the Group PG form (the PV delivery-craft lints do not
@@ -520,8 +534,13 @@ def tier1_lint(script: str, contract: FactContract, pv_ctx: Any = None,
     ``ear_writing.EarLintContext`` is supplied the Group PS SCRIPT-side ear-writing lints RIDE
     this gate: over-long sentences (REQ-PS-001), missing contractions + crowd address
     (REQ-PS-002), rhythm/breath (REQ-PS-003), oversized blank-line blocks (REQ-PS-004), and raw
-    digits (REQ-PS-005). PROGRAMMING owns all these checks; OPS-004 owns the base engine."""
+    digits (REQ-PS-005). PROGRAMMING owns all these checks; OPS-004 owns the base engine.
+
+    ``min_words`` (OPS-004 Group OF REQ-OF-006): 0 == no minimum (default; byte-identical).
+    When > 0, a script below this total word count FAILS and is regenerated like any other
+    Tier-1 violation; graceful-skip if still failing after the bounded attempt count."""
     violations: List[str] = []
+    violations += scan_word_minimum(script, min_words)      # REQ-OF-006
     violations += scan_anti_slop(script)
     violations += scan_forbidden_facts(script, contract)
     violations += scan_comparisons(script, contract)
@@ -585,8 +604,9 @@ def run_gate(
     max_attempts: int = MAX_REGENERATE_ATTEMPTS,
     pv_ctx: Any = None,
     ear_ctx: Any = None,
+    min_words: int = 0,
 ) -> "GateOutcome":
-    """The two-tier quality gate with regenerate-once-then-skip (REQ-PG-005).
+    """The two-tier quality gate with regenerate-once-then-skip (REQ-PG-005 / REQ-OF-006).
 
     Runs Tier-1 then Tier-2 on ``script``. On a FAIL it calls ``regenerate(violations)``
     (which returns a fresh script) up to ``max_attempts`` times; if the regenerated script
@@ -594,16 +614,17 @@ def run_gate(
     a skipped break keeps music playing (never-stops). Returns a ``GateOutcome`` carrying
     the final airable script (or None to skip) + the last GateResult + the attempt count.
 
+    ``min_words`` (REQ-OF-006): 0 == no word-count minimum (default; byte-identical).
     With ``regenerate`` None there is no second attempt: a first FAIL goes straight to SKIP.
     """
-    # @MX:ANCHOR: [AUTO] never-ship-a-FAIL is the fixed rail (REQ-PG-005)
+    # @MX:ANCHOR: [AUTO] never-ship-a-FAIL is the fixed rail (REQ-PG-005 / REQ-OF-006)
     # @MX:REASON: this orchestration is THE guard that a script failing the two-tier gate
     #   never reaches air. Every talk break (and, via run_episode_gate, every long-form
     #   episode) funnels through this contract. A change that returns a failing script here
     #   would air a confident wrong fact — the exact failure mode the whole group prevents.
     attempts = 0
     current = script
-    last_result = _check_once(current, contract, adversarial, pv_ctx, ear_ctx)
+    last_result = _check_once(current, contract, adversarial, pv_ctx, ear_ctx, min_words)
     while not last_result.passed and regenerate is not None and attempts < max_attempts:
         attempts += 1
         fresh = regenerate(list(last_result.violations))
@@ -611,7 +632,7 @@ def run_gate(
             # Regeneration itself produced nothing -> skip (cannot ship a FAIL).
             return GateOutcome(script=None, result=last_result, attempts=attempts, skipped=True)
         current = fresh
-        last_result = _check_once(current, contract, adversarial, pv_ctx, ear_ctx)
+        last_result = _check_once(current, contract, adversarial, pv_ctx, ear_ctx, min_words)
     if last_result.passed:
         return GateOutcome(script=current, result=last_result, attempts=attempts, skipped=False)
     # Still failing after the bounded retries -> SKIP (never ship a FAIL).
@@ -620,12 +641,14 @@ def run_gate(
 
 def _check_once(script: str, contract: FactContract,
                 adversarial: Optional[AdversarialChecker],
-                pv_ctx: Any = None, ear_ctx: Any = None) -> GateResult:
+                pv_ctx: Any = None, ear_ctx: Any = None,
+                min_words: int = 0) -> GateResult:
     """One pass of both tiers; the aggregate FAILS if any tier fails. With ``pv_ctx`` the
     Group PV Tier-1 lints ride Tier-1 and the PV deterministic Tier-2 smuggled-token scan
     (REQ-PV-016) rides Tier-2 (it runs LLM-free, alongside the adversarial pass). With
-    ``ear_ctx`` the Group PS script-side ear-writing lints (REQ-PS-001..005) ride Tier-1."""
-    t1 = tier1_lint(script, contract, pv_ctx, ear_ctx)
+    ``ear_ctx`` the Group PS script-side ear-writing lints (REQ-PS-001..005) ride Tier-1.
+    With ``min_words`` > 0, the REQ-OF-006 word-minimum check rides Tier-1."""
+    t1 = tier1_lint(script, contract, pv_ctx, ear_ctx, min_words)
     if not t1.passed:
         return t1
     t2 = tier2_adversarial(script, contract, adversarial)

@@ -34,6 +34,31 @@ log = logging.getLogger("brain.acquire")
 RETRY_COOLDOWN = 6 * 3600
 
 
+def emit_bandcamp_recommendation(cfg: Config, artist: str, title: str,
+                                  reason: str = "") -> None:
+    """Emit a REQ-OH-005 Bandcamp buy-this recommendation.
+
+    Always logs a ``bandcamp_recommend`` event (surfaced in health/status, NFR-O-6).
+    If ``cfg.bandcamp_webhook`` is non-empty, also POSTs a JSON payload to that URL.
+    Best-effort: HTTP failures are logged and silently ignored — the recommendation
+    channel NEVER blocks acquisition or playout.
+    """
+    log_event(log, "bandcamp_recommend", artist=artist, title=title, reason=reason)
+    webhook = getattr(cfg, "bandcamp_webhook", "")
+    if not webhook:
+        return
+    try:
+        import urllib.request
+        import json as _json
+        payload = _json.dumps({"artist": artist, "title": title, "reason": reason}).encode()
+        req = urllib.request.Request(webhook, data=payload,
+                                      headers={"Content-Type": "application/json"},
+                                      method="POST")
+        urllib.request.urlopen(req, timeout=5)
+    except Exception as exc:  # noqa: BLE001
+        log_event(log, "bandcamp_recommend.webhook_error", error=str(exc))
+
+
 class RateLimiter:
     """Simple sliding-window limiter for slskd searches."""
 
@@ -159,7 +184,12 @@ class Acquirer:
         self.library = library
         self.state = state
         self.stop_event = stop_event
-        self.wishlist: "queue.Queue[WishItem]" = queue.Queue()
+        # REQ-OH-006: bounded queue — 0 means unbounded (default; byte-identical behaviour).
+        _qmax = max(0, int(getattr(cfg, "max_acquire_queue", 0)))
+        self.wishlist: "queue.Queue[WishItem]" = (
+            queue.Queue(maxsize=_qmax) if _qmax > 0 else queue.Queue()
+        )
+        self._queue_bound: int = _qmax  # 0 == unbounded
         self.attempts = AttemptsIndex(cfg.attempts_path, backend=getattr(cfg, "store_backend", "sqlite"))
         self.limiter = RateLimiter(cfg.max_searches_per_window, cfg.search_window_seconds)
         self._slskd = SlskdClient(cfg.slskd_url, cfg.slskd_api_key)
@@ -177,6 +207,9 @@ class Acquirer:
         self._dedup_counts: Dict[str, int] = {
             "reject_duplicate": 0, "allow_distinct_version": 0, "allow_new": 0,
         }
+        # REQ-OH-008: optional DiskGuard (set by main.py when disk_guard_enabled). When None
+        # the guard is a no-op; is_paused() is never called and enqueue() behaves as before.
+        self.disk_guard = None
 
     # -- wishlist API ------------------------------------------------------------
 
@@ -184,12 +217,25 @@ class Acquirer:
         return self.wishlist.qsize()
 
     def enqueue(self, artist: str, title: str) -> bool:
-        """Queue a track unless it's already in library, attempted, or in flight."""
+        """Queue a track unless it's already in library, attempted, in-flight, or throttled.
+
+        REQ-OH-006: returns False (deferred) when the bounded queue is at capacity or when
+        the library is above the throttle floor and the queue is full.
+        REQ-OH-008: returns False when the DiskGuard reports acquisition is paused (low disk).
+        """
         item = WishItem(artist=artist, title=title)
         if not item.artist and not item.title:
             return False
         key = item.key
         if self.library.has_key(key) or self.attempts.should_skip(key):
+            return False
+        # REQ-OH-008: disk-guard pause check (never blocks playout).
+        if self.disk_guard is not None and self.disk_guard.is_paused():
+            log_event(log, "acquire.enqueue_paused_disk", key=key)
+            return False
+        # REQ-OH-006: bounded-queue / throttle check.
+        if self._queue_bound > 0 and self.wishlist.full():
+            log_event(log, "acquire.enqueue_queue_full", key=key, bound=self._queue_bound)
             return False
         with self._inflight_lock:
             if key in self._inflight_keys:
@@ -197,6 +243,16 @@ class Acquirer:
             self._inflight_keys.add(key)
         self.wishlist.put(item)
         return True
+
+    def stats(self) -> dict:
+        """REQ-OH-006: acquisition accounting snapshot for health/status (NFR-O-6)."""
+        return {
+            "library_size": self.library.count(),
+            "pending_queue": self.wishlist.qsize(),
+            "queue_bound": self._queue_bound or None,
+            "disk_guard_paused": (self.disk_guard.is_paused()
+                                   if self.disk_guard is not None else None),
+        }
 
     # -- workers -----------------------------------------------------------------
 
