@@ -31,6 +31,16 @@ Build the 8 unbuilt groups, dependency order. Each FULL.
 Note: PG/PV/PI/PC carry the FROZEN invariant set (never-ship-a-FAIL, grounding/fact-contract,
 anti-convergence firewall, banned-phrase firewall, persona anchor block, craft-learning honesty rails).
 
+## PHASE 1.5 — VOICE-002 (Qwen-TTS + Chatterbox providers + A/B) [user-placed 2026-06-24]
+The render layer (speaks what PROGRAMMING-007 writes). Add QWEN-TTS (24 kHz) + CHATTERBOX (22.05 kHz)
+provider classes behind the EXISTING pluggable TTSProvider interface (brain/voice.py; Kokoro primary + Piper
+fallback + teldutala.fo Faroese already there), plus an A/B harness that renders identical sample scripts
+per engine. The CODE is build-now (provider classes + harness, model calls stubbable in tests). The A/B
+DECISION — picking the primary — is USER-IN-THE-LOOP and needs: engines installed + the RTX 2000 Ada
+plumbed into Docker (not done) + the user's ears. User leans QWEN as frontrunner (confirm on the real GPU,
+don't bank it pre-test). The pluggable seam = the winner swaps in without touching personas/talk/minting.
+Settles PV-018's long-form ducked-bed render dependency. See [[voice-tts-ab]].
+
 ## PHASE 2 — OPS-004 (program director; only thin director-loop surface built)
 Build the unbuilt bulk, FULL. Groups (read the spec for the full set): imaging/IDs, the NEWS ANCHOR
 (news source list under INTEGRITY-033 SU governance + factual newscast + Faroese angle), world-model
