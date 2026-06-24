@@ -16,7 +16,12 @@ stays lean. Engine choice is verified to fit 8 GB (see Sources at bottom).
 - Run ONE engine at a time for the A/B (no co-residency needed; both fit individually).
 - Kokoro (current primary) stays the baseline of the A/B; Piper stays the CPU fallback.
 
-## Model storage — F: (/mnt/f, writable, ~37 GB free) [user-directed 2026-06-24]
+## Model storage — F: (/mnt/f, writable) [user-directed 2026-06-24]
+**DOWNLOADED already (2026-06-24):** Voxtral-TTS-2603 is on F: at `/mnt/f/gsr-models/Voxtral-TTS-2603`
+(7.5 GB `consolidated.safetensors` + `tekken.json` + `params.json` + `voice_embedding/`; Mistral native
+format — load via mistral-inference/vLLM, NOT HF transformers config). The VOICE-002 build must use this
+local copy, not re-download. Qwen3-TTS-0.6B + Chatterbox-Turbo still to pull to the same dir (~30 GB free).
+
 Store ALL engine weights (Voxtral-TTS-4B, Qwen3-TTS-0.6B, Chatterbox-Turbo) on F: to keep the ext4 home
 lean. Download target `/mnt/f/gsr-models`, mounted into the tts sidecar as the model-cache volume
 (`HF_HOME=/mnt/f/gsr-models/hf`). CAVEAT: F: is an NTFS Windows mount; the HF hub cache uses blob<->snapshot
