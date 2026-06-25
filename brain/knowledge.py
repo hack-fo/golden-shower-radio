@@ -139,7 +139,7 @@ JOB_PRESHOW = "preshow"
 # --------------------------------------------------------------------------------
 SRC_MUSICBRAINZ = "musicbrainz"
 SRC_WIKIDATA = "wikidata"
-SRC_WIKIPEDIA = "wikipedia"
+SRC_WIKIPEDIA = "wikipedia"         # crowd-sourced; cite Wikipedia's own sources, not Wikipedia itself
 SRC_LASTFM = "lastfm"
 SRC_OFFICIAL = "official"           # official artist / label pages
 SRC_PRESS = "press"                 # reputable music press (generic)
@@ -152,11 +152,18 @@ SRC_AQUARIUM_DRUNKARD = "aquarium_drunkard"
 SRC_BANDCAMP_DAILY = "bandcamp_daily"
 SRC_STEREOGUM = "stereogum"
 SRC_WHOSAMPLED = "whosampled"
+# HOSTLIFE-032 / OPS-004: additional verified music press (user-confirmed 2026-06-25)
+SRC_PASTE = "paste"                 # Paste Magazine — music + culture journalism
+SRC_THE_FADER = "the_fader"        # The Fader — music + youth culture
+SRC_NME = "nme"                     # New Musical Express
+SRC_DJ_MAGAZINE = "dj_magazine"    # DJ Magazine — electronic / DJ culture
+SRC_FUTURE_MUSIC = "future_music"  # Future Music — production / technology / artists
 
 VERIFIED_SOURCES = frozenset({
     SRC_MUSICBRAINZ, SRC_WIKIDATA, SRC_WIKIPEDIA, SRC_LASTFM, SRC_OFFICIAL, SRC_PRESS,
     SRC_DISCOGS, SRC_GUARDIAN, SRC_BBC, SRC_PITCHFORK,
     SRC_AQUARIUM_DRUNKARD, SRC_BANDCAMP_DAILY, SRC_STEREOGUM, SRC_WHOSAMPLED,
+    SRC_PASTE, SRC_THE_FADER, SRC_NME, SRC_DJ_MAGAZINE, SRC_FUTURE_MUSIC,
 })
 
 # Authoritative structured sources weigh MORE in the per-fact confidence (REQ-KS-006,
@@ -179,15 +186,21 @@ SOURCE_TIERS: Dict[str, str] = {
     SRC_WIKIDATA:          TIER_AUTHORITATIVE_STRUCTURED,
     SRC_DISCOGS:           TIER_AUTHORITATIVE_STRUCTURED,
     SRC_OFFICIAL:          TIER_REPUTABLE_PRESS,
-    SRC_WIKIPEDIA:         TIER_REPUTABLE_PRESS,
     SRC_GUARDIAN:          TIER_REPUTABLE_PRESS,
     SRC_BBC:               TIER_REPUTABLE_PRESS,
     SRC_PITCHFORK:         TIER_REPUTABLE_PRESS,
     SRC_PRESS:             TIER_REPUTABLE_PRESS,
+    SRC_PASTE:             TIER_REPUTABLE_PRESS,
+    SRC_THE_FADER:         TIER_REPUTABLE_PRESS,
+    SRC_NME:               TIER_REPUTABLE_PRESS,
+    SRC_DJ_MAGAZINE:       TIER_REPUTABLE_PRESS,
+    SRC_FUTURE_MUSIC:      TIER_REPUTABLE_PRESS,
     SRC_AQUARIUM_DRUNKARD: TIER_EDITORIAL_BLOG,
     SRC_BANDCAMP_DAILY:    TIER_EDITORIAL_BLOG,
     SRC_STEREOGUM:         TIER_EDITORIAL_BLOG,
     SRC_WHOSAMPLED:        TIER_EDITORIAL_BLOG,
+    # Wikipedia is crowd-sourced: cite its referenced sources directly; never cite Wikipedia itself
+    SRC_WIKIPEDIA:         TIER_CROWD,
     SRC_LASTFM:            TIER_CROWD,
 }
 
