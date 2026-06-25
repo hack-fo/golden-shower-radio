@@ -96,10 +96,14 @@ dB heuristic can decide to hard-cut, which this design rules out.
   ╔══════════════════════════════════════════════════════╗
   ║  On Air Right Now                                    ║
   ║                                                      ║
-  ║  → 7 host personas  (5 English, 2 Faroese)           ║
-  ║  → Each with a distinct voice, taste, and charter    ║
-  ║  → Each reads the news and forms opinions about it   ║
-  ║  → None of them have met. They share no taste.       ║
+  ║  → A roster of host personas, each with a distinct   ║
+  ║    voice, taste, and charter                         ║
+  ║  → A permanent newscaster reads the news in English, ║
+  ║    then again in Faroese (Faroese sources focused)   ║
+  ║  → Hosts live like real show hosts: music press,     ║
+  ║    magazines, gigs, records on the turntable at home ║
+  ║  → Tastes overlap a little — they're humans, not     ║
+  ║    algorithms. But they never converge.              ║
   ║                                                      ║
   ║  The brain decides the format, the hosts, the order. ║
   ║  The human decides nothing. That's the point.        ║
@@ -111,8 +115,9 @@ Each host persona has:
 - A **charter** — their genres, eras, moods, and obsessions
 - A **voice** — a distinct Kokoro TTS speaker, 1:1, never shared
 - A **taste envelope** — a probability distribution that evolves with every track
-- A **lived-experience loop** — they read real news, react to it, and arrive at
-  each show with grounded talking points from actual things that happened
+- A **cultural life** — they read music press and magazines, catch gigs, talk
+  about records they've been living with; they arrive at each show as a person
+  would, not as a news aggregator
 - A **fact contract** — everything they say on air comes from the dated,
   sourced editorial knowledge base. If it can't be cited, it doesn't get said.
 
