@@ -56,6 +56,11 @@ def run() -> int:
         log_event(log, "main.dropped_anthropic_api_key",
                   note=f"forcing {cfg.llm_auth_mode} auth")
 
+    # ADMIN-041: warn (do not block) when the admin panel is enabled with a weak token.
+    if cfg.admin_token and len(cfg.admin_token) < 32:
+        log_event(log, "main.admin_token_weak",
+                  note="BRAIN_ADMIN_TOKEN is shorter than 32 chars; use a stronger secret")
+
     os.makedirs(cfg.db_dir, exist_ok=True)
     os.makedirs(cfg.music_dir, exist_ok=True)
 

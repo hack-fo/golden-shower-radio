@@ -44,6 +44,16 @@ class Config:
     http_host: str = field(default_factory=lambda: _env("BRAIN_HTTP_HOST", "0.0.0.0"))
     http_port: int = field(default_factory=lambda: int(_env("BRAIN_HTTP_PORT", "8080")))
 
+    # --- admin panel (SPEC-RADIO-ADMIN-041) ---
+    # Bearer token gating the /admin/* routes. EMPTY (default) -> the admin panel is DISABLED
+    # and every /admin request 404s (the feature never half-exists). A real token (>=32 chars;
+    # a startup WARNING logs if shorter) belongs in secrets/brain.env (gitignored, NEVER committed).
+    admin_token: str = field(default_factory=lambda: _env("BRAIN_ADMIN_TOKEN", ""))
+    # Cost rates for LLM call cost estimation (USD per million tokens). Default = Anthropic
+    # Claude 3.5 Sonnet fallback pricing; override per deploy/model.
+    cost_input_mtok_usd: float = field(default_factory=lambda: float(_env("BRAIN_COST_INPUT_MTOK", "3.00")))
+    cost_output_mtok_usd: float = field(default_factory=lambda: float(_env("BRAIN_COST_OUTPUT_MTOK", "15.00")))
+
     # --- icecast (only used to render the website player URL hint) ---
     icecast_public_port: int = field(default_factory=lambda: int(_env("ICECAST_PUBLIC_PORT", "8000")))
     icecast_mount: str = field(default_factory=lambda: _env("ICECAST_MOUNT", "/radio"))

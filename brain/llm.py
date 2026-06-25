@@ -127,20 +127,27 @@ def _build_options(model: str, system_prompt: str = PERSONA):
     )
 
 
-async def _query_text(prompt: str, model: str, system_prompt: str = PERSONA) -> str:
+async def _query_text(prompt: str, model: str, system_prompt: str = PERSONA,
+                      caller: str = "unknown") -> str:
     """Run a single one-shot query and concatenate the assistant text blocks.
 
-    ``system_prompt`` chooses the persona (curator vs on-air host)."""
+    ``system_prompt`` chooses the persona (curator vs on-air host). ``caller`` tags the
+    ADMIN-041 usage record so the admin panel can attribute cost per call site."""
     from claude_agent_sdk import query, AssistantMessage, TextBlock  # type: ignore
 
     options = _build_options(model, system_prompt=system_prompt)
     chunks: List[str] = []
+    last_usage: dict = {}
     async for message in query(prompt=prompt, options=options):
         if isinstance(message, AssistantMessage):
+            if getattr(message, "usage", None) and isinstance(message.usage, dict):
+                last_usage = message.usage
             for block in message.content:
                 if isinstance(block, TextBlock):
                     chunks.append(block.text)
-    return "".join(chunks)
+    result = "".join(chunks)
+    _record_usage(caller, prompt, result, last_usage)
+    return result
 
 
 def _extract_tracks(text: str) -> List[Dict[str, str]]:
@@ -308,7 +315,7 @@ def curate_batch(
         prompt = prompt + "\n" + "\n".join(persona_lines)
 
     try:
-        text = asyncio.run(_query_text(prompt, model, system_prompt=system_prompt))
+        text = asyncio.run(_query_text(prompt, model, system_prompt=system_prompt, caller="curate"))
         tracks = _extract_tracks(text)
         if tracks:
             log_event(log, "llm.curated", count=len(tracks), model=model)
@@ -921,7 +928,7 @@ def generate_talk_script(model: str, context: Dict, persona=None) -> str:
     # system identity becomes the positive music-journalist register. Off => byte-identical.
     system_prompt = _persona_host_prompt(persona, bool(context.get("pv_voice")))
     try:
-        text = asyncio.run(_query_text(prompt, model, system_prompt=system_prompt))
+        text = asyncio.run(_query_text(prompt, model, system_prompt=system_prompt, caller="talk"))
         spoken = _clean_talk_text(text)
         if spoken:
             log_event(log, "llm.talk_script", model=model, chars=len(spoken))
@@ -985,7 +992,7 @@ def adversarial_factcheck(model: str, script: str, contract) -> List[str]:
     pass must not block an otherwise-clean break — never-stops)."""
     prompt = _build_factcheck_prompt(script, contract)
     try:
-        text = asyncio.run(_query_text(prompt, model, system_prompt=FACTCHECK_PERSONA))
+        text = asyncio.run(_query_text(prompt, model, system_prompt=FACTCHECK_PERSONA, caller="factcheck"))
     except Exception as exc:  # noqa: BLE001 - best-effort; never crash playout
         log_event(log, "llm.factcheck_error", error=str(exc), model=model)
         return []
@@ -1099,7 +1106,7 @@ def design_persona_identity(model: str, primary_territory: str,
     curation/talk. The identity is plausible flavour, not an on-air factual claim."""
     prompt = _build_identity_prompt(primary_territory, in_genres or [], gender, age)
     try:
-        text = asyncio.run(_query_text(prompt, model, system_prompt=IDENTITY_PERSONA))
+        text = asyncio.run(_query_text(prompt, model, system_prompt=IDENTITY_PERSONA, caller="identity"))
         identity = _extract_identity(text)
         if identity.get("name"):
             log_event(log, "llm.identity_designed", model=model,
@@ -1169,7 +1176,7 @@ def design_show_angle(model: str, persona_desc: str,
     invention, never engagement-optimized (inherited anti-pandering)."""
     prompt = _build_show_angle_prompt(persona_desc, research, recent_angles)
     try:
-        text = asyncio.run(_query_text(prompt, model, system_prompt=SHOW_ANGLE_PERSONA))
+        text = asyncio.run(_query_text(prompt, model, system_prompt=SHOW_ANGLE_PERSONA, caller="show_angle"))
         angle = _extract_show_angle(text)
         if angle.get("angle") or angle.get("theme"):
             log_event(log, "llm.show_angle", model=model, theme=angle.get("theme", ""))
@@ -1244,18 +1251,41 @@ def _build_research_options(model: str, system_prompt: str):
     )
 
 
-async def _query_research(prompt: str, model: str, system_prompt: str) -> str:
+async def _query_research(prompt: str, model: str, system_prompt: str,
+                          caller: str = "research") -> str:
     """Run a single Mode-B (web-tools-ON) query and concatenate the assistant text blocks."""
     from claude_agent_sdk import query, AssistantMessage, TextBlock  # type: ignore
 
     options = _build_research_options(model, system_prompt=system_prompt)
     chunks: List[str] = []
+    last_usage: dict = {}
     async for message in query(prompt=prompt, options=options):
         if isinstance(message, AssistantMessage):
+            if getattr(message, "usage", None) and isinstance(message.usage, dict):
+                last_usage = message.usage
             for block in message.content:
                 if isinstance(block, TextBlock):
                     chunks.append(block.text)
-    return "".join(chunks)
+    result = "".join(chunks)
+    _record_usage(caller, prompt, result, last_usage)
+    return result
+
+
+def _record_usage(caller: str, prompt: str, response: str, usage: dict) -> None:
+    """ADMIN-041: record one LLM call's real token usage into the in-memory counter.
+
+    Best-effort: a counter fault must never break an LLM query (the stream comes first)."""
+    try:
+        from brain.llm_counter import LLMCallCounter
+        LLMCallCounter.instance().record(
+            caller=caller,
+            prompt=prompt,
+            response=response,
+            input_tokens=int((usage or {}).get("input_tokens", 0) or 0),
+            output_tokens=int((usage or {}).get("output_tokens", 0) or 0),
+        )
+    except Exception:  # noqa: BLE001 - usage capture is observability, never load-bearing
+        pass
 
 
 # The Mode-B show-prep system prompt. Grounded + anti-fabrication + no-self-imitation. It

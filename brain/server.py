@@ -345,6 +345,14 @@ class _Handler(BaseHTTPRequestHandler):
     drop_off_engine = None  # SPEC-RADIO-LIKE-015 DropOffEngine (optional; None when off)
     analytics = None  # SPEC-RADIO-STATS-013 PlayEventsStore (optional; None when stats disabled)
 
+    # SPEC-RADIO-ADMIN-041: station-wide emergency flags. Class-level on purpose — they are
+    # shared across every handler instance (one ThreadingHTTPServer spawns a handler per
+    # request) so a toggle from one admin POST affects the next /api/next pull.
+    # @MX:WARN: mutable class-level flags shared across all request-handler threads
+    # @MX:REASON: a station-wide silence/inject signal must outlive a single request handler instance
+    _silence_mode: bool = False
+    _injected_uri: str = ""
+
     server_version = "GSRBrain/1.0"
 
     def log_message(self, fmt, *args):  # silence default stderr logging
@@ -384,6 +392,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self._handle_persona_lifecycle(path.split("/")[3], "disable")
             elif path.startswith("/api/personas/") and path.endswith("/enable"):
                 self._handle_persona_lifecycle(path.split("/")[3], "enable")
+            elif path.startswith("/admin/"):
+                self._handle_admin_post(path, split.query)
             else:
                 self._send(404, b"not found", "text/plain; charset=utf-8")
         except Exception as exc:  # noqa: BLE001 - never let a request crash the server
@@ -438,6 +448,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self._handle_stats(split.query)
             elif path.startswith("/stats/track/"):
                 self._handle_stats_track(path[len("/stats/track/"):])
+            elif path == "/admin" or path.startswith("/admin/"):
+                self._handle_admin_get(path, split.query)
             elif path == "/":
                 self._handle_root()
             else:
@@ -453,6 +465,18 @@ class _Handler(BaseHTTPRequestHandler):
     # -- handlers ----------------------------------------------------------------
 
     def _handle_next(self) -> None:
+        # ADMIN-041 silence mode: hold on the current track — serve nothing new. Liquidsoap
+        # treats the empty 200 as "retry later" and keeps the current item playing out.
+        if _Handler._silence_mode:
+            self._json({"silence": True})
+            return
+        # ADMIN-041 inject: an operator-queued URI plays once, ahead of the normal picker.
+        if _Handler._injected_uri:
+            uri = _Handler._injected_uri
+            _Handler._injected_uri = ""
+            log_event(log, "server.next_injected", uri=uri)
+            self._send(200, uri.encode("utf-8"), "text/plain; charset=utf-8")
+            return
         item = self.picker.pick()
         if item is None:
             # Nothing ready: empty 200 so Liquidsoap retries (per radio.liq).
@@ -821,6 +845,334 @@ class _Handler(BaseHTTPRequestHandler):
         agg = StatsAggregator(self.analytics, self.library)
         html = StatsRenderer.render_track_page(self.cfg, track_key, agg, self.library)
         self._send(200, html.encode("utf-8"), "text/html; charset=utf-8")
+
+    # -- ADMIN-041: bearer-token-gated operator panel ---------------------------- #
+
+    def _check_admin_auth(self) -> bool:
+        """REQ-AD-1 auth gate. Returns True if authorized; otherwise sends the
+        appropriate response (404 when the feature is disabled, 401 otherwise) and
+        returns False. The caller MUST stop processing when this returns False."""
+        token = getattr(self.cfg, "admin_token", "") or ""
+        if not token:
+            # Feature disabled -> the admin surface does not exist (no token oracle).
+            self._send(404, b"not found", "text/plain; charset=utf-8")
+            return False
+        auth = self.headers.get("Authorization", "")
+        if auth != f"Bearer {token}":
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", 'Bearer realm="admin"')
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return False
+        return True
+
+    def _handle_admin_get(self, path: str, query: str) -> None:
+        if path == "/admin/stream":
+            self._handle_admin_stream()
+            return
+        if not self._check_admin_auth():
+            return
+        if path == "/admin" or path == "/admin/":
+            html = _admin_page(self.cfg, "overview", self._admin_overview_body())
+        elif path == "/admin/cost":
+            html = _admin_page(self.cfg, "cost", self._admin_cost_body())
+        elif path == "/admin/llmlog":
+            html = _admin_page(self.cfg, "llmlog", self._admin_llmlog_body())
+        elif path == "/admin/controls":
+            html = _admin_page(self.cfg, "controls", self._admin_controls_body())
+        elif path == "/admin/research":
+            html = _admin_page(self.cfg, "research", self._admin_research_body())
+        else:
+            self._send(404, b"not found", "text/plain; charset=utf-8")
+            return
+        self._send(200, html.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _handle_admin_post(self, path: str, query: str) -> None:
+        if not self._check_admin_auth():
+            return
+        if path == "/admin/controls/skip":
+            self._handle_admin_controls_skip()
+        elif path == "/admin/controls/inject":
+            self._handle_admin_controls_inject(query)
+        elif path == "/admin/controls/silence":
+            self._handle_admin_controls_silence()
+        elif path == "/admin/controls/flushtalk":
+            self._handle_admin_controls_flushtalk()
+        elif path == "/admin/reset":
+            self._handle_admin_reset(query)
+        else:
+            self._send(404, b"not found", "text/plain; charset=utf-8")
+
+    # -- admin controls (REQ-AD-5) ---------------------------------------------- #
+
+    def _handle_admin_controls_skip(self) -> None:
+        """Force-skip the current track via the SkipGovernor when configured."""
+        if self.skip_governor is None:
+            self._json({"ok": False, "error": "skip not configured"})
+            return
+        try:
+            decision = self.skip_governor.decide("operator", source="admin")
+            self._json({"ok": bool(getattr(decision, "accepted", False)),
+                        "refusal_cause": getattr(decision, "refusal_cause", "")})
+        except Exception as exc:  # noqa: BLE001
+            self._json({"ok": False, "error": str(exc)})
+
+    def _handle_admin_controls_inject(self, query: str) -> None:
+        """Queue a URI to be served as the next /api/next pull (REQ-AD-5 inject)."""
+        params = parse_qs(query or "", keep_blank_values=True)
+        uri = (params.get("uri") or [""])[0]
+        uri = unquote(uri).strip()
+        if not uri:
+            self._json({"ok": False, "error": "uri required"}, code=400)
+            return
+        _Handler._injected_uri = uri
+        log_event(log, "admin.inject", uri=uri)
+        self._json({"ok": True, "uri": uri})
+
+    def _handle_admin_controls_silence(self) -> None:
+        """Toggle station-wide silence mode (no new tracks queued; current plays out)."""
+        _Handler._silence_mode = not _Handler._silence_mode
+        log_event(log, "admin.silence", active=_Handler._silence_mode)
+        self._json({"ok": True, "silence": _Handler._silence_mode})
+
+    def _handle_admin_controls_flushtalk(self) -> None:
+        """Clear any pending host-talk clip so a stale break never airs (REQ-AD-5)."""
+        try:
+            tq = getattr(self.state, "talk_queue", None)
+            if tq is not None and hasattr(tq, "clear"):
+                tq.clear()
+            elif hasattr(self.state, "take_pending_talk"):
+                # The real StationState parks a single pending clip; draining it clears the slot.
+                self.state.take_pending_talk()
+        except Exception as exc:  # noqa: BLE001
+            self._json({"ok": False, "error": str(exc)})
+            return
+        log_event(log, "admin.flushtalk")
+        self._json({"ok": True, "flushed": "talk"})
+
+    # -- admin reset (REQ-AD-6) ------------------------------------------------- #
+
+    def _handle_admin_reset(self, query: str) -> None:
+        """Scoped in-memory reset, guarded by a ?confirm=yes double-submit (REQ-AD-6)."""
+        params = parse_qs(query or "", keep_blank_values=True)
+        scope = (params.get("scope") or [""])[0].strip().lower()
+        confirm = (params.get("confirm") or [""])[0].strip().lower()
+        if confirm != "yes":
+            self._json({"error": "confirm=yes required"}, code=400)
+            return
+        valid = {"wishlist", "rotation", "talk", "research_queue", "all"}
+        if scope not in valid:
+            self._json({"ok": False, "error": f"unknown scope: {scope}"}, code=400)
+            return
+        cleared = self._admin_apply_reset(scope)
+        log_event(log, "admin.reset", scope=scope, cleared=",".join(cleared))
+        self._json({"ok": True, "scope": scope, "cleared": cleared})
+
+    def _admin_apply_reset(self, scope: str) -> list:
+        """Apply one (or all) reset scopes. Best-effort: a missing substrate is skipped,
+        never fatal. In-memory only — never touches brain.db / events.db (REQ §7)."""
+        cleared: list = []
+        targets = ["wishlist", "rotation", "talk", "research_queue"] if scope == "all" else [scope]
+        for tgt in targets:
+            try:
+                if tgt == "wishlist":
+                    wl = getattr(self.picker, "wishlist", None)
+                    if wl is not None and hasattr(wl, "clear"):
+                        wl.clear()
+                    cleared.append("wishlist")
+                elif tgt == "rotation":
+                    for name in ("clear_recent", "reset_rotation"):
+                        fn = getattr(self.state, name, None)
+                        if callable(fn):
+                            fn()
+                    cleared.append("rotation")
+                elif tgt == "talk":
+                    if hasattr(self.state, "take_pending_talk"):
+                        self.state.take_pending_talk()
+                    cleared.append("talk")
+                elif tgt == "research_queue":
+                    rsch = getattr(self, "researcher", None)
+                    if rsch is not None and hasattr(rsch, "clear_queues"):
+                        rsch.clear_queues()
+                    cleared.append("research_queue")
+            except Exception:  # noqa: BLE001 - a per-scope fault never aborts the whole reset
+                pass
+        return cleared
+
+    # -- admin SSE live log (REQ-AD-4) ------------------------------------------ #
+
+    def _handle_admin_stream(self) -> None:
+        if not self._check_admin_auth():
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+        import dataclasses
+
+        from brain.llm_counter import LLMCallCounter
+        counter = LLMCallCounter.instance()
+        seen = len(counter.records)
+        deadline = time.time() + 60  # 60s of INACTIVITY before the stream closes
+        try:
+            while time.time() < deadline:
+                current = list(counter.records)
+                if len(current) > seen:
+                    for rec in current[seen:]:
+                        payload = json.dumps(dataclasses.asdict(rec))
+                        self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
+                    self.wfile.flush()
+                    seen = len(current)
+                    deadline = time.time() + 60  # reset idle timeout on activity
+                time.sleep(0.5)
+        except (BrokenPipeError, ConnectionResetError):
+            return
+
+    # -- admin HTML bodies ------------------------------------------------------ #
+
+    def _admin_overview_body(self) -> str:
+        from brain.llm_counter import LLMCallCounter
+        totals = LLMCallCounter.instance().session_totals
+        rows = [
+            ("Station", _esc(getattr(self.cfg, "station_name", "Golden Shower Radio"))),
+            ("LLM calls (session)", str(totals["calls"])),
+            ("Total tokens", f"{int(totals['total_tokens']):,}"),
+            ("Est. session cost", f"${totals['cost_usd']:.4f}"),
+            ("Silence mode", "ON" if _Handler._silence_mode else "off"),
+            ("Library tracks", str(self.library.count())),
+        ]
+        cells = "".join(f"<tr><th>{k}</th><td>{v}</td></tr>" for k, v in rows)
+        return f"<table class='kv'>{cells}</table>"
+
+    def _admin_cost_body(self) -> str:
+        from brain.llm_counter import LLMCallCounter
+        counter = LLMCallCounter.instance()
+        records = list(counter.records)
+        head = ("<tr><th>#</th><th>Timestamp (UTC)</th><th>Caller</th>"
+                "<th>Input</th><th>Output</th><th>Total</th><th>Est. cost</th></tr>")
+        body_rows = []
+        for i, r in enumerate(records, 1):
+            body_rows.append(
+                f"<tr><td>{i}</td><td>{_ts(r.ts)}</td><td>{_esc(r.caller)}</td>"
+                f"<td>{r.input_tokens:,}</td><td>{r.output_tokens:,}</td>"
+                f"<td>{r.total_tokens:,}</td><td>${r.cost_usd:.5f}</td></tr>")
+        totals = counter.session_totals
+        foot = (f"<tr class='total'><td colspan='3'>SESSION TOTAL</td>"
+                f"<td>{int(totals['input_tokens']):,}</td>"
+                f"<td>{int(totals['output_tokens']):,}</td>"
+                f"<td>{int(totals['total_tokens']):,}</td>"
+                f"<td>${totals['cost_usd']:.5f}</td></tr>")
+        if not records:
+            return "<p class='muted'>No LLM calls recorded this session yet.</p>"
+        return f"<table class='log'>{head}{''.join(body_rows)}{foot}</table>"
+
+    def _admin_llmlog_body(self) -> str:
+        from brain.llm_counter import LLMCallCounter
+        records = list(LLMCallCounter.instance().records)
+        if not records:
+            return "<p class='muted'>No LLM interactions recorded this session yet.</p>"
+        items = []
+        for r in reversed(records):  # newest first
+            items.append(
+                f"<div class='entry'><div class='entry-head'>[{_ts(r.ts)} UTC] "
+                f"caller={_esc(r.caller)} | {r.total_tokens:,} tokens</div>"
+                f"<details><summary>PROMPT</summary><pre>{_esc(r.prompt)}</pre></details>"
+                f"<details><summary>RESPONSE</summary><pre>{_esc(r.response)}</pre></details></div>")
+        return "<div class='llmlog'>" + "".join(items) + "</div>"
+
+    def _admin_controls_body(self) -> str:
+        silence = "ON" if _Handler._silence_mode else "off"
+        return (
+            "<p class='muted'>Emergency controls act immediately on the live station.</p>"
+            "<form method='post' action='/admin/controls/skip'>"
+            "<button>Skip current track</button></form>"
+            "<form method='post' action='/admin/controls/silence'>"
+            f"<button>Toggle silence mode (currently {silence})</button></form>"
+            "<form method='post' action='/admin/controls/flushtalk'>"
+            "<button>Flush talk queue</button></form>"
+            "<form method='post' action='/admin/controls/inject'>"
+            "<input name='uri' placeholder='annotate:/music/...' size='48'/>"
+            "<button>Inject next URI</button></form>"
+            "<hr/><p class='muted'>Reset scopes require confirm=yes.</p>"
+            "<form method='post' action='/admin/reset?scope=wishlist&confirm=yes'>"
+            "<button>Reset wishlist</button></form>"
+            "<form method='post' action='/admin/reset?scope=rotation&confirm=yes'>"
+            "<button>Reset rotation window</button></form>"
+            "<form method='post' action='/admin/reset?scope=talk&confirm=yes'>"
+            "<button>Reset talk</button></form>"
+            "<form method='post' action='/admin/reset?scope=research_queue&confirm=yes'>"
+            "<button>Reset research queue</button></form>"
+            "<form method='post' action='/admin/reset?scope=all&confirm=yes'>"
+            "<button class='danger'>Reset ALL</button></form>")
+
+    def _admin_research_body(self) -> str:
+        rsch = getattr(self, "researcher", None)
+        if rsch is None:
+            return "<p class='muted'>Research subsystem not wired in this build.</p>"
+        try:
+            stats = rsch.stats() if hasattr(rsch, "stats") else {}
+        except Exception:  # noqa: BLE001
+            stats = {}
+        rows = "".join(f"<tr><th>{_esc(str(k))}</th><td>{_esc(str(v))}</td></tr>"
+                       for k, v in stats.items())
+        return f"<table class='kv'>{rows or '<tr><td>no data</td></tr>'}</table>"
+
+
+def _esc(s: str) -> str:
+    """Minimal HTML escape for admin panel content (no external dep)."""
+    return (str(s).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def _ts(epoch: float) -> str:
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(epoch))
+
+
+# ADMIN-041: shared dark-mode HTML shell. Inline CSS only, no external CDN (REQ-AD-2).
+_ADMIN_TABS = [
+    ("overview", "/admin", "Overview"),
+    ("cost", "/admin/cost", "Cost"),
+    ("llmlog", "/admin/llmlog", "LLM Log"),
+    ("controls", "/admin/controls", "Controls"),
+    ("research", "/admin/research", "Research"),
+]
+
+
+def _admin_page(cfg, active: str, body: str) -> str:
+    station = _esc(getattr(cfg, "station_name", "Golden Shower Radio"))
+    now = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+    nav = "".join(
+        f"<a href='{href}' class='{'on' if key == active else ''}'>{label}</a>"
+        for key, href, label in _ADMIN_TABS
+    )
+    return (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        f"<title>{station} — admin</title><style>"
+        "body{background:#0d0d0d;color:#e0e0e0;font-family:'JetBrains Mono','Fira Code',monospace;"
+        "margin:0;padding:0;font-size:13px}"
+        "header{padding:12px 18px;border-bottom:1px solid #333}"
+        "header h1{font-size:15px;margin:0 0 4px}header .t{color:#888}"
+        "nav{display:flex;gap:2px;background:#161616;border-bottom:1px solid #333}"
+        "nav a{padding:10px 16px;color:#aaa;text-decoration:none}"
+        "nav a:hover{background:#222;color:#fff}nav a.on{background:#0d0d0d;color:#6cf;border-bottom:2px solid #6cf}"
+        "main{padding:18px}"
+        "table{border-collapse:collapse;width:100%}"
+        "th,td{text-align:left;padding:5px 10px;border-bottom:1px solid #222}"
+        "table.kv th{width:220px;color:#888}"
+        "table.log th{color:#6cf}tr.total td{border-top:2px solid #444;color:#fc6;font-weight:bold}"
+        ".muted{color:#777}.danger{color:#f66}"
+        "form{display:inline-block;margin:0 6px 8px 0}"
+        "button{background:#222;color:#ddd;border:1px solid #444;padding:7px 12px;cursor:pointer;font-family:inherit}"
+        "button:hover{background:#333}input{background:#111;color:#ddd;border:1px solid #444;padding:6px;font-family:inherit}"
+        ".entry{border-bottom:1px solid #222;padding:8px 0}.entry-head{color:#6cf}"
+        "details summary{cursor:pointer;color:#9a9;padding:3px 0}"
+        "pre{background:#111;padding:8px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;color:#ccc}"
+        "hr{border:0;border-top:1px solid #333;margin:14px 0}"
+        "</style></head><body>"
+        f"<header><h1>{station} — admin</h1><div class='t'>{now}</div></header>"
+        f"<nav>{nav}</nav><main>{body}</main></body></html>"
+    )
 
 
 def _persona_from_request(persona_mod, body: dict):
