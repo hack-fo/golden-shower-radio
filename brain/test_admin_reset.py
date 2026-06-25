@@ -1,6 +1,6 @@
 """SPEC-RADIO-ADMIN-041 — AD-6 reset controls tests."""
 from __future__ import annotations
-import pytest, json
+import json
 from unittest.mock import MagicMock
 from brain.server import _Handler
 

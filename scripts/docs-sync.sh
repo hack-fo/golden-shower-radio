@@ -21,12 +21,14 @@ trap cleanup EXIT
 # docs/components/<slug>.md  ->  <Wiki-Page>.md  (hyphens render as spaces in titles)
 declare -A PAGES=(
   [acquisition]=Acquisition
+  [admin]=Admin
   [analysis]=Analysis
   [analytics]=Analytics
   [content-vetting]=Content-Vetting
   [curation-director]=Curation-Director
   [dedup]=Dedup
   [enrichment]=Enrichment
+  [external-services]=External-Services
   [hostlife]=Hostlife
   [knowledge-research]=Knowledge-Research
   [library-ingestion]=Library-Ingestion
@@ -36,8 +38,10 @@ declare -A PAGES=(
   [persistence]=Persistence
   [personas]=Personas
   [playout]=Playout
+  [run-sh]=Run-Sh
   [runtime-config]=Runtime-Config
   [skip-control]=Skip-Control
+  [taste-seeding]=Taste-Seeding
   [voice-talk]=Voice-Talk
   [website]=Website
 )

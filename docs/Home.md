@@ -33,3 +33,5 @@ The system runs as a Docker Compose stack targeting Linux/Debian. Liquidsoap per
 | [[Dedup]] | Download deduplication control: MBID-keyed, version-aware (DEDUP-014) |
 | [[Taste-Seeding]] | First-boot taste seed: Anchor / Compass / WOPR fidelity modes explained (SEEDING-029) |
 | [[External-Services]] | All external APIs and accounts: what needs registration, what's free, what's optional |
+| [[Run-Sh]] | First-run wizard (3-phase setup), LLM auth modes, RoboCop splash, secret handling (SETUP-040) |
+| [[Admin]] | Bearer-token-gated operator panel: LLM cost tracking, emergency controls, queue resets, SSE log (ADMIN-041) |

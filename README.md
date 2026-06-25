@@ -148,6 +148,11 @@ SLSKD_API_KEY=your-slskd-api-key
 # DO NOT SET ANTHROPIC_API_KEY HERE.
 # The brain uses the MAX subscription via mounted ~/.claude OAuth creds.
 # Setting this variable bills pay-per-use credits instead.
+
+# Admin panel (optional — omit to disable entirely)
+# BRAIN_ADMIN_TOKEN=<random secret, minimum 32 chars>
+# BRAIN_COST_INPUT_MTOK=3.00     # USD per 1M input tokens (optional override)
+# BRAIN_COST_OUTPUT_MTOK=15.00   # USD per 1M output tokens (optional override)
 ```
 
 ### 2. Launch
@@ -167,6 +172,17 @@ the stack up, then verifies the live stream, site, and containers.
 | `--no-build` | Skip image rebuild (fast restart) |
 | `--check` | Deep post-up health check |
 | `--dry-run` | Print every heavy action without running |
+| `--splash-test` | Render the startup splash and exit (CI-safe) |
+
+#### First-run wizard (one-time)
+
+On a fresh install with no `secrets/.env`, `run.sh` runs a 3-phase interactive wizard:
+
+- **Phase 1 (Required):** station name, Icecast source password, LLM auth mode (`oauth` / `token` / `api_key`)
+- **Phase 2 (Acquisition):** slskd username, password, API key — skipped if `SLSKD_API_KEY` is already set
+- **Phase 3 (Optional):** AcoustID, Last.fm, Discogs, Guardian keys — press Enter to skip any
+
+All secret prompts use silent input (`read -rs`). To re-run the wizard, remove the `SETUP_COMPLETE=1` line from `secrets/.env`.
 
 **slskd is off by default.** Music can always be dropped manually into
 `data/music/`.
@@ -196,6 +212,7 @@ See [[Taste-Seeding]] in the wiki for the full explanation.
 | Station website + now-playing | `http://localhost:8080/` |
 | Listening analytics + charts | `http://localhost:8080/stats` |
 | JSON status | `http://localhost:8080/status` |
+| Admin panel (requires `BRAIN_ADMIN_TOKEN`) | `http://localhost:8080/admin` |
 
 ---
 
@@ -228,6 +245,8 @@ See [[Taste-Seeding]] in the wiki for the full explanation.
 | Per-persona lived-experience loop (reads news, forms opinions) | **Shipped** |
 | Listening analytics + insight site (play ledger + SVG `/stats` page) | **Shipped** |
 | 2026 website redesign + durable last-played ring | **Shipped** |
+| First-run wizard: 3-phase interactive setup, silent secret input, RoboCop splash | **Shipped** |
+| Admin panel: LLM cost tracking, emergency controls, queue resets, SSE live log | **Shipped** |
 | Listener like heart UI on website | Planned |
 | Faroese host voice (teldutala.fo) | Planned |
 | File-tag write-back, artwork, richer stream/web now-playing | Planned |

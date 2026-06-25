@@ -1,10 +1,7 @@
 """SPEC-RADIO-ADMIN-041 — AD-1 auth gate tests."""
 from __future__ import annotations
-import io
-import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from brain.server import _Handler
-from brain.config import Config
 
 def _make_handler(token: str = "secret-token-32-chars-minimum-pad"):
     handler = _Handler.__new__(_Handler)

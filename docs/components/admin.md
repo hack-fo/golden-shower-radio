@@ -35,6 +35,16 @@ BRAIN_COST_INPUT_MTOK=3.00
 BRAIN_COST_OUTPUT_MTOK=15.00
 ```
 
+### Environment variables
+
+| Variable | Default | Effect |
+|---|---|---|
+| `BRAIN_ADMIN_TOKEN` | _(empty)_ | Bearer token gating all `/admin/*` routes. Empty = panel disabled (all `/admin` → `404`). Must be ≥32 chars or a startup `WARNING` is logged. |
+| `BRAIN_COST_INPUT_MTOK` | `3.00` | USD per million **input** tokens, used for cost estimates in the Cost tab and SSE frames. |
+| `BRAIN_COST_OUTPUT_MTOK` | `15.00` | USD per million **output** tokens. |
+
+All three are read from `secrets/.env` (gitignored) at startup. Changing them requires a brain restart.
+
 ---
 
 ## Authentication
@@ -50,6 +60,15 @@ Authorization: Bearer <BRAIN_ADMIN_TOKEN>
 | `BRAIN_ADMIN_TOKEN` unset | `404 not found` (feature disabled) |
 | Header missing or token wrong | `401` with `WWW-Authenticate: Bearer realm="admin"` |
 | Token matches | `200` |
+
+Quick check (replace `yourtoken` and the host/port as needed):
+
+```bash
+# Verify auth works
+curl -s -o /dev/null -w "%{http_code}" \
+  -H "Authorization: Bearer yourtoken" \
+  http://localhost:8080/admin
+```
 
 ---
 
@@ -80,6 +99,24 @@ Authenticated `POST` endpoints. Each acts immediately on the live station and re
 
 **Silence mode** sets a station-wide flag. While active, `GET /api/next` returns `{"silence": true}` and queues no new track, so Liquidsoap holds on the current item and plays it out. Toggle again to resume.
 
+```bash
+TOKEN=yourtoken
+HOST=http://localhost:8080
+
+# Force-skip the current track
+curl -s -X POST -H "Authorization: Bearer $TOKEN" $HOST/admin/controls/skip
+
+# Inject a specific file as the next track (URI must be percent-encoded)
+curl -s -X POST -H "Authorization: Bearer $TOKEN" \
+  "$HOST/admin/controls/inject?uri=annotate%3Atitle%3D%22Test%22%3A/data/music/test.mp3"
+
+# Toggle silence mode on/off
+curl -s -X POST -H "Authorization: Bearer $TOKEN" $HOST/admin/controls/silence
+
+# Clear pending host-talk clip
+curl -s -X POST -H "Authorization: Bearer $TOKEN" $HOST/admin/controls/flushtalk
+```
+
 ---
 
 ## Reset scopes
@@ -96,11 +133,43 @@ Authenticated `POST` endpoints. Each acts immediately on the live station and re
 
 Resets are **in-memory only** — they never touch `brain.db` or `events.db`. Each scope is best-effort: a missing substrate is skipped, never fatal. The response lists the scopes actually cleared.
 
+```bash
+TOKEN=yourtoken
+HOST=http://localhost:8080
+
+# Clear the wishlist
+curl -s -X POST -H "Authorization: Bearer $TOKEN" \
+  "$HOST/admin/reset?scope=wishlist&confirm=yes"
+
+# Reset all queues at once
+curl -s -X POST -H "Authorization: Bearer $TOKEN" \
+  "$HOST/admin/reset?scope=all&confirm=yes"
+```
+
 ---
 
 ## SSE live log
 
 `GET /admin/stream` is a Server-Sent Events endpoint that pushes each new `LLMCallRecord` as a JSON `data:` frame the instant it is recorded, enabling a live-tail of the LLM log. The connection closes after 60 seconds of **inactivity** (the idle timer resets on every new record) to avoid leaked connections.
+
+```bash
+# Live-tail LLM calls as they happen
+curl -s --no-buffer \
+  -H "Authorization: Bearer yourtoken" \
+  http://localhost:8080/admin/stream
+```
+
+Each SSE frame is a JSON object with the same fields as the cost table row: timestamp, caller, input tokens, output tokens, and estimated USD.
+
+---
+
+## Security considerations
+
+- The token must be at least 32 characters. Shorter tokens log a `WARNING` on startup but do not block boot.
+- Admin routes are not listed in the public `/status` response — they are invisible to unauthenticated clients.
+- Every reset and control action is logged at `INFO` with a timestamp and the caller's IP address, so operator actions leave a paper trail in Docker logs.
+- The `secrets/.env` file is gitignored. Never commit `BRAIN_ADMIN_TOKEN`.
+- The SSE endpoint has a 60-second idle timeout to prevent connection leaks if the client disconnects silently.
 
 ---
 

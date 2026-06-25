@@ -1,7 +1,7 @@
 """SPEC-RADIO-ADMIN-041 — AD-5 emergency controls tests."""
 from __future__ import annotations
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from brain.server import _Handler
 
 @pytest.fixture(autouse=True)
