@@ -33,6 +33,7 @@ from .logging_setup import log_event, setup_logging
 from .research import Researcher
 from . import seeding
 from .server import make_server
+from . import like as like_mod
 from .banlist import BanList
 from .skipguard import SkipGovernor
 from .vetting import OffensiveRequestVerdict, VetCascade, VettingGate
@@ -506,10 +507,29 @@ def run() -> int:
     # requests land. OffensiveRequestVerdict is always instantiated (stateless,
     # zero-cost); the gate is a no-op until REQUEST-011 is built.
     offensive_verdict = OffensiveRequestVerdict()
+    # SPEC-RADIO-LIKE-015: the listener heart/like + implicit drop-off subsystem. [HARD] OFF by
+    # default — when like_enabled is False these stay None, the endpoints 404, and the Icecast
+    # poll never starts (behaviour byte-identical to before this SPEC). The soft affinity store
+    # lives in events.db alongside the other analytics tables.
+    like_gate = like_tokener = drop_off_engine = None
+    if cfg.like_enabled:
+        like_tokener = like_mod.LikeTokener(cfg.like_hmac_secret, ttl_seconds=cfg.like_token_ttl)
+        affinity_store = like_mod.AffinityStore(cfg.events_db_path)
+        like_gate = like_mod.LikeGate(
+            like_tokener, affinity_store,
+            cookie_salt=cfg.like_cookie_salt,
+            dedup_window_hours=cfg.like_dedup_window_hours,
+            per_identity_cap=cfg.like_per_identity_cap,
+        )
+        drop_off_engine = like_mod.DropOffEngine(cfg, affinity_store, stop_event)
+        log_event(log, "main.like_enabled", drop_off_window=cfg.like_drop_off_window,
+                  min_audience=cfg.like_min_audience)
     httpd = make_server(cfg, library, state, knowledge=knowledge,
                         refiner=selection_refiner, no_orphan=no_orphan,
                         skip_governor=skip_governor,
-                        offensive_verdict=offensive_verdict)
+                        offensive_verdict=offensive_verdict,
+                        like_gate=like_gate, like_tokener=like_tokener,
+                        drop_off_engine=drop_off_engine)
     http_thread = threading.Thread(target=httpd.serve_forever, name="http", daemon=True)
 
     def _shutdown(signum, _frame):
@@ -534,6 +554,8 @@ def run() -> int:
     filename_worker.start()
     if researcher is not None:
         researcher.start()
+    if drop_off_engine is not None:
+        drop_off_engine.start()  # no-op when like_enabled=False (never reached here then)
     log_event(
         log, "main.started",
         http_port=cfg.http_port, talk_enabled=cfg.talk_enabled,
