@@ -227,3 +227,14 @@ deploy/config/rendered/
 
 # project-status board cache (generated; do not commit)
 .moai/cache/
+
+# claude-code-handoff session files
+.claude/context.md
+.claude/current-task.md
+.claude/task-history.md
+.claude/current-bug.md
+.claude/bug-test-log.md
+.claude/recent-prompts.md
+.claude/session-state.md
+.claude/session-state.md.bak
+.claude/mode
