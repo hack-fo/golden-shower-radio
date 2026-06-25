@@ -21,8 +21,8 @@ import time
 import unicodedata
 import urllib.request
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, List
 
 from .logging_setup import log_event
 
@@ -55,10 +55,56 @@ DEFAULT_NEWS_FEEDS_JSON: str = json.dumps([
     {"id": "apnews", "url": "https://rsshub.app/apnews/apnews", "kind": "rss",
      "locality_tier": "intl", "cadence_seconds": 3600,
      "attribution_name": "AP News", "enabled": True},
+    # Music press — REPUTABLE-PRESS tier (OPS-004 / user-confirmed 2026-06-25)
+    {"id": "nme", "url": "https://www.nme.com/feed", "kind": "rss",
+     "locality_tier": "intl", "cadence_seconds": 3600,
+     "attribution_name": "NME", "enabled": True},
+    {"id": "the_fader", "url": "https://www.thefader.com/feed.rss", "kind": "rss",
+     "locality_tier": "intl", "cadence_seconds": 3600,
+     "attribution_name": "The Fader", "enabled": True},
+    # Pending URL verification: paste, dj_magazine, future_music
 ])
 
 # Default User-Agent for HTTP requests.
 DEFAULT_USER_AGENT = "GoldenShowerRadio/1.0 (news feed poller; +radio)"
+
+# Maps the human-readable attribution_name used in FeedEntry / NewsStory back to the
+# knowledge.py SRC_* constants so HOSTLIFE-032 and the knowledge tier-weighting system
+# can resolve the correct source weight.  Case-insensitive lookup via .casefold().
+ATTRIBUTION_TO_SRC: Dict[str, str] = {
+    "kvf": "press",
+    "dimma": "press",
+    "svt": "press",
+    "ap news": "press",
+    "nme": "nme",
+    "new musical express": "nme",
+    "the fader": "the_fader",
+    "fader": "the_fader",
+    "paste": "paste",
+    "paste magazine": "paste",
+    "dj magazine": "dj_magazine",
+    "djmag": "dj_magazine",
+    "future music": "future_music",
+    "futuremusic": "future_music",
+    "guardian": "guardian",
+    "the guardian": "guardian",
+    "bbc": "bbc",
+    "bbc news": "bbc",
+    "pitchfork": "pitchfork",
+    "stereogum": "stereogum",
+    "aquarium drunkard": "aquarium_drunkard",
+    "bandcamp daily": "bandcamp_daily",
+    "whosampled": "whosampled",
+}
+
+
+def source_id_for_attribution(attribution_name: str) -> str:
+    """Resolve a feed's ``attribution_name`` to a ``knowledge.SRC_*`` constant.
+
+    Returns the generic ``"press"`` token for any unrecognised outlet so the
+    fact still lands in TIER_REPUTABLE_PRESS rather than being discarded.
+    """
+    return ATTRIBUTION_TO_SRC.get(attribution_name.casefold(), "press")
 
 
 @dataclass
@@ -236,7 +282,6 @@ class FeedPoller:
             return []
 
         # Handle both RSS 2.0 (<item>) and Atom (<entry>) formats.
-        ns = {"atom": "http://www.w3.org/2005/Atom"}
         # Try RSS 2.0 first.
         for item_el in root.iter("item"):
             title = (item_el.findtext("title") or "").strip()
