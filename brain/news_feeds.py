@@ -62,7 +62,15 @@ DEFAULT_NEWS_FEEDS_JSON: str = json.dumps([
     {"id": "the_fader", "url": "https://www.thefader.com/feed.rss", "kind": "rss",
      "locality_tier": "intl", "cadence_seconds": 3600,
      "attribution_name": "The Fader", "enabled": True},
-    # Pending URL verification: paste, dj_magazine, future_music
+    {"id": "paste", "url": "https://www.pastemagazine.com/music/feed/", "kind": "rss",
+     "locality_tier": "intl", "cadence_seconds": 3600,
+     "attribution_name": "Paste", "enabled": True},
+    {"id": "dj_magazine", "url": "https://djmag.com/news/feed", "kind": "rss",
+     "locality_tier": "intl", "cadence_seconds": 3600,
+     "attribution_name": "DJ Magazine", "enabled": True},
+    {"id": "future_music", "url": "https://www.futuremusic.com/feed", "kind": "rss",
+     "locality_tier": "intl", "cadence_seconds": 3600,
+     "attribution_name": "Future Music", "enabled": True},
 ])
 
 # Default User-Agent for HTTP requests.
