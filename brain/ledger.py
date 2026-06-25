@@ -134,6 +134,14 @@ ORCH_EVENT_TYPES: Tuple[str, ...] = (
     "listener_response", "event_reaction", "special_event_declared",
 )
 
+# HOSTLIFE-032 episodic engagement events (per-persona lived-experience loop). Each
+# ``hostlife_engagement`` event records one persona engaging one real, sourced news item — the
+# episodic memory bit (REQ-HE-002). It is a per-persona VIEW over THIS ledger, no new store; the
+# cite-or-don't-say rail means every bit carries source_attribution from the read-only news ledger.
+HOSTLIFE_EVENT_TYPES: Tuple[str, ...] = (
+    "hostlife_engagement",
+)
+
 # Self-produced imaging & jingles events (Group OE — the station's own IDs/sweepers/jingles.
 # The brief log + bed registry + air/skip audit are imaging-typed VIEWs over THIS ledger, no
 # new store, REQ-OE-001..012). ``imaging_brief_generated`` records each conceived imaging brief
@@ -151,7 +159,7 @@ EVENT_VOCABULARY: Tuple[str, ...] = (
     CORE_EVENT_TYPES + HYPOTHESIS_EVENT_TYPES + TOPIC_EVENT_TYPES
     + SEGMENT_TYPE_EVENT_TYPES + LIFECYCLE_EVENT_TYPES + SEAM_EVENT_TYPES
     + PLAYBOOK_EVENT_TYPES + PROGRAM_EVENT_TYPES + NEWS_EVENT_TYPES
-    + IMAGING_EVENT_TYPES + ORCH_EVENT_TYPES
+    + IMAGING_EVENT_TYPES + ORCH_EVENT_TYPES + HOSTLIFE_EVENT_TYPES
 )
 
 
