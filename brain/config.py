@@ -740,6 +740,42 @@ class Config:
     # Soft ban cooldown (seconds); default 7 days.
     vetting_ban_cooldown_seconds: float = field(default_factory=lambda: float(_env("BRAIN_VETTING_BAN_COOLDOWN_SEC", "604800")))
 
+    # ---- SPEC-RADIO-LIKE-015 — listener heart/like + implicit drop-off + soft affinity ----
+    # [HARD] OFF by default (REQ-LX/never-block): with it off GET /api/like-token + POST /api/like
+    # 404 and the Icecast drop-off poll never starts, so the station behaves exactly as before
+    # this SPEC. Flipping it ON wires the LikeGate (token mint/verify + identity dedup + rate-limit
+    # + soft-signal record) and the bounded DropOffEngine poll. Affinity is a SOFT weight only —
+    # NEVER hard rotation control (REQ-LS-002); the director MAY weigh it and MAY ignore it.
+    like_enabled: bool = field(default_factory=lambda: _env("BRAIN_LIKE_ENABLED", "0") not in ("0", "false", "no"))
+    # REQ-LA-001/D-L-5: the HMAC signing secret. EMPTY (default) -> every token is invalid (fails
+    # closed). A secret -> lives in secrets/brain.env (gitignored, NEVER committed).
+    like_hmac_secret: str = field(default_factory=lambda: _env("BRAIN_LIKE_HMAC_SECRET", ""))
+    # REQ-LA-001/D-L-5: like-token TTL (seconds). A token older than this is rejected as expired.
+    like_token_ttl: int = field(default_factory=lambda: int(_env("BRAIN_LIKE_TOKEN_TTL", "300")))
+    # REQ-LD-001/003 / D-L-3: the implicit drop-off window (seconds) — disconnects within this many
+    # seconds of a track start derive the negative signal. Default 45s.
+    like_drop_off_window: int = field(default_factory=lambda: int(_env("BRAIN_LIKE_DROP_OFF_WINDOW", "45")))
+    # REQ-LD-003 / D-L-3: minimum-audience floor — below this listener count the drop-off measure
+    # is suppressed (noise + privacy). Default 3.
+    like_min_audience: int = field(default_factory=lambda: int(_env("BRAIN_LIKE_MIN_AUDIENCE", "3")))
+    # REQ-LD-003 / D-L-3: disconnect fraction at/above which a drop-off fires. Default 0.50.
+    like_drop_off_fraction: float = field(default_factory=lambda: float(_env("BRAIN_LIKE_DROP_OFF_FRACTION", "0.5")))
+    # REQ-LP-001/D-L-6: the per-identity hashing salt — identity = SHA256(cookie + salt). A secret;
+    # EMPTY default still hashes (stable), but a real salt belongs in secrets/brain.env (gitignored).
+    like_cookie_salt: str = field(default_factory=lambda: _env("BRAIN_LIKE_COOKIE_SALT", ""))
+    # REQ-LH-003 / REQ-LA-003: the per-identity dedup + rate-limit window (hours). The same hashed
+    # cookie can't like the same recording twice in this window; the per-identity cap rides it.
+    like_dedup_window_hours: int = field(default_factory=lambda: int(_env("BRAIN_LIKE_DEDUP_WINDOW_HOURS", "24")))
+    # REQ-LA-003: per-identity cap — max likes per identity per track per dedup window. Default 3.
+    like_per_identity_cap: int = field(default_factory=lambda: int(_env("BRAIN_LIKE_PER_IDENTITY_CAP", "3")))
+    # REQ-LS-004: affinity decay age (days). A signal older than this is ignored/purged. Default 30.
+    like_signal_decay_days: int = field(default_factory=lambda: int(_env("BRAIN_LIKE_SIGNAL_DECAY_DAYS", "30")))
+    # D-L-2: explicit Icecast status base URL. EMPTY (default) -> derived from icecast host/port. When
+    # admin creds are set the engine reads /admin/stats; otherwise the public /status-json.xsl.
+    icecast_url: str = field(default_factory=lambda: _env("BRAIN_ICECAST_URL", ""))
+    icecast_admin_user: str = field(default_factory=lambda: _env("BRAIN_ICECAST_ADMIN_USER", ""))
+    icecast_admin_pass: str = field(default_factory=lambda: _env("BRAIN_ICECAST_ADMIN_PASS", ""))
+
     @property
     def attempts_path(self) -> str:
         return os.path.join(self.db_dir, "attempts.json")

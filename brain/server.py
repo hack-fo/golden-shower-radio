@@ -339,6 +339,9 @@ class _Handler(BaseHTTPRequestHandler):
     knowledge = None  # KNOWLEDGE-008 store (optional; None when disabled) for /status
     roster = None  # SPEC-RADIO-PROGRAMMING-007 Group PR persona roster (optional; None = none configured)
     skip_governor = None  # SPEC-RADIO-SKIP-028 SkipGovernor (optional; None = skip disabled)
+    like_gate = None  # SPEC-RADIO-LIKE-015 LikeGate (optional; None when like_enabled off)
+    like_tokener = None  # SPEC-RADIO-LIKE-015 LikeTokener (optional; None when like_enabled off)
+    drop_off_engine = None  # SPEC-RADIO-LIKE-015 DropOffEngine (optional; None when off)
 
     server_version = "GSRBrain/1.0"
 
@@ -370,6 +373,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self._handle_airing(split.query)
             elif path == "/api/skip":
                 self._handle_skip()
+            elif path == "/api/like":
+                self._handle_like()
             elif path == "/api/personas":
                 # SPEC-RADIO-PROGRAMMING-007 REQ-PR-010/011: create a persona.
                 self._handle_persona_create()
@@ -421,6 +426,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self._handle_status()
             elif path == "/api/nowplaying":
                 self._handle_nowplaying()
+            elif path == "/api/like-token":
+                self._handle_like_token()
             elif path == "/api/personas":
                 self._handle_persona_list()
             elif path == "/health":
@@ -519,6 +526,15 @@ class _Handler(BaseHTTPRequestHandler):
                     self.skip_governor.on_natural_completion()
                 except Exception:  # noqa: BLE001
                     pass
+            # SPEC-RADIO-LIKE-015 REQ-LD-001: snapshot the audience at the moment a MUSIC track
+            # starts on air, so the bounded drop-off poll can measure disconnects in the window.
+            # Best-effort: never blocks/raises into the airing ack (the streaming thread must
+            # never stall). Only music airings have a likeable/drop-off-measurable recording key.
+            if self.drop_off_engine is not None and (kind or "music") == "music":
+                try:
+                    self.drop_off_engine.note_track_start(normalize_key(artist, title))
+                except Exception:  # noqa: BLE001
+                    pass
         self._send(200, b"ok", "text/plain; charset=utf-8")
 
     def _handle_skip(self) -> None:
@@ -578,14 +594,70 @@ class _Handler(BaseHTTPRequestHandler):
         return stats
 
     def _handle_nowplaying(self) -> None:
-        self._json(
-            {
-                "now_playing": _enrich_now_playing(self.state.now_playing(), self.library),
-                "recent": [_enrich_now_playing(r, self.library) for r in self.state.recent()],
-                "library": self.library.count(),
-                "downloading": self.state.downloading(),
-            }
-        )
+        payload = {
+            "now_playing": _enrich_now_playing(self.state.now_playing(), self.library),
+            "recent": [_enrich_now_playing(r, self.library) for r in self.state.recent()],
+            "library": self.library.count(),
+            "downloading": self.state.downloading(),
+        }
+        # SPEC-RADIO-LIKE-015: tell the frontend where to mint a like-token, but ONLY when the
+        # feature is enabled (REQ-LH-002). Absent the key the player shows no heart (graceful).
+        if getattr(self.cfg, "like_enabled", False) and self.like_tokener is not None:
+            payload["like_token_url"] = "/api/like-token"
+        self._json(payload)
+
+    # -- like API (SPEC-RADIO-LIKE-015 Group LH/LA/LX) --------------------------- #
+
+    def _handle_like_token(self) -> None:
+        """GET /api/like-token — mint an HMAC token bound to the currently-airing track
+        (REQ-LH-002 / REQ-LA-001). 404 when the feature is disabled (REQ-LX/never-half-exist).
+        The token binds to the on-air now_playing's canonical recording key + issue time + nonce,
+        so a like can only be cast for what is actually airing."""
+        if not getattr(self.cfg, "like_enabled", False) or self.like_tokener is None:
+            self._send(404, b"not found", "text/plain; charset=utf-8")
+            return
+        np = self.state.now_playing() or {}
+        if (np.get("kind", "music") or "music") != "music":
+            # No like target during a talk/news/imaging break — nothing to heart.
+            self._json({"token": "", "expires_at": 0, "available": False})
+            return
+        track_key = normalize_key(np.get("artist", ""), np.get("title", ""))
+        if not track_key:
+            self._json({"token": "", "expires_at": 0, "available": False})
+            return
+        minted = self.like_tokener.mint(track_key)
+        self._json({"token": minted.get("token", ""),
+                    "expires_at": minted.get("expires_at", 0),
+                    "available": bool(minted.get("token"))})
+
+    def _handle_like(self) -> None:
+        """POST /api/like — validate the token + identity + rate-limit + dedup, record the soft
+        like, and confirm per-listener receipt only (REQ-LA-002 / REQ-LX-001). 404 when disabled.
+        Body: JSON {token}; the listener identity comes from the persistent cookie (REQ-LP-001).
+        A rejected like is a normal 200 with received=false — not a server error."""
+        if not getattr(self.cfg, "like_enabled", False) or self.like_gate is None:
+            self._send(404, b"not found", "text/plain; charset=utf-8")
+            return
+        body = self._read_json_body()
+        token = str(body.get("token", "") or "")
+        cookie_value = self._like_cookie(body)
+        result = self.like_gate.record_like(token, cookie_value)
+        if result.received:
+            # REQ-LX-001: per-listener receipt only; no aggregate count is ever surfaced.
+            self._json({"received": True})
+            return
+        self._json({"received": False, "reason": result.cause})
+
+    def _like_cookie(self, body: dict) -> str:
+        """Derive the listener identity source (REQ-LP-001/D-L-6): prefer a persistent cookie
+        from the Cookie header (``gsr_id``); fall back to an explicit ``cookie`` body field for
+        clients that cannot set cookies. The RAW value is hashed downstream — never stored."""
+        raw = self.headers.get("Cookie", "") or ""
+        for part in raw.split(";"):
+            name, _, val = part.strip().partition("=")
+            if name == "gsr_id" and val:
+                return val
+        return str(body.get("cookie", "") or "")
 
     def _handle_root(self) -> None:
         html = self.state.website_html() or "<h1>Golden Shower Radio</h1>"
@@ -710,17 +782,22 @@ def _persona_from_request(persona_mod, body: dict):
 
 def make_server(cfg: Config, library: Library, state, knowledge=None,
                 roster=None, refiner=None, no_orphan=None,
-                skip_governor=None, offensive_verdict=None) -> ThreadingHTTPServer:
+                skip_governor=None, offensive_verdict=None,
+                like_gate=None, like_tokener=None, drop_off_engine=None) -> ThreadingHTTPServer:
     # VETTING-027 REQ-VG-003: offensive_verdict is the OffensiveRequestVerdict instance.
     # It is a no-op stub here until REQUEST-011 (listener request feature) ships and
     # calls self.offensive_verdict.check(text) before honoring a listener request.
+    # SPEC-RADIO-LIKE-015: like_gate + like_tokener are None unless cfg.like_enabled, in which
+    # case GET /api/like-token + POST /api/like 404 (the feature never half-exists).
     picker = Picker(cfg, library, state, refiner=refiner, no_orphan=no_orphan)
     handler = type(
         "BoundHandler",
         (_Handler,),
         {"cfg": cfg, "library": library, "state": state, "picker": picker,
          "knowledge": knowledge, "roster": roster, "skip_governor": skip_governor,
-         "offensive_verdict": offensive_verdict},
+         "offensive_verdict": offensive_verdict,
+         "like_gate": like_gate, "like_tokener": like_tokener,
+         "drop_off_engine": drop_off_engine},
     )
     httpd = ThreadingHTTPServer((cfg.http_host, cfg.http_port), handler)
     httpd.daemon_threads = True
