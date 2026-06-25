@@ -2,7 +2,7 @@ name: golden-shower-radio
 
 # All services share the "gsr" network and reach each other by service name.
 # Secrets/config come from ../secrets/.env (gitignored). Music downloaded by
-# slskd lands in ../data/music, which liquidsoap and radiod also mount.
+# slskd lands in ../data/music, which liquidsoap and brain also mount.
 
 services:
   icecast:
