@@ -24,11 +24,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from .config import Config
 from .library import Library, Track, normalize_key
@@ -342,6 +343,7 @@ class _Handler(BaseHTTPRequestHandler):
     like_gate = None  # SPEC-RADIO-LIKE-015 LikeGate (optional; None when like_enabled off)
     like_tokener = None  # SPEC-RADIO-LIKE-015 LikeTokener (optional; None when like_enabled off)
     drop_off_engine = None  # SPEC-RADIO-LIKE-015 DropOffEngine (optional; None when off)
+    analytics = None  # SPEC-RADIO-STATS-013 PlayEventsStore (optional; None when stats disabled)
 
     server_version = "GSRBrain/1.0"
 
@@ -432,6 +434,10 @@ class _Handler(BaseHTTPRequestHandler):
                 self._handle_persona_list()
             elif path == "/health":
                 self._send(200, b"ok", "text/plain; charset=utf-8")
+            elif path == "/stats":
+                self._handle_stats(split.query)
+            elif path.startswith("/stats/track/"):
+                self._handle_stats_track(path[len("/stats/track/"):])
             elif path == "/":
                 self._handle_root()
             else:
@@ -535,6 +541,29 @@ class _Handler(BaseHTTPRequestHandler):
                     self.drop_off_engine.note_track_start(normalize_key(artist, title))
                 except Exception:  # noqa: BLE001
                     pass
+            # STATS-013 Group SE: close out the previous airing (stamp measured playtime)
+            # and open a row for the one now on air. [HARD] OFF the pull path, best-effort:
+            # any fault is logged-and-swallowed so a stats hiccup NEVER blocks the airing ack
+            # nor silences the stream. ALL kinds are logged (music | talk | imaging) so total
+            # airtime is honest; only the rankings filter to music downstream.
+            if self.analytics is not None:
+                try:
+                    now = time.time()
+                    prev = self.analytics.last_open_event()
+                    if prev is not None:
+                        self.analytics.close_event(
+                            prev["id"], max(0.0, now - float(prev["started_at"])))
+                    tk = normalize_key(artist, title) if (kind or "music") == "music" else ""
+                    track = self.library.track_for_key(tk) if tk else None
+                    self.analytics.open_event(
+                        artist=artist, title=title, kind=kind, started_at=now,
+                        track_key=tk,
+                        expected_seconds=(getattr(track, "cue_out", None)
+                                          or getattr(track, "true_end", None)),
+                        grab_reason=getattr(track, "grab_reason", None),
+                    )
+                except Exception as exc:  # noqa: BLE001 - stats never blocks the stream
+                    log_event(log, "server.stats_closeout_error", error=str(exc))
         self._send(200, b"ok", "text/plain; charset=utf-8")
 
     def _handle_skip(self) -> None:
@@ -761,6 +790,38 @@ class _Handler(BaseHTTPRequestHandler):
         self._json({"ok": True, "id": persona_id, "freed_voice": freed_voice,
                     "reset": "cascade-purge"})
 
+    # -- STATS-013 Group SW: read-only analytics site (never controls playout) ----
+
+    def _handle_stats(self, query: str) -> None:
+        """GET /stats — server-rendered analytics page (read-only, inline SVG)."""
+        if self.analytics is None:
+            self._send(503, b"stats not available", "text/plain; charset=utf-8")
+            return
+        from .analytics import StatsAggregator, StatsRenderer
+
+        params = parse_qs(query or "", keep_blank_values=True)
+        window = (params.get("window") or ["month"])[0]
+        if window not in ("month", "year", "all"):
+            window = "month"
+        agg = StatsAggregator(self.analytics, self.library, window_default=window)
+        html = StatsRenderer.render_stats_page(self.cfg, agg, self.library, window=window)
+        self._send(200, html.encode("utf-8"), "text/html; charset=utf-8")
+
+    def _handle_stats_track(self, raw_key: str) -> None:
+        """GET /stats/track/<key> — per-track airtime drill-down (read-only)."""
+        if self.analytics is None:
+            self._send(503, b"stats not available", "text/plain; charset=utf-8")
+            return
+        from .analytics import StatsAggregator, StatsRenderer
+
+        track_key = unquote(raw_key or "").strip()
+        if not track_key:
+            self._send(404, b"not found", "text/plain; charset=utf-8")
+            return
+        agg = StatsAggregator(self.analytics, self.library)
+        html = StatsRenderer.render_track_page(self.cfg, track_key, agg, self.library)
+        self._send(200, html.encode("utf-8"), "text/html; charset=utf-8")
+
 
 def _persona_from_request(persona_mod, body: dict):
     """Build a Persona candidate from a create-request JSON body (REQ-PR-010 captured
@@ -783,7 +844,8 @@ def _persona_from_request(persona_mod, body: dict):
 def make_server(cfg: Config, library: Library, state, knowledge=None,
                 roster=None, refiner=None, no_orphan=None,
                 skip_governor=None, offensive_verdict=None,
-                like_gate=None, like_tokener=None, drop_off_engine=None) -> ThreadingHTTPServer:
+                like_gate=None, like_tokener=None, drop_off_engine=None,
+                analytics=None) -> ThreadingHTTPServer:
     # VETTING-027 REQ-VG-003: offensive_verdict is the OffensiveRequestVerdict instance.
     # It is a no-op stub here until REQUEST-011 (listener request feature) ships and
     # calls self.offensive_verdict.check(text) before honoring a listener request.
@@ -797,7 +859,7 @@ def make_server(cfg: Config, library: Library, state, knowledge=None,
          "knowledge": knowledge, "roster": roster, "skip_governor": skip_governor,
          "offensive_verdict": offensive_verdict,
          "like_gate": like_gate, "like_tokener": like_tokener,
-         "drop_off_engine": drop_off_engine},
+         "drop_off_engine": drop_off_engine, "analytics": analytics},
     )
     httpd = ThreadingHTTPServer((cfg.http_host, cfg.http_port), handler)
     httpd.daemon_threads = True

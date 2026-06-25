@@ -776,6 +776,17 @@ class Config:
     icecast_admin_user: str = field(default_factory=lambda: _env("BRAIN_ICECAST_ADMIN_USER", ""))
     icecast_admin_pass: str = field(default_factory=lambda: _env("BRAIN_ICECAST_ADMIN_PASS", ""))
 
+    # --- SPEC-RADIO-STATS-013: listening analytics & insight site ---
+    # ON by default: the analytics ledger + the read-only /stats site. The close-out
+    # write is off the pull path and best-effort, so enabling it never affects playout
+    # (a stats fault is logged + swallowed; the stream is never silenced). Flipping it
+    # OFF makes the PlayEventsStore un-instantiated and GET /stats return 503.
+    stats_enabled: bool = field(default_factory=lambda: _env("BRAIN_STATS_ENABLED", "true").lower() in ("1", "true", "yes"))
+    # [HARD] OFF by default: the Last.fm similarity cross-check is an opt-in enrichment of the
+    # taste-map only. It is config-gated to false here; it MUST be explicitly enabled and never
+    # gates or blocks the airtime rankings (which are computed purely from the local ledger).
+    stats_lastfm_enabled: bool = field(default_factory=lambda: _env("BRAIN_STATS_LASTFM_ENABLED", "false").lower() in ("1", "true", "yes"))
+
     @property
     def attempts_path(self) -> str:
         return os.path.join(self.db_dir, "attempts.json")

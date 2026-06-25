@@ -585,6 +585,20 @@ class Library:
         with self._lock:
             return key in self._tracks
 
+    def track_for_key(self, key: str) -> Optional[Track]:
+        """Return the Track for a dedup ``key`` (locked, read-only), or None.
+
+        STATS-013 REQ-SA-*: the by-key lookup the analytics aggregator uses to resolve a
+        ``play_events`` row to its library feature record (genre / mood / energy / album /
+        year) for the airtime rankings + taste-map, without reaching into the private
+        ``_tracks`` dict. A miss (talk clip / pruned / unindexed key) returns None so the
+        aggregator degrades to the denormalized artist/title carried on the event row.
+        """
+        if not key:
+            return None
+        with self._lock:
+            return self._tracks.get(key)
+
     def keys(self) -> List[str]:
         with self._lock:
             return list(self._tracks.keys())

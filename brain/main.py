@@ -524,12 +524,21 @@ def run() -> int:
         drop_off_engine = like_mod.DropOffEngine(cfg, affinity_store, stop_event)
         log_event(log, "main.like_enabled", drop_off_window=cfg.like_drop_off_window,
                   min_audience=cfg.like_min_audience)
+    # SPEC-RADIO-STATS-013: the append-only airtime ledger + read-only /stats site. ON by
+    # default; the close-out write is off the pull path + best-effort, so it never affects
+    # playout. On startup we reconcile any event left OPEN by a crash/restart (bounded close).
+    analytics = None
+    if cfg.stats_enabled:
+        from .analytics import PlayEventsStore
+        analytics = PlayEventsStore(cfg.events_db_path)
+        analytics.close_stale_open_events()
+        log_event(log, "main.stats_enabled")
     httpd = make_server(cfg, library, state, knowledge=knowledge,
                         refiner=selection_refiner, no_orphan=no_orphan,
                         skip_governor=skip_governor,
                         offensive_verdict=offensive_verdict,
                         like_gate=like_gate, like_tokener=like_tokener,
-                        drop_off_engine=drop_off_engine)
+                        drop_off_engine=drop_off_engine, analytics=analytics)
     http_thread = threading.Thread(target=httpd.serve_forever, name="http", daemon=True)
 
     def _shutdown(signum, _frame):
