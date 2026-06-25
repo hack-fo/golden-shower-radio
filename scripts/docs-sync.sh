@@ -22,13 +22,22 @@ trap cleanup EXIT
 declare -A PAGES=(
   [acquisition]=Acquisition
   [analysis]=Analysis
+  [analytics]=Analytics
+  [content-vetting]=Content-Vetting
   [curation-director]=Curation-Director
+  [dedup]=Dedup
   [enrichment]=Enrichment
+  [hostlife]=Hostlife
   [knowledge-research]=Knowledge-Research
   [library-ingestion]=Library-Ingestion
+  [like-dropoff]=Like-Dropoff
+  [memory]=Memory
+  [orchestration]=Orchestration
   [persistence]=Persistence
+  [personas]=Personas
   [playout]=Playout
   [runtime-config]=Runtime-Config
+  [skip-control]=Skip-Control
   [voice-talk]=Voice-Talk
   [website]=Website
 )
