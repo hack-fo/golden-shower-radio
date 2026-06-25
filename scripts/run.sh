@@ -16,8 +16,13 @@
 #                              [--dry-run] [--help]
 #          (no flags = build + up + light post-up verify; slskd per the prompt)
 #
-# First-run experience:
-#   • Creates secrets/.env if missing, prompting for station name + Icecast password
+# First-run experience (SETUP-040):
+#   • first_run_wizard walks a 3-phase setup (Required / Acquisition / Optional),
+#     creating secrets/.env. Secrets use `read -rs` (no echo) + immediate unset.
+#   • On every normal startup, run_header renders a RoboCop ASCII splash with
+#     ANSI red-eye animation (plain ASCII fallback on TERM=dumb / non-TTY).
+#   • bash scripts/run.sh --splash-test renders the splash and exits 0 (CI-safe).
+#   • Re-run setup by removing the SETUP_COMPLETE=1 line from secrets/.env.
 #   • Prompts once to choose a Claude model (sonnet / opus / haiku) if not configured
 #   • Warns about the ~2.5 GB first-time Docker build (Kokoro TTS + PyTorch) and asks
 #     to confirm before downloading; subsequent runs reuse the Docker layer cache
@@ -91,6 +96,72 @@ run_or_dry() {
     return 0
   fi
   "$@"
+}
+
+# --------------------------------------------------------------------------- #
+# RoboCop splash (SETUP-040). BBS/demoscene block-char head with two eye sockets
+# marked by the {EYE} sentinel — run_header() substitutes either a plain 'O' (dumb
+# terminal) or an ANSI 24-bit red 'O' that animates through a brightness gradient.
+#
+# The eye cells live on a SINGLE art line. After {EYE} -> O substitution the two
+# eyes render at fixed 0-indexed columns 7 and 15 of that line (the 5-char sentinel
+# collapses to 1 char, shifting the right eye left by 4). These constants drive the
+# cursor math in run_header(); if you redraw the art, recompute them.
+# UTF-8 required: █ ▓ ▒ ░ ▀ ▄ ▌ ▐ are U+2580..U+2593.
+# --------------------------------------------------------------------------- #
+_ROBO_ART=$'        ▄▄▄███████████▄▄▄\n      ▄█▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓█▄\n    ▄█▓▓▓░░░░░░░░░░░░░▓▓▓█▄\n   ▐█▓▓░░░░ P O L I C E ░░▓▓█▌\n   ▐█▓▓░░░░░░░░░░░░░░░▓▓█▌\n  ▄█████████████████████████▄\n ▐██▒▒▄▀▀▀▀▀▄▒▒▒▒▒▄▀▀▀▀▀▄▒▒█▌\n ▐██▒▒█{EYE}█▒▒▒▒▒█{EYE}█▒▒█▌\n ▐██▒▒▀▄▄▄▄▄▀▒▒▒▒▒▀▄▄▄▄▄▀▒▒█▌\n  ▀█████████████████████████▀\n   ▐█▓▓░░░░░░░░░░░░░░░▓▓█▌\n   ▐█▓▓░░▒▒▒▒▒▒▒▒▒▒▒░░▓▓█▌\n    ▀█▓▓▓░░░░░░░░░░░░░▓▓▓█▀\n      ▀█▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓█▀\n        ▀▀▀███████████▀▀▀'
+
+_EYE_LINE=7      # 0-indexed line within _ROBO_ART carrying both {EYE} sentinels
+_EYE_COL_L=7     # 0-indexed column of left  eye 'O' after substitution
+_EYE_COL_R=15    # 0-indexed column of right eye 'O' after substitution
+
+# Red brightness gradient (ANSI 24-bit): dim -> bright -> dim, one 8-frame cycle.
+_EYE_FRAMES=(
+  $'\033[38;2;80;0;0m'
+  $'\033[38;2;120;0;0m'
+  $'\033[38;2;160;0;0m'
+  $'\033[38;2;200;10;0m'
+  $'\033[38;2;240;20;0m'
+  $'\033[38;2;200;10;0m'
+  $'\033[38;2;160;0;0m'
+  $'\033[38;2;80;0;0m'
+)
+_EYE_RESET=$'\033[0m'
+_EYE_DELAY=0.08
+
+# run_header: render the splash. On a dumb terminal or non-TTY stdout, print plain
+# ASCII art (no ANSI). Otherwise render dim-eyed art then animate the eye cells in
+# place using cursor-up + absolute-column repositioning (no full-frame repaint).
+run_header() {
+  local station
+  station="$(grep -E '^STATION_NAME=' "$GSR_ENV_FILE" 2>/dev/null | cut -d= -f2-)"
+  [[ -z "$station" ]] && station="Golden Shower Radio"
+
+  if [[ "${TERM:-}" == "dumb" ]] || [[ ! -t 1 ]]; then
+    printf '%s\n' "${_ROBO_ART//\{EYE\}/O}"
+    printf '\n  %s\n\n' "$station"
+    return 0
+  fi
+
+  local initial="${_ROBO_ART//\{EYE\}/${_EYE_FRAMES[0]}O${_EYE_RESET}}"
+  printf '%s\n' "$initial"
+  printf '\n  %s\n\n' "$station"
+
+  # Lines printed: art lines + 1 blank + station + 1 blank.
+  local art_lines total_printed lines_to_eye
+  art_lines=$(( $(printf '%s' "$_ROBO_ART" | grep -c '' ) ))
+  total_printed=$(( art_lines + 3 ))
+  lines_to_eye=$(( total_printed - _EYE_LINE - 1 ))
+
+  local i color
+  for i in 1 2 3 4 5 6 7; do
+    sleep "$_EYE_DELAY" 2>/dev/null || true
+    color="${_EYE_FRAMES[$i]}"
+    printf '\033[%dA' "$lines_to_eye"
+    printf '\033[%dG%sO%s' "$(( _EYE_COL_L + 1 ))" "$color" "$_EYE_RESET"
+    printf '\033[%dG%sO%s' "$(( _EYE_COL_R + 1 ))" "$color" "$_EYE_RESET"
+    printf '\033[%dB' "$lines_to_eye"
+  done
 }
 
 # --------------------------------------------------------------------------- #
@@ -183,7 +254,7 @@ resolve_compose() {
 # --------------------------------------------------------------------------- #
 # Core prerequisite guards (FATAL). docker binary, a reachable docker DAEMON, a
 # compose implementation, and the compose file. Any miss is fatal.
-# secrets/.env is handled separately by first_run_setup (may not exist on first run).
+# secrets/.env is handled separately by first_run_wizard (may not exist on first run).
 # --------------------------------------------------------------------------- #
 DC=""
 require_core_prereqs() {
@@ -210,59 +281,129 @@ require_core_prereqs() {
 }
 
 # --------------------------------------------------------------------------- #
-# First-run setup: create secrets/.env if it doesn't exist yet, prompting for
-# required values. On non-interactive runs, writes safe defaults so the stack
-# can still start (users can edit later). Idempotent: does nothing if file exists.
+# First-run wizard (SETUP-040): three-phase setup that creates secrets/.env.
+# No-op once SETUP_COMPLETE=1 is present. Secrets are read with `read -rs` (silent,
+# not captured by readline history) and `unset` immediately after _set_env_var
+# writes them, so they never leak into a subprocess env or `ps aux`. The .env
+# template heredoc is SINGLE-QUOTED (<<'ENVFILE') so no expansion occurs in the
+# body — every value lands via _set_env_var's python3 argv[3] mechanism only.
+#
+#   Phase 1 (Required):   station name, Icecast password, LLM auth mode
+#   Phase 2 (Acquisition): slskd creds — skipped if SLSKD_API_KEY already set
+#   Phase 3 (Optional):    AcoustID / Last.fm / Discogs / Guardian — Enter to skip
 # --------------------------------------------------------------------------- #
-first_run_setup() {
-  if [[ -f "$GSR_ENV_FILE" ]]; then
+first_run_wizard() {
+  if grep -q "^SETUP_COMPLETE=1" "$GSR_ENV_FILE" 2>/dev/null; then
     return 0
   fi
-  log "First run: '$GSR_ENV_FILE' not found — creating it now."
-  printf '\nFirst-time setup. A few questions to configure the station.\n'
-  printf 'All values can be changed later by editing %s.\n\n' "$GSR_ENV_FILE"
 
-  local station_name="Golden Shower Radio"
-  local icecast_pw="change-me-please"
-  local slskd_key=""
+  # Preserve a pre-existing slskd key across the Phase-1 .env rewrite below, so
+  # Phase 2 stays skipped when acquisition was already configured.
+  local prior_slskd_key=""
+  prior_slskd_key="$(grep -E '^SLSKD_API_KEY=' "$GSR_ENV_FILE" 2>/dev/null | cut -d= -f2-)"
 
-  if [[ -t 0 ]]; then
-    printf 'Station name [%s]: ' "$station_name"
-    local _n; read -r _n || _n=""
-    [[ -n "$_n" ]] && station_name="$_n"
+  printf '\n  ═══════════════════════════════════════\n'
+  printf '   GOLDEN SHOWER RADIO — First-Time Setup\n'
+  printf '  ═══════════════════════════════════════\n'
+  printf '  All values can be changed later by editing %s.\n\n' "$GSR_ENV_FILE"
 
-    printf 'Icecast source password [%s]: ' "$icecast_pw"
-    local _p; read -r _p || _p=""
-    [[ -n "$_p" ]] && icecast_pw="$_p"
+  # ── Phase 1: Required ─────────────────────────────────────────────────────
+  printf '  [Phase 1/3] Required settings\n\n'
 
-    printf 'slskd API key (blank to skip — required only with --with-slskd): '
-    local _s; read -r _s || _s=""
-    slskd_key="$_s"
-  fi
+  local station_name
+  printf '  Station name [Golden Shower Radio]: '
+  read -r station_name || station_name=""
+  [[ -z "$station_name" ]] && station_name="Golden Shower Radio"
+
+  local icecast_pw
+  printf '  Icecast source password: '
+  read -rs icecast_pw || icecast_pw=""
+  printf '\n'
+
+  printf '\n  LLM auth mode:\n'
+  printf '    1) oauth   — mount ~/.claude OAuth creds (MAX subscription, default)\n'
+  printf '    2) token   — headless via CLAUDE_CODE_OAUTH_TOKEN env var\n'
+  printf '    3) api_key — ANTHROPIC_API_KEY, pay-per-use (charges credits)\n'
+  printf '  Choice [1]: '
+  local auth_choice
+  read -r auth_choice || auth_choice="1"
+  [[ -z "$auth_choice" ]] && auth_choice="1"
+
+  local brain_llm_auth="" oauth_token="" api_key=""
+  case "$auth_choice" in
+    2)
+      brain_llm_auth="token"
+      printf '\n  CLAUDE_CODE_OAUTH_TOKEN (run: claude setup-token to generate): '
+      read -rs oauth_token || oauth_token=""
+      printf '\n'
+      ;;
+    3)
+      brain_llm_auth="api_key"
+      printf '\n  *** WARNING: api_key mode charges pay-per-use credits from your Anthropic\n'
+      printf '  *** account. Do NOT use with a MAX subscription — it silently overrides it.\n\n'
+      printf '  ANTHROPIC_API_KEY: '
+      read -rs api_key || api_key=""
+      printf '\n'
+      ;;
+    *)
+      brain_llm_auth="oauth"
+      printf '\n  oauth mode: ensure ~/.claude/.credentials.json will be bind-mounted into Docker.\n'
+      ;;
+  esac
 
   mkdir -p "$(dirname "$GSR_ENV_FILE")"
-  cat >"$GSR_ENV_FILE" <<ENVFILE
+  cat >"$GSR_ENV_FILE" <<'ENVFILE'
 # Golden Shower Radio secrets — gitignored, NEVER commit this file.
 # Edit values here and restart the stack to apply.
-
-STATION_NAME=${station_name}
-
-# Claude model for LLM curation (written by run.sh model-selection prompt).
-# Options: claude-sonnet-4-6 (recommended), claude-opus-4-8, claude-haiku-4-5-20251001
-ANTHROPIC_MODEL=
-
-# Icecast source password (must match deploy/config/icecast.xml SOURCE_PASSWORD).
-ICECAST_SOURCE_PASSWORD=${icecast_pw}
-
-# slskd / Soulseek API key (only needed when running with --with-slskd).
-SLSKD_API_KEY=${slskd_key}
-
-# DO NOT set ANTHROPIC_API_KEY here. The brain authenticates via the MAX subscription
-# through the mounted ~/.claude OAuth creds. Setting this key silently overrides the
-# subscription and bills pay-per-use credits — which broke the old brain.
+#
+# CRITICAL: Do NOT set ANTHROPIC_API_KEY unless BRAIN_LLM_AUTH=api_key.
+# The brain authenticates via MAX subscription OAuth — a key silently bills credits.
 ENVFILE
   chmod 600 "$GSR_ENV_FILE"
-  log "Created '$GSR_ENV_FILE'. Secrets directory is gitignored."
+  _set_env_var "STATION_NAME"            "$station_name"
+  _set_env_var "ICECAST_SOURCE_PASSWORD" "$icecast_pw";   unset icecast_pw
+  _set_env_var "BRAIN_LLM_AUTH"          "$brain_llm_auth"
+  _set_env_var "ANTHROPIC_MODEL"         ""
+  [[ -n "$oauth_token" ]] && { _set_env_var "CLAUDE_CODE_OAUTH_TOKEN" "$oauth_token"; unset oauth_token; }
+  [[ -n "$api_key"     ]] && { _set_env_var "ANTHROPIC_API_KEY"       "$api_key";     unset api_key; }
+  [[ -n "$prior_slskd_key" ]] && _set_env_var "SLSKD_API_KEY" "$prior_slskd_key"
+  _set_env_var "SETUP_COMPLETE" "1"
+
+  # ── Phase 2: Acquisition (slskd) — skip if already configured ─────────────
+  if [[ -z "$prior_slskd_key" ]]; then
+    printf '\n  [Phase 2/3] Acquisition — Soulseek / slskd\n\n'
+    local slskd_user="" slskd_pw="" slskd_key=""
+    printf '  slskd username: '
+    read -r slskd_user || slskd_user=""
+    printf '  slskd password: '
+    read -rs slskd_pw || slskd_pw=""
+    printf '\n'
+    printf '  slskd API key: '
+    read -rs slskd_key || slskd_key=""
+    printf '\n'
+    [[ -n "$slskd_user" ]] && _set_env_var "SLSKD_USERNAME" "$slskd_user"
+    [[ -n "$slskd_pw"   ]] && { _set_env_var "SLSKD_PASSWORD" "$slskd_pw";  unset slskd_pw; }
+    [[ -n "$slskd_key"  ]] && { _set_env_var "SLSKD_API_KEY"  "$slskd_key"; unset slskd_key; }
+  fi
+
+  # ── Phase 3: Optional enrichment — Enter to skip any ──────────────────────
+  printf '\n  [Phase 3/3] Optional enrichment (press Enter to skip any)\n\n'
+  local _val _pair _label _envkey
+  local -a _pairs=(
+    "AcoustID API key:ACOUSTID_API_KEY"
+    "Last.fm API key:LASTFM_API_KEY"
+    "Discogs token:DISCOGS_TOKEN"
+    "The Guardian API key:GUARDIAN_API_KEY"
+  )
+  for _pair in "${_pairs[@]}"; do
+    _label="${_pair%%:*}"; _envkey="${_pair##*:}"
+    printf '  %s: ' "$_label"
+    read -r _val || _val=""
+    [[ -n "$_val" ]] && _set_env_var "$_envkey" "$_val"
+  done
+  unset _val _pair _pairs
+
+  printf '\n  Setup complete. Run ./scripts/run.sh again to start the station.\n\n'
 }
 
 # --------------------------------------------------------------------------- #
@@ -398,19 +539,37 @@ load_secrets() {
 # Non-fatal: skip-with-report.
 # --------------------------------------------------------------------------- #
 check_subscription_auth() {
-  if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
-    log "NOTE: ANTHROPIC_API_KEY is set in this environment. The compose 'brain' service does"
-    log "      NOT pass it through (by design — a key silently overrides the MAX subscription and"
-    log "      bills pay-per-use credits, which broke the old brain), so the brain stays on the"
-    log "      subscription. Nothing to fix; flagged for awareness."
+  # SETUP-040: BRAIN_LLM_AUTH (from .env) selects the auth contract.
+  local auth_mode
+  auth_mode="$(grep -E '^BRAIN_LLM_AUTH=' "$GSR_ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')"
+  auth_mode="${auth_mode:-oauth}"
+
+  # api_key mode: a key IS expected here — pay-per-use is the deliberate choice.
+  if [[ "$auth_mode" == "api_key" ]]; then
+    log "[INFO] api_key mode: pay-per-use billing active (ANTHROPIC_API_KEY in use)."
+    return 0
   fi
-  if [[ -f "$GSR_CLAUDE_CREDS" ]]; then
-    log "Subscription auth OK: OAuth creds present at '$GSR_CLAUDE_CREDS' (mounted into the brain)."
-  else
-    log "BLOCKER: Claude OAuth creds not found at '$GSR_CLAUDE_CREDS'. The brain authenticates via"
-    log "  the MAX subscription through this file; without it the LLM director cannot reach Claude"
-    log "  (the station still plays + the analyzer still runs). Fix: log in once with the Claude CLI"
-    log "  on the host so ~/.claude/.credentials.json exists, or set GSR_CLAUDE_CREDS."
+
+  # oauth / token modes: a stray ANTHROPIC_API_KEY silently overrides the
+  # subscription and bills credits — block loudly (the #1 brain failure).
+  if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+    log "WARNING: ANTHROPIC_API_KEY is set but BRAIN_LLM_AUTH=${auth_mode}."
+    log "         This silently overrides the MAX subscription and bills pay-per-use credits."
+    log "         Unset ANTHROPIC_API_KEY, or switch to BRAIN_LLM_AUTH=api_key if intentional."
+    return 1
+  fi
+
+  if [[ "$auth_mode" == "oauth" ]]; then
+    if [[ -f "$GSR_CLAUDE_CREDS" ]]; then
+      log "Subscription auth OK: OAuth creds present at '$GSR_CLAUDE_CREDS' (mounted into the brain)."
+    else
+      log "BLOCKER: Claude OAuth creds not found at '$GSR_CLAUDE_CREDS'. The brain authenticates via"
+      log "  the MAX subscription through this file; without it the LLM director cannot reach Claude"
+      log "  (the station still plays + the analyzer still runs). Fix: log in once with the Claude CLI"
+      log "  on the host so ~/.claude/.credentials.json exists, or set GSR_CLAUDE_CREDS."
+    fi
+  elif [[ "$auth_mode" == "token" ]]; then
+    log "Subscription auth: token mode — CLAUDE_CODE_OAUTH_TOKEN injected into the brain at runtime."
   fi
 }
 
@@ -756,6 +915,12 @@ EOF
 # main — the straight-line orchestrator (the backbone).
 # --------------------------------------------------------------------------- #
 main() {
+  # SETUP-040: render the RoboCop splash and exit (CI-safe, before any heavy work).
+  if [[ "${1:-}" == "--splash-test" ]]; then
+    run_header
+    return 0
+  fi
+
   parse_args "$@" || {
     usage
     return 2
@@ -766,7 +931,8 @@ main() {
   fi
 
   require_core_prereqs || return 1   # FATAL guards (Docker, compose, compose file)
-  first_run_setup                    # create secrets/.env if missing (no-op if exists)
+  first_run_wizard                   # create secrets/.env if missing (no-op if exists)
+  run_header                         # RoboCop splash on every normal startup
   load_secrets
   resolve_model                      # configure ANTHROPIC_MODEL if unset (prompts once)
   check_subscription_auth            # non-fatal skip-with-report (#1 lesson guard)

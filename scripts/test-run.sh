@@ -94,5 +94,111 @@ check "resolve_seed marker-present is a no-op" 'printf "%s" "$out" | grep -q "de
 check "resolve_seed no-op writes nothing" '! printf "%s" "$out" | grep -q "DRYRUN:"'
 rm -f "$SEED_DB_DIR/seed_decided"
 
+# --- SETUP-040: first-run wizard + splash + auth-check ---------------------- #
+# Each wizard test points GSR_ENV_FILE at a fresh temp file and pipes fixture
+# input. The fixture secret is a known sentinel we assert never appears in output.
+FIXTURE_SECRET="S3cr3t-FIXTURE-do-not-leak"
+RUN_SH="$HERE/run.sh"
+
+# 1. secret-no-echo: full wizard run, fixture secrets piped in, assert sentinel absent.
+_wenv="$TMP/w1.env"; rm -f "$_wenv"
+out="$(GSR_ENV_FILE="$_wenv" first_run_wizard <<EOF 2>&1
+My Station
+$FIXTURE_SECRET
+1
+wizuser
+$FIXTURE_SECRET
+$FIXTURE_SECRET
+$FIXTURE_SECRET
+$FIXTURE_SECRET
+$FIXTURE_SECRET
+$FIXTURE_SECRET
+EOF
+)"
+check "secret-no-echo: fixture secret never printed" '! printf "%s" "$out" | grep -qF "$FIXTURE_SECRET"'
+
+# 2. wizard-phase1-oauth: auth mode 1 => BRAIN_LLM_AUTH=oauth + SETUP_COMPLETE=1.
+_wenv="$TMP/w2.env"; rm -f "$_wenv"
+GSR_ENV_FILE="$_wenv" first_run_wizard <<EOF >/dev/null 2>&1
+My Station
+icepw
+1
+wizuser
+slpw
+slkey
+EOF
+check "wizard-phase1-oauth writes BRAIN_LLM_AUTH=oauth" 'grep -q "^BRAIN_LLM_AUTH=oauth" "$_wenv"'
+check "wizard-phase1-oauth writes SETUP_COMPLETE=1" 'grep -q "^SETUP_COMPLETE=1" "$_wenv"'
+
+# 3. wizard-phase1-apikey: auth mode 3 => billing warning + BRAIN_LLM_AUTH=api_key.
+_wenv="$TMP/w3.env"; rm -f "$_wenv"
+out="$(GSR_ENV_FILE="$_wenv" first_run_wizard <<EOF 2>&1
+My Station
+icepw
+3
+apikeyval
+wizuser
+slpw
+slkey
+EOF
+)"
+check "wizard-phase1-apikey shows billing warning" 'printf "%s" "$out" | grep -qi "WARNING"'
+check "wizard-phase1-apikey writes BRAIN_LLM_AUTH=api_key" 'grep -q "^BRAIN_LLM_AUTH=api_key" "$_wenv"'
+
+# 4. wizard-phase2-skip: SLSKD_API_KEY already set => no Phase 2 prompts.
+_wenv="$TMP/w4.env"; printf 'SLSKD_API_KEY=existing\n' >"$_wenv"
+out="$(GSR_ENV_FILE="$_wenv" first_run_wizard <<EOF 2>&1
+My Station
+icepw
+1
+EOF
+)"
+check "wizard-phase2-skip: no slskd username prompt" '! printf "%s" "$out" | grep -qi "slskd username"'
+check "wizard-phase2-skip: existing SLSKD_API_KEY preserved" 'grep -q "^SLSKD_API_KEY=existing" "$_wenv"'
+
+# 5. wizard-phase3-skip: empty Enter for Phase 3 => those keys absent.
+_wenv="$TMP/w5.env"; rm -f "$_wenv"
+GSR_ENV_FILE="$_wenv" first_run_wizard <<EOF >/dev/null 2>&1
+My Station
+icepw
+1
+wizuser
+slpw
+slkey
+
+
+
+EOF
+check "wizard-phase3-skip: LASTFM_API_KEY absent" '! grep -q "^LASTFM_API_KEY=" "$_wenv"'
+check "wizard-phase3-skip: DISCOGS_TOKEN absent" '! grep -q "^DISCOGS_TOKEN=" "$_wenv"'
+check "wizard-phase3-skip: GUARDIAN_API_KEY absent" '! grep -q "^GUARDIAN_API_KEY=" "$_wenv"'
+
+# 6. second-run-skips-wizard: SETUP_COMPLETE=1 present => wizard returns immediately.
+_wenv="$TMP/w6.env"; printf 'SETUP_COMPLETE=1\n' >"$_wenv"
+out="$(GSR_ENV_FILE="$_wenv" first_run_wizard </dev/null 2>&1)"
+check "second-run-skips-wizard: no Phase 1 prompt" '! printf "%s" "$out" | grep -qi "Phase 1/3"'
+
+# 7. auth-check-apikey: BRAIN_LLM_AUTH=api_key => exit 0 + [INFO] api_key mode.
+_wenv="$TMP/a1.env"; printf 'BRAIN_LLM_AUTH=api_key\n' >"$_wenv"
+out="$(GSR_ENV_FILE="$_wenv" ANTHROPIC_API_KEY=x check_subscription_auth 2>&1)"; rc=$?
+check "auth-check-apikey exits 0" '[[ "$rc" -eq 0 ]]'
+check "auth-check-apikey prints [INFO] api_key mode" 'printf "%s" "$out" | grep -q "\[INFO\] api_key mode"'
+
+# 8. auth-check-oauth-with-key: oauth + ANTHROPIC_API_KEY => non-zero exit + warning.
+_wenv="$TMP/a2.env"; printf 'BRAIN_LLM_AUTH=oauth\n' >"$_wenv"
+out="$(GSR_ENV_FILE="$_wenv" ANTHROPIC_API_KEY=x check_subscription_auth 2>&1)"; rc=$?
+check "auth-check-oauth-with-key exits non-zero" '[[ "$rc" -ne 0 ]]'
+check "auth-check-oauth-with-key prints WARNING" 'printf "%s" "$out" | grep -qi "WARNING"'
+
+# 9. splash-test-ansi: --splash-test exits 0 with non-empty output.
+out="$(bash "$RUN_SH" --splash-test 2>&1)"; rc=$?
+check "splash-test-ansi exits 0" '[[ "$rc" -eq 0 ]]'
+check "splash-test-ansi non-empty output" '[[ -n "$out" ]]'
+
+# 10. splash-test-dumb: TERM=dumb => zero ANSI escape sequences.
+out="$(TERM=dumb bash "$RUN_SH" --splash-test 2>&1)"
+n_ansi="$(printf '%s' "$out" | grep -c $'\033\[' || true)"
+check "splash-test-dumb: zero ANSI sequences" '[[ "$n_ansi" -eq 0 ]]'
+
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]]
