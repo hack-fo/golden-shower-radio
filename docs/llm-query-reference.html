@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Golden Shower Radio — LLM Query Reference</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #21262d;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --ai: #58a6ff;
+    --python: #3fb950;
+    --orange: #f0883e;
+    --red: #f85149;
+    --purple: #d2a8ff;
+    --yellow: #e3b341;
+    --mode-a: #1f6feb;
+    --mode-b: #bf8700;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 15px; line-height: 1.6; }
+  .page { max-width: 1200px; margin: 0 auto; padding: 40px 24px; }
+  h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+  h2 { font-size: 20px; font-weight: 600; margin: 40px 0 16px; color: var(--ai); }
+  h3 { font-size: 15px; font-weight: 600; margin: 20px 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  p { margin-bottom: 12px; color: var(--text); }
+  .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 32px; }
+
+  /* Pills */
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-right: 6px; }
+  .pill-ai { background: rgba(88,166,255,0.15); color: var(--ai); border: 1px solid rgba(88,166,255,0.3); }
+  .pill-python { background: rgba(63,185,80,0.15); color: var(--python); border: 1px solid rgba(63,185,80,0.3); }
+  .pill-modea { background: rgba(31,111,235,0.15); color: #79c0ff; border: 1px solid rgba(31,111,235,0.3); }
+  .pill-modeb { background: rgba(191,135,0,0.15); color: var(--yellow); border: 1px solid rgba(191,135,0,0.3); }
+
+  /* Overview table */
+  table { width: 100%; border-collapse: collapse; margin-bottom: 32px; }
+  th { background: var(--surface2); padding: 10px 14px; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); border-bottom: 1px solid var(--border); }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td:first-child { font-weight: 600; color: var(--text); white-space: nowrap; }
+
+  /* Query cards */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 40px; overflow: hidden; }
+  .card-header { background: var(--surface2); padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+  .card-title { font-size: 18px; font-weight: 700; flex: 1; min-width: 200px; }
+  .card-meta { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .card-body { padding: 20px; }
+
+  /* Prompt blocks */
+  .prompt-block { margin-bottom: 20px; }
+  .prompt-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+  .prompt-text { background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 13px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; overflow-x: auto; }
+  .placeholder { color: var(--orange); font-style: italic; }
+  .sys-text { color: #cae8ff; }
+  .user-text { color: #e6edf3; }
+  .variable-text { color: var(--orange); }
+
+  /* Output */
+  .output-block { background: rgba(63,185,80,0.05); border: 1px solid rgba(63,185,80,0.2); border-radius: 6px; padding: 14px 16px; font-family: monospace; font-size: 13px; white-space: pre-wrap; color: var(--python); }
+
+  /* Flow steps */
+  .flow { display: flex; flex-direction: column; gap: 0; }
+  .flow-step { display: flex; gap: 12px; align-items: flex-start; }
+  .flow-connector { display: flex; flex-direction: column; align-items: center; min-width: 28px; }
+  .flow-dot { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+  .flow-dot-ai { background: rgba(88,166,255,0.2); color: var(--ai); border: 2px solid var(--ai); }
+  .flow-dot-py { background: rgba(63,185,80,0.2); color: var(--python); border: 2px solid var(--python); }
+  .flow-line { width: 2px; flex: 1; min-height: 16px; background: var(--border); }
+  .flow-content { padding: 4px 0 20px 4px; flex: 1; }
+  .flow-content strong { display: block; font-size: 13px; font-weight: 600; }
+  .flow-content span { color: var(--muted); font-size: 12px; }
+
+  /* Architecture overview */
+  .arch-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px; }
+  @media (max-width: 700px) { .arch-grid { grid-template-columns: 1fr; } }
+  .arch-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .arch-box h4 { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+  .arch-box ul { list-style: none; padding: 0; }
+  .arch-box li { font-size: 13px; color: var(--muted); padding: 3px 0; }
+  .arch-box li::before { content: '→ '; color: var(--border); }
+
+  /* SDK config */
+  .sdk-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 12px; }
+  .sdk-table td { padding: 6px 10px; border-bottom: 1px solid var(--border); }
+  .sdk-table td:first-child { color: var(--muted); width: 40%; }
+  .sdk-table td:last-child { font-family: monospace; color: var(--yellow); }
+
+  .section-intro { color: var(--muted); font-size: 14px; margin-bottom: 24px; max-width: 800px; }
+
+  .toc { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px 24px; margin-bottom: 40px; }
+  .toc h3 { color: var(--text); text-transform: none; letter-spacing: 0; font-size: 14px; margin-bottom: 12px; }
+  .toc ol { padding-left: 20px; }
+  .toc li { color: var(--muted); font-size: 13px; margin-bottom: 4px; }
+  .toc a { color: var(--ai); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+
+  .note { background: rgba(210,168,255,0.08); border-left: 3px solid var(--purple); border-radius: 0 6px 6px 0; padding: 10px 14px; font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+  .note strong { color: var(--purple); }
+
+  .divider { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>Golden Shower Radio — LLM Query Reference</h1>
+<p class="subtitle">Complete reference for every AI/LLM call in brain/llm.py · Generated 2026-06-25</p>
+
+<div class="toc">
+  <h3>Contents</h3>
+  <ol>
+    <li><a href="#overview">System overview — AI vs Python</a></li>
+    <li><a href="#sdk-config">SDK configuration (applies to all calls)</a></li>
+    <li><a href="#query-1">Query 1 — Track Curation</a></li>
+    <li><a href="#query-2">Query 2 — DJ Talk Script</a></li>
+    <li><a href="#query-3">Query 3 — Adversarial Fact-Check</a></li>
+    <li><a href="#query-4">Query 4 — Host Identity Design</a></li>
+    <li><a href="#query-5">Query 5 — Show Editorial Angle</a></li>
+    <li><a href="#query-6">Query 6 — Show-Prep Research (Mode B)</a></li>
+    <li><a href="#flow">End-to-end flow summary</a></li>
+  </ol>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="overview">1. System Overview — What is AI vs Pure Python</h2>
+
+<div class="arch-grid">
+  <div class="arch-box" style="border-color: rgba(88,166,255,0.4);">
+    <h4 style="color: var(--ai);">🤖 Handled by LLM / AI</h4>
+    <ul>
+      <li>Choosing which tracks to play next</li>
+      <li>Writing spoken DJ talk between songs</li>
+      <li>Verifying facts in a script (self-checking)</li>
+      <li>Inventing host personas (name + personality)</li>
+      <li>Designing show themes and editorial angles</li>
+      <li>Researching artists via web (show-prep)</li>
+    </ul>
+  </div>
+  <div class="arch-box" style="border-color: rgba(63,185,80,0.4);">
+    <h4 style="color: var(--python);">🐍 Handled by Pure Python</h4>
+    <ul>
+      <li>Scanning the music library (library.py)</li>
+      <li>Scheduling: when to play, when to talk</li>
+      <li>Acquiring tracks from Soulseek (acquire.py)</li>
+      <li>Extracting audio features (analysis.py)</li>
+      <li>Crossfade &amp; Liquidsoap control</li>
+      <li>Fact grounding / contract enforcement (grounding.py)</li>
+      <li>Persona charter seeding from real library data</li>
+      <li>HTTP server, admin panel, stats</li>
+      <li>Dedup, ban-list, vetting pipeline</li>
+    </ul>
+  </div>
+</div>
+
+<p class="section-intro">The LLM is the <strong style="color:var(--ai)">creative engine</strong> — it decides what to play and what to say. Python is the <strong style="color:var(--python)">operational engine</strong> — it enforces rules, talks to hardware, and ensures nothing false makes it to air. Every LLM output passes through Python gates before being used.</p>
+
+<table>
+  <thead>
+    <tr><th>#</th><th>Name</th><th>Caller function</th><th>Triggered by</th><th>Mode</th><th>Creative freedom</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td>Track Curation</td><td>curate_batch()</td><td>Wishlist running low</td><td><span class="pill pill-modea">Mode A</span></td><td>High — picks anything from training knowledge</td></tr>
+    <tr><td>2</td><td>DJ Talk Script</td><td>generate_talk_script()</td><td>Every song transition</td><td><span class="pill pill-modea">Mode A</span></td><td>Constrained — only verified facts supplied</td></tr>
+    <tr><td>3</td><td>Adversarial Fact-Check</td><td>adversarial_factcheck()</td><td>After every talk script</td><td><span class="pill pill-modea">Mode A</span></td><td>None — analytical only, no generation</td></tr>
+    <tr><td>4</td><td>Host Identity Design</td><td>generate_identity()</td><td>New persona being minted</td><td><span class="pill pill-modea">Mode A</span></td><td>High — invents name + personality freely</td></tr>
+    <tr><td>5</td><td>Show Editorial Angle</td><td>design_show_angle()</td><td>Show engine, per show</td><td><span class="pill pill-modea">Mode A</span></td><td>High — invents themes grounded in research</td></tr>
+    <tr><td>6</td><td>Show-Prep Research</td><td>research_show_prep()</td><td>Occasional show prep</td><td><span class="pill pill-modeb">Mode B</span></td><td>Medium — uses web search, must cite sources</td></tr>
+  </tbody>
+</table>
+
+<!-- ================================================================ -->
+<h2 id="sdk-config">2. SDK Configuration (applies to ALL calls)</h2>
+
+<p class="section-intro">Every call uses <code>claude_agent_sdk</code> with a minimal config that keeps costs under control and avoids burning the MAX subscription quota. There are two modes:</p>
+
+<div class="arch-grid">
+  <div class="arch-box" style="border-color: rgba(31,111,235,0.4);">
+    <h4 style="color: #79c0ff;">Mode A — Cheap (5 of 6 calls)</h4>
+    <table class="sdk-table">
+      <tr><td>allowed_tools</td><td>[] (none)</td></tr>
+      <tr><td>max_turns</td><td>1</td></tr>
+      <tr><td>setting_sources</td><td>[] (no CLAUDE.md/MCP)</td></tr>
+      <tr><td>system_prompt</td><td>custom string (no preset)</td></tr>
+      <tr><td>model</td><td>$ANTHROPIC_MODEL (env)</td></tr>
+      <tr><td>auth</td><td>strips ANTHROPIC_API_KEY → MAX subscription</td></tr>
+    </table>
+    <p style="font-size:12px;color:var(--muted)">One prompt → one response. No tool calls, no round-trips. Fastest and cheapest.</p>
+  </div>
+  <div class="arch-box" style="border-color: rgba(191,135,0,0.4);">
+    <h4 style="color: var(--yellow);">Mode B — Research (Query 6 only)</h4>
+    <table class="sdk-table">
+      <tr><td>allowed_tools</td><td>["WebSearch"]</td></tr>
+      <tr><td>max_turns</td><td>4</td></tr>
+      <tr><td>setting_sources</td><td>[] (no CLAUDE.md/MCP)</td></tr>
+      <tr><td>system_prompt</td><td>custom string (no preset)</td></tr>
+      <tr><td>model</td><td>$ANTHROPIC_MODEL (env)</td></tr>
+      <tr><td>auth</td><td>strips ANTHROPIC_API_KEY (always, even in api_key mode)</td></tr>
+    </table>
+    <p style="font-size:12px;color:var(--muted)">Can call WebSearch up to 3 times before returning. Used only for occasional show prep.</p>
+  </div>
+</div>
+
+<div class="note"><strong>Security note:</strong> ANTHROPIC_API_KEY is stripped from every subprocess environment unless BRAIN_LLM_AUTH=api_key. This prevents accidental pay-per-use billing — the brain runs on the MAX subscription via OAuth credentials mounted at /root/.claude.</div>
+
+<hr class="divider">
+
+<!-- ================================================================ -->
+<h2 id="query-1">3. Query 1 — Track Curation</h2>
+
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">🎵 Track Curation</div>
+      <div class="card-meta">brain/llm.py · curate_batch() → _build_prompt() → _query_text()</div>
+    </div>
+    <div>
+      <span class="pill pill-ai">AI</span>
+      <span class="pill pill-modea">Mode A</span>
+    </div>
+  </div>
+  <div class="card-body">
+
+    <h3>What triggers this</h3>
+    <p>The acquisition pipeline calls <code>curate_batch()</code> whenever the wishlist (tracks queued for download) runs low. It requests a batch of ~25 tracks. The AI picks anything from its knowledge — this is the most unconstrained creative decision in the whole system.</p>
+
+    <div class="flow">
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-py">Py</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>Wishlist running low</strong><span>main.py detects wishlist size below threshold</span></div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-py">Py</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>_build_prompt()</strong><span>Assembles user prompt with batch size, recently played, already-in-library exclusions</span></div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-ai">AI</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>LLM generates track list</strong><span>Returns JSON array of {artist, title} objects</span></div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-py">Py</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>_extract_tracks() → acquire.py</strong><span>Parse JSON, then attempt Soulseek download for each track</span></div>
+      </div>
+    </div>
+
+    <div class="prompt-block">
+      <div class="prompt-label"><span style="color:var(--purple)">SYSTEM PROMPT</span> (PERSONA constant, brain/llm.py line 43)</div>
+      <div class="prompt-text"><span class="sys-text">You are the program director and curator of an autonomous internet radio station. You are a thoughtful, human-spirited music head with deep, eclectic taste across eras and genres - the kind of curator who runs a beloved freeform/college-radio show, not a corporate playlist algorithm. You despise engagement-chasing, ads, and lowest-common-denominator picks. You have complete creative freedom over what gets played. When asked for tracks, you respond with ONLY a JSON array of real, existing songs - no commentary, no markdown fences.</span></div>
+    </div>
+
+    <div class="note"><strong>Optional persona overlay:</strong> When a specific host persona is active, the system prompt is extended with their taste charter: primary territory, in-bounds genres, out-of-bounds genres, favoured eras, moods, and signature artists. This makes each persona curate distinctly.</div>
+
+    <div class="prompt-block">
+      <div class="prompt-label"><span style="color:var(--orange)">USER PROMPT</span> (built by _build_prompt(), line 208)</div>
+      <div class="prompt-text"><span class="user-text">Give me </span><span class="variable-text">{batch_size}</span><span class="user-text"> tracks to play next on the station right now.
+Mix it up across genres, eras, and moods - build a great, surprising radio flow.
+Respond with ONLY a JSON array of objects: [{"artist": "...", "title": "..."}].
+</span>
+<span class="user-text">[IF recently played exists:]
+Recently played (avoid repeating these): </span><span class="variable-text">{artist - title; artist - title; ...}</span><span class="user-text">.
+
+[IF taste reference exists:]
+For loose reference only (the listener's taste - feel free to expand on or ignore it): </span><span class="variable-text">{seed_reference tracks}</span><span class="user-text">.
+
+[IF library exclusions exist:]
+Already in the library (do NOT propose these - we already have them): </span><span class="variable-text">{already_have tracks}</span><span class="user-text">.
+
+[IF rejected tracks exist:]
+Recently tried but could NOT acquire (do NOT propose these again - no source / failed): </span><span class="variable-text">{recently_rejected tracks}</span><span class="user-text">.</span>
+
+<span class="user-text">[IF persona active, appended:]
+Your primary territory (lead with it): </span><span class="variable-text">{primary_territory}</span><span class="user-text">.
+In-bounds genres: </span><span class="variable-text">{in_genres}</span><span class="user-text">.
+Out-of-bounds (avoid): </span><span class="variable-text">{out_genres}</span><span class="user-text">.
+Favoured eras: </span><span class="variable-text">{eras}</span><span class="user-text">.
+Moods: </span><span class="variable-text">{moods}</span><span class="user-text">.
+Signature artists/labels to echo (not copy): </span><span class="variable-text">{artists}</span><span class="user-text">.</span></div>
+    </div>
+
+    <div class="prompt-block">
+      <div class="prompt-label"><span style="color:var(--python)">EXPECTED OUTPUT</span></div>
+      <div class="output-block">[
+  {"artist": "Massive Attack", "title": "Teardrop"},
+  {"artist": "Portishead", "title": "Glory Box"},
+  {"artist": "Burial", "title": "Archangel"},
+  ...
+]</div>
+    </div>
+
+    <h3>What happens next (Python)</h3>
+    <p>The JSON is parsed by <code>_extract_tracks()</code>. Each track goes into the acquisition queue. <code>acquire.py</code> searches Soulseek (slskd), downloads the file, and adds it to the local library. If the LLM is unavailable or returns nothing parseable, a built-in seed list of ~32 known tracks is used as fallback.</p>
+    <p><strong>Creative freedom level: HIGH.</strong> The AI can recommend literally anything from its training knowledge. The only constraints are the exclusion lists (don't repeat recently played / already owned / recently failed).</p>
+
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="query-2">4. Query 2 — DJ Talk Script</h2>
+
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">🎙️ DJ Talk Script</div>
+      <div class="card-meta">brain/llm.py · generate_talk_script() → _build_talk_prompt() → _query_text()</div>
+    </div>
+    <div>
+      <span class="pill pill-ai">AI</span>
+      <span class="pill pill-modea">Mode A</span>
+    </div>
+  </div>
+  <div class="card-body">
+
+    <h3>What triggers this</h3>
+    <p>Called by <code>talk.py</code> before (or after) each song. The AI writes what the DJ says between tracks — back-announcing the track that just played, teasing the mood of the next one, and occasionally dropping verified facts or show context.</p>
+
+    <div class="flow">
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-py">Py</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>Song transition detected</strong><span>main.py / talk.py triggers a talk break</span></div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-py">Py</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>grounding.py builds fact contract</strong><span>Verified facts from knowledge.py + KNOWLEDGE-008 graph (real data only)</span></div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-py">Py</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>_build_talk_prompt()</strong><span>Assembles user prompt with track info, verified facts, optional craft/PV enrichment</span></div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-ai">AI</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>LLM writes the spoken link</strong><span>1–3 sentences of natural radio speech</span></div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-py">Py</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>adversarial_factcheck() gates it</strong><span>Sends script to Query 3 — any unsupported claims trigger regeneration</span></div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-py">Py</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>grounding.py final scan</strong><span>Banned phrases removed, script sent to Kokoro TTS → audio file</span></div>
+      </div>
+    </div>
+
+    <div class="prompt-block">
+      <div class="prompt-label"><span style="color:var(--purple)">SYSTEM PROMPT</span> — POSITIVE_HOST_PERSONA (line 378, default when pv_voice is active)</div>
+      <div class="prompt-text"><span class="sys-text">You are a live human radio host — one person, one microphone, talking to one listener. You sound like a BBC 6 Music / NTS / KEXP presenter: a working music head who genuinely loves this stuff, knowledgeable, dry, and funny, who says plainly when something rules and plainly when it doesn't. Talk like you're texting one smart, slightly-impatient friend about this song — present tense, second person, warmth carried in rhythm and timing. Never say you are live, real, an AI, a script, or a journalist, and never break the fourth wall. Speak ONLY from verified facts; being a real human adds warmth of delivery, not new claims. Your spoken links are short, easy to say out loud, and use no stage directions, emojis, markdown, or quotation marks — just the words you would say into the mic.</span>
+
+<span class="sys-text">[IF persona active, appended:]
+You are the host persona "</span><span class="variable-text">{persona.display_name}</span><span class="sys-text">". Your persistent point of view: </span><span class="variable-text">{persona.pov_seed}</span><span class="sys-text"> Stay consistently this same returning person.</span></div>
+    </div>
+
+    <div class="prompt-block">
+      <div class="prompt-label"><span style="color:var(--orange)">USER PROMPT</span> (built by _build_talk_prompt(), line 510 — simplified core path)</div>
+      <div class="prompt-text"><span class="user-text">Write a SHORT spoken radio link to say between songs, right now, live on air.
+One to three sentences. Natural spoken English. Output ONLY the words to say - no quotes, no markdown, no stage directions, no song metadata formatting.
+
+You just played: "</span><span class="variable-text">{last_title}</span><span class="user-text">" by </span><span class="variable-text">{last_artist}</span><span class="user-text">.
+Briefly back-announce it (a touch of character or a tasteful aside is welcome).
+
+[IF verified facts exist:]
+Verified facts you MAY use (speak ONLY from these — do not invent or recall any other facts about the artist):
+- </span><span class="variable-text">{fact predicate}: {fact value}  [CERTAIN]</span><span class="user-text">
+- </span><span class="variable-text">{fact predicate}: {fact value}  [QUALIFIED — voice with hedge]</span><span class="user-text">
+State CERTAIN facts plainly; for any fact marked QUALIFIED you MUST keep its hedge and never present it as established. Only segue on a listed relationship.
+You MAY (not every break) work ONE of these into a short, genuinely interesting curiosa or anecdote about the track.
+
+[IF next track mood hint exists:]
+The next track feels: </span><span class="variable-text">{next_mood}</span><span class="user-text">. You MAY tease ONLY that shift in mood or energy — do NOT name the artist or title, and do NOT say "coming up", "up next", or "stay tuned".
+
+[IF show theme active:]
+You're in a themed show: </span><span class="variable-text">{show_theme}</span><span class="user-text">. Talking points you may draw from: </span><span class="variable-text">{show_talking_points}</span><span class="user-text">.
+
+[IF station name set:]
+You may occasionally (not every time) drop the station name: </span><span class="variable-text">{station_name}</span><span class="user-text">.
+
+Keep it tight - this is a link, not a monologue.</span></div>
+    </div>
+
+    <div class="prompt-block">
+      <div class="prompt-label"><span style="color:var(--python)">EXPECTED OUTPUT</span></div>
+      <div class="output-block">That Burial track always does something to the room. Up next we're going somewhere warmer — still heavy on the bass, just lighter on the dread.</div>
+    </div>
+
+    <h3>Grounding constraint (Python-enforced)</h3>
+    <p>The AI can only use facts from the <code>grounded_facts</code> list supplied in the prompt. These come from KNOWLEDGE-008 (MusicBrainz, LastFM, enrichment pipeline) — real, verified data. If the AI invents a fact (e.g. wrong release year), the adversarial fact-check (Query 3) catches it and the script is discarded or the claim is removed.</p>
+    <p><strong>Creative freedom level: MEDIUM.</strong> The AI controls tone, wit, phrasing, and which verified fact to highlight. It cannot invent facts, name the next track, or use banned filler phrases.</p>
+
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="query-3">5. Query 3 — Adversarial Fact-Check</h2>
+
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">🔍 Adversarial Fact-Check</div>
+      <div class="card-meta">brain/llm.py · adversarial_factcheck() → _build_factcheck_prompt() → _query_text()</div>
+    </div>
+    <div>
+      <span class="pill pill-ai">AI</span>
+      <span class="pill pill-modea">Mode A</span>
+    </div>
+  </div>
+  <div class="card-body">
+
+    <h3>What triggers this</h3>
+    <p>Called automatically after every talk script (Query 2). A second LLM call acts as an adversarial judge — it reads the script and the closed world of allowed facts, then lists any claims in the script that aren't supported. This is the "AI checking the AI" safety gate.</p>
+
+    <div class="prompt-block">
+      <div class="prompt-label"><span style="color:var(--purple)">SYSTEM PROMPT</span> (FACTCHECK_PERSONA, line 945)</div>
+      <div class="prompt-text"><span class="sys-text">You are a strict radio fact-checker. You are given a short host script and the ONLY facts the host was allowed to use. List every factual claim in the script, then output ONLY the claims that are NOT supported by the supplied facts (a wrong or absent year, label, producer, personnel, chart, award, or anecdote). Perceptual descriptions of how the music SOUNDS are not factual claims and are always supported. Respond with ONLY a JSON array of the unsupported claims as strings, e.g. ["released in 1979", "their third album"]. If every claim is supported, respond with exactly [].</span></div>
+    </div>
+
+    <div class="prompt-block">
+      <div class="prompt-label"><span style="color:var(--orange)">USER PROMPT</span> (built by _build_factcheck_prompt(), line 956)</div>
+      <div class="prompt-text"><span class="user-text">Script to check:
+</span><span class="variable-text">{the DJ script that was just generated}</span><span class="user-text">
+
+The ONLY facts the host was allowed to use:
+- artist: </span><span class="variable-text">{artist name}</span><span class="user-text">
+- title: </span><span class="variable-text">{track title}</span><span class="user-text">
+- album: </span><span class="variable-text">{album name}</span><span class="user-text">
+- year: </span><span class="variable-text">{release year}</span><span class="user-text">
+- genre: </span><span class="variable-text">{genre}</span><span class="user-text">
+- </span><span class="variable-text">{predicate}</span><span class="user-text">: </span><span class="variable-text">{verified fact value}</span><span class="user-text">
+- sourced: </span><span class="variable-text">{quote or sourced fact}</span><span class="user-text">
+  [... one line per verified fact ...]
+
+Output ONLY a JSON array of the unsupported factual claims (or []).</span></div>
+    </div>
+
+    <div class="prompt-block">
+      <div class="prompt-label"><span style="color:var(--python)">POSSIBLE OUTPUTS</span></div>
+      <div class="output-block">[/* all facts supported — script passes */]
+
+["released in 1994", "their debut album"]  /* these claims were NOT in the allowed facts */</div>
+    </div>
+
+    <h3>What happens next</h3>
+    <p>If the array is empty → script passes, goes to TTS. If claims are returned → the script is either discarded (regenerate on next cycle) or the specific claim is surgically removed by <code>grounding.py</code> before the script is used. The gate is fail-open: if this LLM call itself fails (quota/error), it returns <code>[]</code> (pass), because the Tier-1 deterministic fact scan already ran before this.</p>
+    <p><strong>Creative freedom level: NONE.</strong> This is analytical only — the AI is judging, not creating.</p>
+
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="query-4">6. Query 4 — Host Identity Design</h2>
+
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">🧑 Host Identity Design</div>
+      <div class="card-meta">brain/llm.py · generate_identity() → _build_identity_prompt() → _query_text()</div>
+    </div>
+    <div>
+      <span class="pill pill-ai">AI</span>
+      <span class="pill pill-modea">Mode A</span>
+    </div>
+  </div>
+  <div class="card-body">
+
+    <h3>What triggers this</h3>
+    <p>Called by <code>minting.py</code> when the station decides to create a new host persona. This happens autonomously — the station mints new hosts when the roster has gaps. Before this call, Python has already done the hard work: the persona's <em>taste charter</em> (what music they like) was built by <code>persona_seeding.py</code> from the actual library contents. The only remaining free-text decision is WHO this person is — their name and personality.</p>
+
+    <div class="flow">
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-py">Py</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>persona_seeding.py builds taste charter</strong><span>Scans real library, clusters genres/eras/moods → taste territory. 100% Python, no AI.</span></div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-py">Py</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>minting.py assigns voice + gender + age</strong><span>Picks unused TTS voice from voice pool, assigns demographic. 100% Python.</span></div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-ai">AI</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>LLM invents name + personality (THIS QUERY)</strong><span>Given taste territory + gender + age, AI creates the human character</span></div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-py">Py</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>minting.py stores persona</strong><span>Persisted to database; persona becomes active on the roster</span></div>
+      </div>
+    </div>
+
+    <div class="prompt-block">
+      <div class="prompt-label"><span style="color:var(--purple)">SYSTEM PROMPT</span> (IDENTITY_PERSONA, line 1039)</div>
+      <div class="prompt-text"><span class="sys-text">You design a single distinct radio-host persona for an autonomous freeform internet radio station. Given a musical taste territory, you invent ONE believable human host: a real-sounding display name and a SHORT personality (one or two sentences) in a warm, human, non-corporate voice - never a chirpy AI assistant. Respond with ONLY a JSON object {"name": ..., "personality": ...} - no commentary, no markdown fences.</span></div>
+    </div>
+
+    <div class="prompt-block">
+      <div class="prompt-label"><span style="color:var(--orange)">USER PROMPT</span> (built by _build_identity_prompt(), line 1048)</div>
+      <div class="prompt-text"><span class="user-text">Design one radio-host persona. Primary taste territory: </span><span class="variable-text">{primary_territory}</span><span class="user-text">. Plays mostly: </span><span class="variable-text">{genre list}</span><span class="user-text">. Gender: </span><span class="variable-text">{gender}</span><span class="user-text">. Age: </span><span class="variable-text">{age}</span><span class="user-text">. Respond with ONLY {"name": "...", "personality": "..."}.</span></div>
+    </div>
+
+    <div class="prompt-block">
+      <div class="prompt-label"><span style="color:var(--python)">EXPECTED OUTPUT</span></div>
+      <div class="output-block">{
+  "name": "Sigrid Vang",
+  "personality": "Ex-radio engineer turned host, obsessed with the room acoustics of great recordings. Talks about music like it's furniture you have to live with."
+}</div>
+    </div>
+
+    <p><strong>Creative freedom level: HIGH.</strong> The AI has full creative control over name and personality. The only constraints are: taste territory must match the charter, gender and age are pre-assigned, and the persona must sound like a real human (not an AI assistant).</p>
+
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="query-5">7. Query 5 — Show Editorial Angle</h2>
+
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">🎬 Show Editorial Angle</div>
+      <div class="card-meta">brain/llm.py · design_show_angle() → _build_show_angle_prompt() → _query_text()</div>
+    </div>
+    <div>
+      <span class="pill pill-ai">AI</span>
+      <span class="pill pill-modea">Mode A</span>
+    </div>
+  </div>
+  <div class="card-body">
+
+    <h3>What triggers this</h3>
+    <p>Called by the show engine (<code>shows.py</code>) when a new show needs a theme. A "show" is a themed programming block — e.g. "1979 in one hour" or "the producers behind the sound." The AI invents the editorial angle that gives the show its identity. Research leads (from LastFM, human DJ threads) are provided as raw material but are non-binding.</p>
+
+    <div class="prompt-block">
+      <div class="prompt-label"><span style="color:var(--purple)">SYSTEM PROMPT</span> (SHOW_ANGLE_PERSONA, line 1133)</div>
+      <div class="prompt-text"><span class="sys-text">You are a radio host inventing the editorial ANGLE for your next show on an autonomous freeform station. Given your musical taste and some research leads, you propose ONE fresh, specific editorial angle (a theme/lens — e.g. 'the producers behind the sound', '1979 in one hour', 'artists adjacent to X'), grounded in the research + your taste, in your own voice — never an engagement-bait or popularity-chasing theme, never a repeat of a recent angle. Respond with ONLY a JSON object {"theme": ..., "angle": ..., "lens": ..., "talking_points": [...]} — no commentary, no markdown fences. 'lens' is a short catalog filter phrase (a genre/era/mood/tag/'similar to X'); 'talking_points' are 1-3 short grounded notes you MIGHT voice.</span></div>
+    </div>
+
+    <div class="prompt-block">
+      <div class="prompt-label"><span style="color:var(--orange)">USER PROMPT</span> (built by _build_show_angle_prompt(), line 1146)</div>
+      <div class="prompt-text"><span class="user-text">Invent the editorial angle for your next show.
+Your taste / who you are: </span><span class="variable-text">{persona description}</span><span class="user-text">.
+Research leads to draw on (colour, not facts to state verbatim): </span><span class="variable-text">{research lead 1}; {research lead 2}; ...</span><span class="user-text">.
+Do NOT repeat the kind of these recent shows you already ran: </span><span class="variable-text">{recent_angle_1}; {recent_angle_2}; ...</span><span class="user-text">.
+Return ONLY the JSON object described.</span></div>
+    </div>
+
+    <div class="prompt-block">
+      <div class="prompt-label"><span style="color:var(--python)">EXPECTED OUTPUT</span></div>
+      <div class="output-block">{
+  "theme": "Island records, 1971-1979",
+  "angle": "The eight years when Island signed both traffic and Bob Marley and somehow made it make sense",
+  "lens": "label:Island Records era:1970s",
+  "talking_points": [
+    "Chris Blackwell signing Marley after seeing him perform in Jamaica",
+    "The Wailers and Traffic recording in the same Basing Street studios"
+  ]
+}</div>
+    </div>
+
+    <p><strong>Creative freedom level: HIGH.</strong> The AI invents the show concept. The only constraints are: it must fit the persona's taste territory, it must not repeat a recently-run angle, and the research leads (non-binding suggestions) provide inspiration.</p>
+
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="query-6">8. Query 6 — Show-Prep Research (Mode B)</h2>
+
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">📚 Show-Prep Research</div>
+      <div class="card-meta">brain/llm.py · research_show_prep() → _build_show_prep_prompt() → _query_research() (Mode B)</div>
+    </div>
+    <div>
+      <span class="pill pill-ai">AI</span>
+      <span class="pill pill-modeb">Mode B — Web Search ON</span>
+    </div>
+  </div>
+  <div class="card-body">
+
+    <h3>What triggers this</h3>
+    <p>Called <strong>occasionally</strong> by the show prep pipeline (not every song, not even every show). When a featured artist or theme is being prepared for a deep-dive show, the AI is given WebSearch access and asked to gather real, citable facts. This is the only call with internet access. It's rate-limited and only runs for special programming blocks.</p>
+
+    <div class="note"><strong>Important:</strong> Even in Mode B, ANTHROPIC_API_KEY is always stripped from the environment (unlike Mode A where it depends on BRAIN_LLM_AUTH). This is intentional — the research path uses web session auth, not API key, regardless of the configured auth mode.</div>
+
+    <div class="prompt-block">
+      <div class="prompt-label"><span style="color:var(--purple)">SYSTEM PROMPT</span> (SHOW_PREP_PERSONA, line 1295)</div>
+      <div class="prompt-text"><span class="sys-text">You are the research desk for an autonomous freeform radio station, preparing one themed show. Using web search, gather REAL, verifiable facts about the featured artist and theme — genre origins and movements, eras, artist/label/song history, cultural and societal context, the role the music plays in human life. Ground every factual claim in a source you actually found; if you cannot verify a claim, HEDGE it or LEAVE IT OUT — never invent a fact, a date, a quote, or a credit. The recent-output list you are given is ONLY so you AVOID repeating yourself — it is NOT an example to imitate. Respond with ONLY a JSON object {"theme": ..., "tracklist": [{"artist":...,"title":...}], "talking_points": [...]} — no commentary, no markdown fences. 'talking_points' are short framing notes (genre/cultural context), NOT hard factual assertions; the hard facts come from the verified knowledge store, not from you.</span></div>
+    </div>
+
+    <div class="prompt-block">
+      <div class="prompt-label"><span style="color:var(--orange)">USER PROMPT</span> (built by _build_show_prep_prompt(), line 1311)</div>
+      <div class="prompt-text"><span class="user-text">Prepare a themed show featuring </span><span class="variable-text">{artist}</span><span class="user-text">, theme: </span><span class="variable-text">{theme}</span><span class="user-text">.
+Use web search to research it. Return ONLY the JSON object described.
+Already-verified facts (do not re-fetch, build around these): </span><span class="variable-text">{known_fact_1}; {known_fact_2}; ...</span><span class="user-text">.
+Recently aired (AVOID repeating these — this is a repeat-avoidance list, NOT examples to copy): </span><span class="variable-text">{recent_output_1}; {recent_output_2}; ...</span><span class="user-text">.</span></div>
+    </div>
+
+    <div class="prompt-block">
+      <div class="prompt-label"><span style="color:var(--python)">EXPECTED OUTPUT</span></div>
+      <div class="output-block">{
+  "theme": "Lee 'Scratch' Perry and the Black Ark",
+  "tracklist": [
+    {"artist": "The Congos", "title": "Heart of the Congos"},
+    {"artist": "Max Romeo", "title": "War inna Babylon"},
+    {"artist": "Junior Murvin", "title": "Police and Thieves"}
+  ],
+  "talking_points": [
+    "The Black Ark studio was built in Perry's garden in Washington Gardens, Kingston, 1973",
+    "Perry burned the studio down in 1983 — accounts differ on whether it was deliberate"
+  ]
+}</div>
+    </div>
+
+    <h3>What happens next (Python)</h3>
+    <p>The talking_points go into the show's grounded-facts store (available to future talk prompts for this show). The tracklist suggests tracks for acquisition. The theme informs the show angle. All talking_points are treated as <em>qualified</em> (hedged) facts — never stated as certain on air unless cross-verified with the KNOWLEDGE-008 pipeline.</p>
+    <p><strong>Creative freedom level: MEDIUM.</strong> The AI researches and synthesises. It has web access but must cite sources and hedge anything unverifiable. It cannot invent facts. The Python knowledge pipeline does a final verification pass before any talking_point can be voiced as established fact.</p>
+
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="flow">9. End-to-End Flow Summary</h2>
+
+<p class="section-intro">Here's how the components fit together in a normal station day — which parts are AI, which are Python, and in what order they run.</p>
+
+<div class="card">
+  <div class="card-body">
+    <div class="flow">
+
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-py">Py</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>Station starts (main.py)</strong><span>Loads config, connects to Liquidsoap/Icecast, restores state, starts HTTP server</span></div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-py">Py</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>Library scan (library.py)</strong><span>Indexes all downloaded music files from disk. Purely Python — no AI.</span></div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-py">Py</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>Persona check (minting.py)</strong><span>If no host personas exist, mint one. Taste charter = pure Python (persona_seeding.py reads the library)</span></div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-ai">AI</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>→ Query 4: Host Identity</strong><span>AI invents name + personality for the new persona. Runs once per new persona, rarely.</span></div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-ai">AI</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>→ Query 1: Track Curation</strong><span>AI picks the first batch of tracks (25 songs). Runs whenever the wishlist runs low.</span></div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-py">Py</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>Acquisition pipeline (acquire.py)</strong><span>Downloads tracks from Soulseek. Vetting gate filters offensive/low-quality files. Python only.</span></div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-py">Py</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>Enrichment + analysis (enrich.py, analysis.py)</strong><span>BPM, key, mood, MusicBrainz metadata, tags. Python only.</span></div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-py">Py</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>Rotation scheduling</strong><span>Python picks which verified track to actually play next (from the rotation pool)</span></div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-py">Py</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>Grounding prep (knowledge.py, grounding.py)</strong><span>Assembles the closed-world fact contract for the upcoming talk break. Python only.</span></div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-ai">AI</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>→ Query 2: DJ Talk Script</strong><span>AI writes the spoken link. Constrained to verified facts in the prompt.</span></div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-ai">AI</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>→ Query 3: Adversarial Fact-Check</strong><span>AI checks its own script for unsupported claims. Bad claims trigger discard/removal.</span></div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-py">Py</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>TTS (voice.py, Kokoro)</strong><span>Clean script converted to audio. Crossfade into song. Python + local model, no cloud AI.</span></div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-ai">AI</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>→ Query 5: Show Angle (occasionally)</strong><span>AI invents a themed show concept when the show engine needs a new programming block.</span></div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-ai">AI</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>→ Query 6: Show-Prep Research (rarely)</strong><span>For featured-artist shows, AI researches with web access. Talking points stored for future talk breaks.</span></div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-connector"><div class="flow-dot flow-dot-py">Py</div><div class="flow-line"></div></div>
+        <div class="flow-content"><strong>↺ Loop forever</strong><span>Station runs continuously. Queries 1–3 fire on a regular cycle; 4–6 fire on demand.</span></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<h2>10. Creative Freedom Summary</h2>
+
+<table>
+  <thead>
+    <tr><th>Query</th><th>What the AI decides freely</th><th>What Python constrains/enforces</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Track Curation</td>
+      <td>Any artist or song from training knowledge; genre mix; sequencing feel</td>
+      <td>Exclusion lists (already owned, recently played, recently failed). Vetting gate post-download.</td>
+    </tr>
+    <tr>
+      <td>DJ Talk Script</td>
+      <td>Phrasing, wit, tone, which facts to highlight, whether to mention the show theme</td>
+      <td>Must use only supplied verified facts. Banned phrases removed. Adversarial check (Query 3) gates delivery.</td>
+    </tr>
+    <tr>
+      <td>Adversarial Fact-Check</td>
+      <td>Nothing — analytical role only</td>
+      <td>Output list of claims triggers discard or surgical removal of unsupported claims</td>
+    </tr>
+    <tr>
+      <td>Host Identity</td>
+      <td>Name, personality, character voice</td>
+      <td>Gender + age pre-assigned. Taste territory pre-built from real library data. Must output valid JSON.</td>
+    </tr>
+    <tr>
+      <td>Show Editorial Angle</td>
+      <td>Theme concept, angle framing, catalog filter phrase, talking point ideas</td>
+      <td>Must fit persona taste. Must not repeat recent angles. Research leads non-binding. Fail-open (returns {} on error).</td>
+    </tr>
+    <tr>
+      <td>Show-Prep Research</td>
+      <td>What to search, which sources to trust, how to frame cultural context</td>
+      <td>Must cite/hedge everything. Pre-verified facts supplied (don't re-fetch). KNOWLEDGE-008 does final truth-gate before any claim reaches air.</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="note" style="margin-top:32px"><strong>Bottom line:</strong> The AI has genuine creative autonomy over three things — what music to play, what the host says, and what the shows are about. Python handles everything that can't be wrong: scheduling, downloading, fact verification, audio engineering, and the safety gates that prevent hallucinated facts from ever reaching a listener's ears. The AI is the programmer; Python is the studio engineer.</div>
+
+<p style="color:var(--muted);font-size:12px;margin-top:40px;text-align:center">Source: brain/llm.py · Generated 2026-06-25 · SPEC refs: PROGRAMMING-007, KNOWLEDGE-008, HOSTCTX-016, OPS-004</p>
+
+</div>
+</body>
+</html>
