@@ -6,11 +6,12 @@ in the run loop. The station plays real, human-made recordings that it autonomou
 acquires — not AI-generated music. The AI is the DJ and the editor; the catalog
 consists of actual recordings.
 
-> Status: a real, running system. The core engine — acquisition, playout, curation,
-> host voice, audio analysis, editorial knowledge base — is operational. A set of
-> larger features (multi-persona hosts, autonomous news/imaging, orchestration
-> world-model) are authored as SPECs and are on the roadmap. The capability table
-> below marks what is **shipped** versus **planned**.
+> Status: a real, running system. The full feature set is operational — acquisition,
+> playout, curation, multi-persona hosts, autonomous news/imaging, orchestration,
+> content vetting, deduplication, and editorial knowledge are all shipped. A second
+> tier of features (statistics site, website redesign, listener interaction) are
+> authored as SPECs on the roadmap. The capability table below marks what is
+> **shipped** versus **planned**.
 
 ---
 
@@ -182,13 +183,27 @@ Flags:
 | Loudness-matched talk clips, clean talk transitions | VOICE-002 | **Shipped** |
 | Per-track audio analysis: BPM, key/Camelot, energy, LUFS, cue points | ANALYSIS-006 | **Shipped** |
 | Metadata enrichment (MusicBrainz / TheAudioDB) + multi-source consensus | ANALYSIS-006 | **Shipped** |
+| Autonomous program director, 24h scheduling, host/show lifecycle FSM | OPS-004 | **Shipped** |
+| Self-produced imaging/jingles, autonomous newsroom + newscasting | OPS-004 | **Shipped** |
+| Library management: liveliness gate, slskd queue management | OPS-004 | **Shipped** |
+| Orchestration nervous system: world-model, event-reaction, listener memory | ORCH-005 | **Shipped** |
+| Multi-persona hosts with distinct hand-curated taste + anti-convergence | PROGRAMMING-007 | **Shipped** |
+| Show formats, radio craft, playlist rotation, diversity MMR re-rank | PROGRAMMING-007 | **Shipped** |
 | Dated, sourced editorial knowledge base + freshness gate + grounding feed | KNOWLEDGE-008 | **Shipped** |
-| Core-identity tag correction via AcoustID + MusicBrainz (ENRICH-012) | ENRICH-012 | **Shipped** |
-| SQLite persistence for library, attempts, and watch manifest (DATASTORE-022) | DATASTORE-022 | **Shipped** |
+| Music press RSS feeds (NME, Paste, Fader, DJ Mag, FutureMusic) | KNOWLEDGE-008 | **Shipped** |
+| Core-identity tag correction via AcoustID + MusicBrainz | ENRICH-012 | **Shipped** |
+| Download deduplication control (MBID-keyed, version-aware) | DEDUP-014 | **Shipped** |
+| Listener like token + implicit drop-off signal + affinity store | LIKE-015 | **Shipped** |
+| Richer host talk: year/album context, grounded curiosa | HOSTCTX-016 | **Shipped** |
+| SQLite persistence for library, attempts, analytics, watch manifest | DATASTORE-022 | **Shipped** |
+| Conservative content-vetting cascade + soft reversible ban-list | VETTING-027 | **Shipped** |
+| Forceful on-air skip: SkipGovernor + harbor control channel | SKIP-028 | **Shipped** |
+| Four-layer hybrid memory: taxonomy + document + coherence + purge | MEMORY-031 | **Shipped** |
+| Per-persona lived-experience loop (SELECT→ENGAGE→TASTE→FRAME) | HOSTLIFE-032 | **Shipped** |
+| Listening analytics + insight site (SQLite play_events + /stats) | STATS-013 | Planned |
+| Listener like heart UI on website | LIKE-015 | Planned |
+| 2026 website redesign + durable last-played ring | WEBUI-018 | Planned |
 | Faroese host voice (teldutala.fo) | VOICE-002 | Planned |
-| Multi-persona hosts with distinct hand-curated taste + anti-convergence | PROGRAMMING-007 | Planned |
-| Autonomous program director, self-produced imaging/jingles, newscasting | OPS-004 | Planned |
-| Orchestration / world-model / event reaction | ORCH-005 | Planned |
 | File-tag write-back, artwork, richer stream/web now-playing | TAGSTREAM-009 | Planned |
 | Live call-in + social integration | CALLIN-003 | Planned |
 

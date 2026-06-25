@@ -22,3 +22,11 @@ The system runs as a Docker Compose stack targeting Linux/Debian. Liquidsoap per
 | [[Runtime-Config]] | Process wiring, environment variable reference, logging format |
 | [[Voice-Talk]] | Pre-rendered host talk clips: LLM scripting, Kokoro/Piper TTS, loudness normalization |
 | [[Website]] | Station web surface: HTML render, now-playing poll, `/api/nowplaying` JSON shape |
+| [[Orchestration]] | Nervous system: world-model, event-reaction, listener memory, news ledger (ORCH-005) |
+| [[Content-Vetting]] | Conservative vetting cascade + reversible ban-list (VETTING-027) |
+| [[Personas]] | Multi-persona host system: identity, voice, taste seeding, lifecycle (PROGRAMMING-007) |
+| [[Memory]] | Four-layer hybrid memory: taxonomy, document, coherence, purge (MEMORY-031) |
+| [[Hostlife]] | Per-persona lived-experience loop: news SELECT→ENGAGE→TASTE→FRAME (HOSTLIFE-032) |
+| [[Like-Dropoff]] | Listener like token + implicit drop-off signal + affinity store (LIKE-015) |
+| [[Skip-Control]] | Forceful on-air skip: SkipGovernor + harbor control channel (SKIP-028) |
+| [[Dedup]] | Download deduplication control: MBID-keyed, version-aware (DEDUP-014) |
