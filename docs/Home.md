@@ -32,3 +32,4 @@ The system runs as a Docker Compose stack targeting Linux/Debian. Liquidsoap per
 | [[Skip-Control]] | Forceful on-air skip: SkipGovernor + harbor control channel (SKIP-028) |
 | [[Dedup]] | Download deduplication control: MBID-keyed, version-aware (DEDUP-014) |
 | [[Taste-Seeding]] | First-boot taste seed: Anchor / Compass / WOPR fidelity modes explained (SEEDING-029) |
+| [[External-Services]] | All external APIs and accounts: what needs registration, what's free, what's optional |
