@@ -7,16 +7,22 @@ server; written by /api/next commits and the acquisition workers.
 
 from __future__ import annotations
 
+import json
+import logging
+import os
 import threading
 import time
 from collections import deque
 from typing import Any, Deque, Dict, List, Optional
 
+log = logging.getLogger(__name__)
+
 
 class StationState:
-    def __init__(self, station_name: str, recent_window: int = 20):
+    def __init__(self, station_name: str, recent_window: int = 20, ring_path: Optional[str] = None):
         self.station_name = station_name
         self._lock = threading.RLock()
+        self._ring_path = ring_path
         # Displayed now-playing = GROUND TRUTH of what is on air RIGHT NOW. It is set
         # by airing reports from Liquidsoap (set_on_air), NOT at hand-out time, so the
         # website / /api/nowplaying / /status never lead the broadcast or hang stale.
@@ -48,6 +54,67 @@ class StationState:
         # force-serves it BEFORE the first song instead of waiting for songs_since_talk.
         self._welcome_owed: bool = False
         self._pending_is_welcome: bool = False
+        # DISPLAY-ONLY durable ring: survive brain restarts so "Recently Played" is not
+        # empty after a redeploy. This rehydrates _recent for display; rotation authority
+        # remains _committed_keys + on-air history (recent_keys), untouched by this.
+        self._rehydrate_recent()
+
+    # -- durable recent ring (DISPLAY-ONLY) --------------------------------------
+
+    def _rehydrate_recent(self) -> None:
+        """Load the persisted recent ring at startup. DISPLAY-ONLY; never affects
+        rotation. Runs once in __init__ before any lock contention. Swallows all
+        errors - a missing/corrupt ring file must never block startup."""
+        if not self._ring_path or not os.path.exists(self._ring_path):
+            return
+        try:
+            with open(self._ring_path, encoding="utf-8") as f:
+                data = json.load(f)
+            items = data.get("items", [])
+            # Stored most-recent-first; _recent is a most-recent-first deque, so extend
+            # in order. maxlen caps it automatically; slice to be explicit.
+            for item in items[: self._recent.maxlen]:
+                self._recent.append(
+                    {
+                        "artist": item.get("artist", ""),
+                        "title": item.get("title", ""),
+                        "kind": item.get("kind", "music"),
+                        "played_at": item.get("played_at", 0.0),
+                        "album": item.get("album", ""),
+                        "path": item.get("path", ""),
+                    }
+                )
+        except Exception as exc:  # noqa: BLE001 - persistence must never crash the brain
+            log.warning("recent ring rehydrate failed (%s): %s", self._ring_path, exc)
+
+    def _persist_recent(self) -> None:
+        """Atomically write the recent ring for restart survival. DISPLAY-ONLY. Copies
+        the deque under the (brief) lock then writes OUTSIDE it - file I/O never blocks
+        other threads. Swallows all errors - persistence failure must never propagate."""
+        if not self._ring_path:
+            return
+        with self._lock:
+            snapshot = list(self._recent)
+        try:
+            payload = {
+                "items": [
+                    {
+                        "artist": r.get("artist", ""),
+                        "title": r.get("title", ""),
+                        "kind": r.get("kind", "music"),
+                        "played_at": r.get("played_at", 0.0),
+                        "album": r.get("album", ""),
+                        "path": r.get("path", ""),
+                    }
+                    for r in snapshot
+                ]
+            }
+            tmp = self._ring_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(payload, f)
+            os.replace(tmp, self._ring_path)
+        except Exception as exc:  # noqa: BLE001 - persistence must never crash the brain
+            log.warning("recent ring persist failed (%s): %s", self._ring_path, exc)
 
     # -- commit bookkeeping (hand-out time) --------------------------------------
 
@@ -99,6 +166,7 @@ class StationState:
                         # by-path enriched with features in the now-playing JSON (additive field;
                         # absent => the enrichment simply degrades to artist/title for that row).
                         "path": cur.get("path", ""),
+                        "album": cur.get("album", ""),
                     }
                 )
             self._now_playing = {
@@ -109,7 +177,10 @@ class StationState:
                 "kind": kind,
                 "started_at": time.time(),
             }
-            return True
+        # Persist OUTSIDE the lock - file I/O must never block other threads. Only reached
+        # when the now-playing actually changed and a new row was pushed to _recent.
+        self._persist_recent()
+        return True
 
     def now_playing(self) -> Optional[Dict]:
         with self._lock:

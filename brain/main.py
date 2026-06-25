@@ -83,7 +83,11 @@ def run() -> int:
     )
 
     stop_event = threading.Event()
-    state = StationState(cfg.station_name, recent_window=cfg.recent_window)
+    state = StationState(
+        cfg.station_name,
+        recent_window=cfg.recent_window,
+        ring_path=os.path.join(cfg.db_dir, "recent_ring.json"),
+    )
     state.set_website_html(render_website(cfg))
 
     library = Library(cfg.music_dir, cfg.library_path, backend=cfg.store_backend)
