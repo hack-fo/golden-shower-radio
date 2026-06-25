@@ -6,12 +6,11 @@ in the run loop. The station plays real, human-made recordings that it autonomou
 acquires — not AI-generated music. The AI is the DJ and the editor; the catalog
 consists of actual recordings.
 
-> Status: a real, running system. The full feature set is operational — acquisition,
-> playout, curation, multi-persona hosts, autonomous news/imaging, orchestration,
-> content vetting, deduplication, and editorial knowledge are all shipped. A second
-> tier of features (statistics site, website redesign, listener interaction) are
-> authored as SPECs on the roadmap. The capability table below marks what is
-> **shipped** versus **planned**.
+> Status: a real, running system. Acquisition, playout, curation, multi-persona hosts,
+> autonomous news/imaging, orchestration, content vetting, deduplication, editorial
+> knowledge, a listening analytics site (/stats), and the 2026 website redesign with
+> durable last-played persistence are all shipped. The capability table below marks
+> what is **shipped** versus **planned**.
 
 ---
 
@@ -167,6 +166,7 @@ Flags:
 |------|-----|
 | Live stream (MP3) | `http://localhost:8000/radio` |
 | Station website + now-playing | `http://localhost:8080/` |
+| Listening analytics + charts | `http://localhost:8080/stats` |
 | JSON status | `http://localhost:8080/status` |
 
 ---
@@ -200,9 +200,9 @@ Flags:
 | Forceful on-air skip: SkipGovernor + harbor control channel | SKIP-028 | **Shipped** |
 | Four-layer hybrid memory: taxonomy + document + coherence + purge | MEMORY-031 | **Shipped** |
 | Per-persona lived-experience loop (SELECT→ENGAGE→TASTE→FRAME) | HOSTLIFE-032 | **Shipped** |
-| Listening analytics + insight site (SQLite play_events + /stats) | STATS-013 | Planned |
+| Listening analytics + insight site (SQLite play_events + /stats) | STATS-013 | **Shipped** |
+| 2026 website redesign + durable last-played ring | WEBUI-018 | **Shipped** |
 | Listener like heart UI on website | LIKE-015 | Planned |
-| 2026 website redesign + durable last-played ring | WEBUI-018 | Planned |
 | Faroese host voice (teldutala.fo) | VOICE-002 | Planned |
 | File-tag write-back, artwork, richer stream/web now-playing | TAGSTREAM-009 | Planned |
 | Live call-in + social integration | CALLIN-003 | Planned |
