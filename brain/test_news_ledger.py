@@ -7,7 +7,6 @@ Run: python3 -m pytest brain/test_news_ledger.py -q
 """
 from __future__ import annotations
 import time
-import pytest
 from unittest.mock import MagicMock
 from brain.news_ledger import NewsLedger, normalize_story_id
 

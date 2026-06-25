@@ -7,7 +7,6 @@ Run: python3 -m pytest brain/test_re_event_reaction.py -q
 """
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock
 
 from brain.event_reaction import (

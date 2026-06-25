@@ -8,10 +8,9 @@ Run: python3 -m pytest brain/test_action_surface.py -q
 from __future__ import annotations
 
 import pytest
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 from brain.action_surface import ActionSurface, ActionKind
-from brain.ledger import EditorialWriteRail
 
 
 def _ledger():

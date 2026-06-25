@@ -7,12 +7,11 @@ Run: python3 -m pytest brain/test_ra_action_surface.py -q
 """
 from __future__ import annotations
 
-import threading
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from brain.action_surface import ActionSurface, ActionKind, EditorialWriteRailError
+from brain.action_surface import ActionSurface, ActionKind
 from brain.ledger import EventLedger
 
 

@@ -8,18 +8,14 @@ Covers:
   AC-SK-005  Airing ground-truth unchanged; no new now-playing source introduced
 """
 
-import json
-import threading
-from io import BytesIO
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from brain.skipguard import (
     CAUSE_BAD_REQUEST,
     CAUSE_EXPECT_PATH_MISMATCH,
-    SkipDecision,
     SkipGovernor,
 )
 

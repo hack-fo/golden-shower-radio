@@ -8,9 +8,8 @@ Run: python3 -m pytest brain/test_rl_director_loop.py -q
 from __future__ import annotations
 
 import threading
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
-import pytest
 
 from brain.director import Director
 
@@ -82,7 +81,7 @@ class TestDirectorLoopStructure:
         wm_builder = MagicMock()
         as_ = MagicMock()
         nl = MagicMock()
-        lm = MagicMock()
+        lm = MagicMock()  # noqa: F841
         d.wire_orch(world_model_builder=wm_builder, action_surface=as_,
                     orch_news_ledger=nl)
         assert d._world_model_builder is wm_builder

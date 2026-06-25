@@ -10,11 +10,9 @@ from __future__ import annotations
 import threading
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from brain.director import Director
-from brain.world_model import WorldModel, WorldModelBuilder
-from brain.event_reaction import EventReactionPolicy, SignificanceTier
+from brain.world_model import WorldModelBuilder
 
 
 def _cfg():

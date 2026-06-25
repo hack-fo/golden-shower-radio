@@ -121,7 +121,7 @@ def run() -> int:
         log_event(log, "main.wishlist_store_ready")
     except Exception as exc:  # noqa: BLE001 - wishlist store is best-effort, never fatal to boot
         log_event(log, "main.wishlist_store_init_failed", error=str(exc))
-        wishlist_store = None
+        wishlist_store = None  # noqa: F841
     # SPEC-RADIO-SHOWS-020: the editorial show-variation engine (Groups SG/SX/SP/SD). OFF by
     # default (cfg.shows_enabled) and best-effort: an init hiccup leaves show_engine None and the
     # director + talk loops behave exactly as before this SPEC (byte-identical). When on, an

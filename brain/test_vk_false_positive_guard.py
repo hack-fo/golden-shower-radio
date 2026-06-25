@@ -16,10 +16,8 @@ AC-VK-008: is_non_music property reflects verdict correctly.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from .vetting import (
-    SIGNAL_DURATION_SIZE,
     SIGNAL_KEYWORD,
     SIGNAL_SPEECH,
     VERDICT_AMBIGUOUS,

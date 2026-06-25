@@ -83,16 +83,136 @@ leaking internal persona names over the stream.
 
 ### TTS providers
 
-| Provider | Role | Notes |
-|---|---|---|
-| `KokoroProvider` | Primary | In-process (no subprocess). Loads `KPipeline` once at startup. 24 kHz output; resampled downstream. Fails safely back to Piper if model missing or OOM. |
-| `PiperProvider` | Fallback | Subprocess (`python -m piper`). CPU-only ONNX. Configurable timeout. |
-| teldutala.fo | Future (Faroese) | Not yet built. |
-| ElevenLabs | Future (premium) | Not yet built. |
+The station uses a provider-agnostic `TTSProvider` protocol in `brain/voice.py`.
+Swapping the provider requires only a config change — the playout path is unaffected.
 
-`make_provider(cfg)` is the factory. It tries Kokoro first; if that raises at
-construction time it logs and returns a Piper provider. The fallback happens once
-at startup, not per-clip.
+`make_provider(cfg)` is the factory (`@MX:ANCHOR`). It tries Kokoro first; on any
+import/model failure it falls back to Piper once at startup, not per-clip.
+
+#### Provider overview
+
+| Provider | Status | Quality | Compute | Language | Rate |
+|---|---|---|---|---|---|
+| **Kokoro** | Default | ★★★★★ | CPU (GPU optional) | English US + UK | 24 kHz |
+| **Piper** | Fallback | ★★★☆☆ | CPU only | 100+ (en baked) | 22.05 kHz |
+| **teldutala.fo** | Planned | ★★★★☆ | None (remote API) | Faroese only | 22 kHz |
+| **Qwen-TTS** | SPEC'd (VOICE-002) | ★★★★★ | GPU recommended | Multilingual | 24 kHz |
+| **Chatterbox** | SPEC'd (VOICE-002) | ★★★★☆ | GPU recommended | English | 22.05 kHz |
+| **ElevenLabs** | Future opt-in | ★★★★★ | None (cloud API) | 30+ | Cloud |
+
+---
+
+#### Kokoro — default, primary
+
+**Model:** hexgrad/Kokoro-82M (Apache-2.0, ~82M parameters)
+
+**Compute:** CPU torch. Works without a GPU. GPU (CUDA) would make synthesis 3–5× faster
+but is not wired into the current Docker image (CPU-only torch is installed to keep the
+image size down). If you rebuild with CUDA torch, Kokoro will pick it up automatically.
+
+**Quality:** Perceptibly more natural than Piper — better prosody, no robotic cadence.
+Suitable for a broadcast host voice on most hardware.
+
+**Startup:** Model loads once into process memory at construction time. No per-clip
+subprocess or network cost. RAM footprint: ~300–500 MB with model resident.
+
+**Synthesis speed:** ~1–3 s per short clip on a modern CPU. Acceptable because clips
+are pre-rendered in a background thread, never on the playout path.
+
+**Weakness:** Long inputs (> ~400 tokens) can produce inconsistent pacing. The protocol
+chunks input at ~100–200 tokens per segment (VOICE-002 REQ-V-A-009).
+
+**Config:** `BRAIN_TTS_PROVIDER=kokoro` (default) · `BRAIN_KOKORO_VOICE` · `BRAIN_KOKORO_LANG`
+
+---
+
+#### Piper — CPU fallback
+
+**Model:** rhasspy/piper with `en_US-ryan-high` ONNX baked into the image.
+
+**Compute:** CPU ONNX only. No GPU, no torch dependency. Ultra-lightweight — runs on
+anything including low-power ARM hardware.
+
+**Quality:** Functional but noticeably robotic. Adequate as a safety net; not the voice
+you want on air every day.
+
+**Activation:** Automatic if Kokoro fails at startup (model missing, OOM). Force it with
+`BRAIN_TTS_PROVIDER=piper` — useful for low-RAM hosts or development without a GPU.
+
+**Languages:** piper ships models for 100+ languages/voices, but only `en_US-ryan-high`
+is baked into this image. Rebuilding with additional models enables other languages.
+
+**Config:** `BRAIN_TTS_PROVIDER=piper` · `BRAIN_PIPER_VOICE` · `BRAIN_TTS_TIMEOUT_SEC`
+
+---
+
+#### teldutala.fo — planned (Faroese newscaster)
+
+**Provider:** The operator's own Acapela-backed Faroese TTS web service. No local
+compute — purely an HTTP call. Two-step: `POST /api/v1/tts → audioId`, then poll
+`GET /api/v1/tts/generated/{audioId}` until body > 256 B.
+
+**Voices:** Exactly two adult Faroese voices: `Hanna22k_NT` (female), `Hanus22k_NT`
+(male). Six child voices exist but are excluded by SPEC (VOICE-002 REQ-V-D-004, `[HARD]`).
+
+**Use case:** The Faroese newscaster only — not for curator personas. Faroese curator shows
+will be single-host because there are only 2 adult voices. PSOLA pitch/formant variants
+can differentiate voice character across shows.
+
+**Status:** Architecture is fully SPEC'd in VOICE-002 Group V-D. Not yet wired in
+`brain/voice.py`. Requires internet access to the teldutala.fo service.
+
+---
+
+#### Qwen-TTS — SPEC'd, not yet built (VOICE-002 A/B candidate)
+
+**Model:** Alibaba Qwen TTS — state-of-the-art multilingual neural TTS.
+
+**Compute:** GPU strongly recommended. CPU inference for a 30-second clip can take
+10–30 s, which would strain the one-slot pre-render buffer. With the host's RTX 2000
+Ada (8 GB VRAM) and CUDA torch in the image, clips should render in ~1–2 s.
+
+**Quality:** Comparable to Kokoro or better. Targeted for a naturalness A/B test
+against Kokoro (VOICE-002 / VOICE-002-AB evaluation). 24 kHz native output — same
+silence-padding arithmetic as Kokoro.
+
+**Status:** SPEC'd in VOICE-002 but not yet implemented. Requires: CUDA torch in the
+Docker image, Qwen TTS model download, and a `QwenProvider` class implementing the
+`TTSProvider` protocol. The `make_provider()` factory seam is already built — adding
+Qwen requires one new class and one `case` branch.
+
+---
+
+#### Chatterbox — SPEC'd, not yet built (VOICE-002 A/B candidate)
+
+**Model:** resemble-ai/chatterbox — open-source high-quality English TTS.
+
+**Compute:** GPU recommended. Similar compute profile to Qwen-TTS.
+
+**Quality:** Strong English naturalness with potentially better prosody variation than
+Kokoro. 22.05 kHz native output (same as Piper — silence padding at Piper's rate).
+
+**Status:** SPEC'd alongside Qwen-TTS as an A/B naturalness comparison candidate.
+Not yet implemented. Same build requirements as Qwen-TTS. The VOICE-002 A/B evaluation
+will decide whether Qwen-TTS or Chatterbox replaces Kokoro as the default, or whether
+Kokoro stays (VOICE-002 REQ-V-A-009 / VOICE-002-AB).
+
+---
+
+#### ElevenLabs — future opt-in (premium cloud)
+
+**Provider:** Cloud API. No local compute required.
+
+**Quality:** Highest commercial quality — indistinguishable from a real broadcast voice.
+
+**Cost:** Pay-per-character API. Not free. Requires an ElevenLabs API key in
+`secrets/.env` as `ELEVENLABS_API_KEY`. The station never uses this by default.
+
+**Status:** Listed as a future opt-in in `voice.py`. Not yet SPEC'd in detail. Would
+only activate if the operator explicitly enables it — no surprise billing.
+
+Note: ElevenLabs is unrelated to the Claude MAX subscription. The MAX subscription
+authenticates the brain's LLM calls only. TTS and LLM billing are completely separate.
 
 ### Context assembly (`TalkDirector._build_context`)
 

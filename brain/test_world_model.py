@@ -7,7 +7,6 @@ Run: python3 -m pytest brain/test_world_model.py -q
 """
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock
 
 from brain.world_model import WorldModel, WorldModelBuilder

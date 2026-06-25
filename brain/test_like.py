@@ -13,7 +13,6 @@ import threading
 
 import pytest
 
-from brain import like as like_mod
 from brain import sqlite_store
 from brain.config import Config
 from brain.like import (

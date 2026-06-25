@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
 
 from brain.ledger import EventLedger
 from brain.news_ledger import NewsLedger, normalize_story_id

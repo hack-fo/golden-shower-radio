@@ -20,21 +20,17 @@ AC-VB-012: all_records() snapshot returns all records.
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 import threading
 import time
-from typing import Any, Dict, Optional
-from unittest.mock import MagicMock, patch
+from typing import Any, Dict
+from unittest.mock import patch
 
 import pytest
 
 from .banlist import (
     STATUS_BANNED,
     STATUS_CLEARED,
-    STATUS_PENDING_REVIEW,
     BanList,
-    BanRecord,
 )
 
 

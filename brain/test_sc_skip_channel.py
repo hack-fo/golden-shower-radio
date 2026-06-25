@@ -10,7 +10,6 @@ Covers:
 
 import os
 import subprocess
-import textwrap
 import urllib.error
 import urllib.request
 from types import SimpleNamespace

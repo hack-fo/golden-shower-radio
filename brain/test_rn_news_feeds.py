@@ -9,9 +9,7 @@ Run: python3 -m pytest brain/test_rn_news_feeds.py -q
 from __future__ import annotations
 
 import json
-import pytest
-from unittest.mock import MagicMock, patch, Mock
-from io import BytesIO
+from unittest.mock import MagicMock, patch
 
 from brain.news_feeds import (
     FeedEntry,
@@ -25,9 +23,6 @@ from brain.news_feeds import (
     KIND_RSS,
     KIND_GNEWS,
     KIND_SCRAPE,
-    LOCALITY_FAROESE,
-    LOCALITY_NORDIC,
-    LOCALITY_INTL,
 )
 
 

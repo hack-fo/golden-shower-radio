@@ -17,8 +17,8 @@ AC-VC-010: Tier2+Tier3 (no Tier1) with min_signals=2 → NON_MUSIC.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Optional
+from dataclasses import dataclass
+from typing import Optional
 from unittest.mock import patch
 
 import pytest

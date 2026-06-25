@@ -15,7 +15,6 @@ from brain import grounding as G
 from brain.grounding import (
     scan_anti_slop,
     scan_word_minimum,
-    run_gate,
     FactContract,
 )
 

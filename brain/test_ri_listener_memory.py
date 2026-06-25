@@ -7,10 +7,9 @@ Run: python3 -m pytest brain/test_ri_listener_memory.py -q
 """
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock
 
-from brain.listener_memory import ListenerMemory, _make_signal_id
+from brain.listener_memory import ListenerMemory
 
 
 def _ledger():
