@@ -1,95 +1,212 @@
-# Host Personas
+# Personas & Host Roster
 
-SPEC-RADIO-PROGRAMMING-007. A multi-persona host system: autonomous minting, lifecycle management, per-persona taste seeding, voice assignment, and anti-convergence rules. Each host is a single, independent editorial curator with a distinct voice, taste envelope, and on-air identity.
+**SPECs:** SPEC-RADIO-PROGRAMMING-007 (model + roster), SPEC-RADIO-SEEDING-029 (minting),
+SPEC-RADIO-OPS-004 Group OB (lifecycle FSM)
+
+The station has a roster of on-air personalities. Each one is autonomous — authored by the AI,
+voiced by Kokoro TTS, and grounded in the real music catalog. This page explains how and when
+they come to life, what shapes them, and where your influence as the operator lives.
+
+---
+
+## Two kinds of on-air voice
+
+There are exactly two tiers of on-air voice and they are completely separate systems:
+
+### 1. The newscaster (fixed, permanent)
+
+The newscaster is **not a persona**. It is a permanent TTS route with a reserved identity
+(`news-anchor`). It reads news in English, then repeats the news in Faroese, with Faroese
+sources used for the Faroese segment. It does not curate music. It has no taste charter.
+It never retires. The lifecycle system explicitly exempts it (`persona_identity.is_news_anchor`).
+
+### 2. The curator personas (the hosts)
+
+These are the music show hosts. Each has a distinct Kokoro voice, taste charter, and
+AI-designed personality. They curate the music, write their own links, and talk about what
+they've been listening to, what they've read in music press, what caught their ear recently.
+This is the roster this page is about.
+
+---
+
+## How a persona is born
+
+Personas are **minted autonomously** by the AI (`brain/minting.py`). No human writes
+their identity — but the human shapes what musical material they are minted from.
+
+The minting pipeline:
+
+```
+Real library catalog (data/music/)
+         │
+         ▼  CLUSTER by genre / era / tags / sub-genre
+Distinct taste territories (musical regions in the catalog)
+         │
+         ▼  FIND a territory not yet occupied by any existing persona
+Candidate taste charter (grounded in real catalog, not fabricated)
+         │
+         ▼  DOCUMENT the editorial gap it fills
+Gap record: "no current persona covers <territory>"
+         │
+         ▼  ASSIGN a free Kokoro voice (strict 1:1 — never shared)
+         │
+         ▼  DESIGN an identity via LLM: name, age (22–70), short personality
+         │  If the LLM is unavailable → deterministic fallback (never crashes)
+         │
+         ▼  PASS THE SHARED GATE
+Anti-convergence check + age bounds + 1:1 voice check. Same gate
+the manual operator path uses — never bypassed.
+         │
+         ▼  PERSIST to brain.db
+Persona is live and schedulable.
+```
+
+A persona is added only when it fills a **documented editorial gap** — a taste territory no
+existing host covers. Minting for "reach", "popularity", or "more listeners" is an explicit
+anti-goal, checked at the code level, and refused.
+
+---
+
+## When does minting happen?
+
+Minting is triggered by the **lifecycle engine** (`brain/lifecycle.py`). The lifecycle engine
+watches the schedule grid: when a slot has no host, it requests a mint to fill the gap.
+
+The lifecycle engine is currently **off by default** (`BRAIN_LIFECYCLE_ENABLED=0`). When off:
+
+- The station runs with a single "house" curator prompt (the freeform college-radio voice in
+  `brain/llm.py`).
+- No personas are in the roster. No minting happens. No shows are scheduled by persona.
+- Everything on the playout path is byte-identical to before the persona system existed.
+
+Turning it on (`BRAIN_LIFECYCLE_ENABLED=1`) enables the full multi-persona roster.
+
+The number of distinct personas the roster can ever hold is **bounded by the Kokoro voice
+palette** — each persona must have a unique voice. Once every voice is claimed, no new
+persona can be minted until one retires and its voice is freed (after a quarantine cooldown
+window, so a returning voice is never mistaken for the old host mid-cycle).
+
+---
+
+## Your influence: the taste seed → personas connection
+
+You do not write the personas. But you **do** shape who they will be — through the library
+you build. The critical insight is:
+
+> **A persona's taste charter is derived from the real library catalog.**
+
+The AI clusters whatever is in `data/music/` to find distinct musical territories. Those
+territories become the hosts. So:
+
+```
+Your taste seed (Anchor / Compass / WOPR)
+          │
+          ▼  shapes which music is acquired
+Library content in data/music/
+          │
+          ▼  clustered into distinct taste territories
+Musical regions (e.g. "60s soul", "post-punk", "Nordic folk")
+          │
+          ▼  one minted persona per unoccupied territory
+Curator personas with grounded taste charters
+```
+
+What this means in practice:
+
+- If your library is 80% soul and 20% electronic, you will get a soul host and an electronic
+  host — not two pop hosts.
+- Seed with a Spotify export of Scandinavian indie and use **Anchor** mode → the station
+  acquires that music → a Scandinavian-indie-flavoured host emerges.
+- **Compass** mode → the AI explores outward from your seed → you may get hosts whose taste
+  is *adjacent to* but not identical with yours (which is often more interesting radio).
+- **WOPR** mode → the AI acquires whatever it editorially judges best → personas reflect
+  whatever musical territories accumulate.
+
+The seed is not a direct persona-authoring tool. It is a **library shaping** tool. The
+personas emerge from the library.
+
+Additionally, a bootstrap mechanism (`taste.seed_enrichment_bootstrap`) can nudge initial
+per-persona taste profile weights using the seed descriptors — distributing them as a small
+starting boost to whichever profiles already lean that way. This is soft and optional: after
+boot the measured taste-learning loop diverges freely. The seed is never a hard constraint.
+
+---
+
+## The anti-convergence firewall
+
+No two personas can be too similar. Every candidate — autonomously minted or manually created
+— must pass a distinctness test against every existing roster member:
+
+1. **Primary territory must be unique** — no two personas can claim the same top-level taste
+   region (two "60s soul" hosts cannot coexist).
+2. **Descriptor pool overlap must be below the cap** — the Jaccard similarity of genre /
+   sub-genre / era / tags sets must be below a configured ceiling. If a candidate overlaps
+   too much, the system trims shared tags from its charter and re-measures. If it still
+   overlaps after exploration, the mint is rejected cleanly.
+
+This is not a soft guideline. Rejection is clean, logged with a reason, and the catalog is
+never left in a half-mutated state.
+
+---
+
+## The lifecycle FSM
+
+When the lifecycle engine is on, each curator persona moves through existence states:
+
+```
+minted → active → retiring → retired
+```
+
+- **active** — on-air, scheduled, taking show slots.
+- **retiring** — given a wind-down period; airs its final sets before removal.
+- **retired** — permanently off-air. The record is kept for history. Its voice enters a
+  quarantine period before it can be assigned to a new persona.
+
+A retiring persona **never cuts an in-flight break or silences the stream** — the lifecycle
+engine only affects future scheduling, not the current playout state. When a slot is left
+empty by a retirement, the engine mints a replacement.
+
+---
+
+## Can you author a persona yourself?
+
+Yes. `Roster.create()` is the manual operator path. It runs through the **same gate** as
+autonomous minting — same anti-convergence check, same age bound, same 1:1 voice check. The
+only difference is that you supply the identity (name, age, personality, taste charter) rather
+than having the LLM design it.
+
+There is currently no UI or `run.sh` prompt for this. It is a direct call into the brain's
+persona store. A future operator interface could expose it.
 
 ---
 
 ## Persona model
 
-Each persona is a `PersonaIdentity` record with:
+Each persona record in `brain.db` holds:
 
-- **id** — stable slug (`en-host-1`, `fo-host-2`, etc.)
-- **name** — display name (e.g. "Astrid")
-- **language** — `en` or `fo`; determines which TTS voice pool is eligible
-- **charter** — editorial charter: seed genres, eras, moods, topic interests; the fingerprint of what this host cares about
-- **voice_id** — assigned Kokoro voice (1:1 binding, never shared between personas)
-- **lifecycle_state** — FSM state: `seed → active → dormant → retired`
-- **taste_envelope** — live probability distribution over genres/eras/moods, updated by the taste loop
+| Field | What it is |
+|---|---|
+| `id` | Stable slug, auto-generated (e.g. `persona-abc123`) |
+| `display_name` | AI-designed name (e.g. "Marta") |
+| `voice` | Assigned Kokoro speaker ID — permanent, 1:1, never reassigned while active |
+| `charter` | Taste charter: primary territory, genres, eras, sub-genres, tags, moods |
+| `age` | AI-selected or deterministic, always in [22, 70] |
+| `personality` | Short personality / worldview fragment, AI-authored |
+| `lifecycle_state` | active / retiring / retired |
 
-All persona records live in `personas.db` (SQLite). The brain reads them at startup and keeps them in memory for the session.
-
----
-
-## Autonomous minting
-
-The brain can propose minting a new persona without human instruction when:
-
-1. The host roster drops below `BRAIN_PERSONA_MIN_COUNT` (default: 2 active per language).
-2. An active editorial gap is detected: the taste-coverage heatmap has a cold zone (genre × era combination with no host whose charter covers it).
-3. The director tick fires a `MINT_PERSONA` intent, which goes to ActionSurface.
-
-Minting uses a single LLM call with the current roster and gap analysis as context. It generates: name, charter, seed tastes, and a bio fragment. The new persona is inserted in `seed` lifecycle state and transitions to `active` after a first-show warm-up cycle.
-
-**Anti-convergence** — minting is gated on editorial gap distance: a proposed persona must differ from every existing active persona by at least `BRAIN_PERSONA_MIN_DIVERGENCE` (default 0.4 on a 0-1 charter distance metric). This prevents the roster from filling up with near-identical hosts.
+All records survive restarts — a minted host does not disappear when the station reboots.
 
 ---
 
-## Lifecycle FSM
+## Summary
 
-```
-seed ──(warm-up complete)──▶ active ──(dormancy threshold)──▶ dormant ──(reactivation)──▶ active
-                                                                              │
-                                                                         (retirement)──▶ retired
-```
-
-- **seed** — persona exists but has not aired. Taste envelope is the charter defaults.
-- **active** — persona airs shows. Taste envelope evolves with each play event.
-- **dormant** — persona has not aired above `BRAIN_PERSONA_DORMANCY_THRESHOLD` shows per week for `BRAIN_PERSONA_DORMANCY_WINDOW_DAYS`. Keeps its taste state but does not take show slots.
-- **retired** — manually retired or roster pruned. Records are kept (for history) but the persona is permanently inactive.
-
-Transitions are written to `personas.db` with a timestamp and reason for audit.
-
----
-
-## Voice assignment
-
-Each persona is assigned a voice from the configured Kokoro voice pool at mint time. The assignment is **permanent** — switching voices mid-persona would break listener identity. Voices are assigned in a round-robin order from the pool filtered by persona language (`en` voices for English personas, Faroese voices for `fo` personas). No two active personas share a voice.
-
-Voice pool is configured in `config.py` as `kokoro_voice_pool` (list of Kokoro speaker IDs).
-
----
-
-## Per-persona taste seeding and evolution
-
-The taste envelope is a probability distribution over the station's genre/era/mood taxonomy. At mint time, it is initialized from the charter. It evolves through three signals:
-
-1. **Play feedback** — the OD-007 ledger records whether a track aired successfully, was skipped, or triggered a listener drop-off. Tracks that perform well in their slot pull their genre/era/mood weights up slightly.
-2. **Hostlife engagement** — when a persona engages positively with a news item about an artist or genre (HOSTLIFE-032 TASTE phase), that genre's weight gets a small bump.
-3. **Anti-drift clamp** — taste drift is bounded. No single genre can rise above `BRAIN_PERSONA_TASTE_MAX_WEIGHT` or fall below `BRAIN_PERSONA_TASTE_MIN_WEIGHT`. This keeps personas recognizable over time.
-
-Taste state is persisted to `personas.db` after each director tick.
-
----
-
-## Anti-convergence at the roster level
-
-The taste distance check runs on every tick: if two active personas' taste envelopes drift within `BRAIN_PERSONA_CONVERGENCE_ALERT_DISTANCE` of each other, the director logs a warning and can nudge the lower-priority persona's charter away from the overlap zone on its next minting review.
-
----
-
-## Configuration
-
-| Variable | Default | Effect |
-|---|---|---|
-| `BRAIN_PERSONA_MIN_COUNT` | `2` | Minimum active personas per language before auto-mint |
-| `BRAIN_PERSONA_MIN_DIVERGENCE` | `0.4` | Minimum charter distance when minting a new persona |
-| `BRAIN_PERSONA_DORMANCY_THRESHOLD` | `1` | Shows per week below which persona goes dormant |
-| `BRAIN_PERSONA_DORMANCY_WINDOW_DAYS` | `14` | Window to measure show count for dormancy |
-| `BRAIN_PERSONA_TASTE_MAX_WEIGHT` | `0.6` | Maximum weight any single genre can reach |
-| `BRAIN_PERSONA_TASTE_MIN_WEIGHT` | `0.02` | Minimum weight floor per genre |
-
----
-
-## Host roster (launch configuration)
-
-Seven hosts configured at project launch: 5 English-language, 2 Faroese-language. Each has a distinct voice from the Kokoro pool and a non-overlapping editorial charter. See `docs/Home.md` and memory for the full roster.
+| Question | Answer |
+|---|---|
+| When are hosts created? | When the lifecycle engine detects an unstaffed slot and mints one |
+| Do they come from nothing? | No — their taste is clustered from the real music catalog |
+| Can the operator influence them? | Yes, indirectly — by shaping the library via the taste seed |
+| Is there direct operator authoring? | Yes, via `Roster.create()` (no UI yet) |
+| Is the roster size limited? | Yes — bounded by the available Kokoro voice palette |
+| What is the newscaster? | A fixed permanent TTS route — not a curator persona, exempt from lifecycle |
+| Is multi-persona mode on by default? | No — requires `BRAIN_LIFECYCLE_ENABLED=1` |
+| Can the AI mint a persona for "reach"? | No — explicitly refused at the code level |
