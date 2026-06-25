@@ -21,7 +21,8 @@ The system runs as a Docker Compose stack targeting Linux/Debian. Liquidsoap per
 | [[Playout]] | Liquidsoap pull loop, transitions, now-playing ground-truth, and the HTTP/annotate seam |
 | [[Runtime-Config]] | Process wiring, environment variable reference, logging format |
 | [[Voice-Talk]] | Pre-rendered host talk clips: LLM scripting, Kokoro/Piper TTS, loudness normalization |
-| [[Website]] | Station web surface: HTML render, now-playing poll, `/api/nowplaying` JSON shape |
+| [[Website]] | 2026 station website: glassmorphism redesign, now-playing poll, durable last-played ring, `/stats` link, BPM/key/energy badges |
+| [[Analytics]] | Play-events ledger, aggregations, and `/stats` insight site — top tracks/artists/genres, taste map (STATS-013) |
 | [[Orchestration]] | Nervous system: world-model, event-reaction, listener memory, news ledger (ORCH-005) |
 | [[Content-Vetting]] | Conservative vetting cascade + reversible ban-list (VETTING-027) |
 | [[Personas]] | Multi-persona host system: identity, voice, taste seeding, lifecycle (PROGRAMMING-007) |
@@ -30,5 +31,3 @@ The system runs as a Docker Compose stack targeting Linux/Debian. Liquidsoap per
 | [[Like-Dropoff]] | Listener like token + implicit drop-off signal + affinity store (LIKE-015) |
 | [[Skip-Control]] | Forceful on-air skip: SkipGovernor + harbor control channel (SKIP-028) |
 | [[Dedup]] | Download deduplication control: MBID-keyed, version-aware (DEDUP-014) |
-| [[Analytics]] | Play-events ledger, aggregations, and `/stats` insight site — top tracks/artists/genres, taste map (STATS-013) |
-| [[Website]] | 2026 station website: glassmorphism redesign, durable last-played ring, `/stats` link, BPM/key/energy badges (WEBUI-018) |

@@ -1,142 +1,104 @@
-# website.py — Station Web Surface
+# Station Website
 
-## Purpose
+`brain/website.py` renders the station's public HTML page. The rendered string is stored in `StationState.website_html` and served at `GET /`. A JSON endpoint (`GET /api/nowplaying`) feeds the 5-second live poll. **WEBUI-018** delivered the 2026 glassmorphism redesign and durable last-played ring persistence.
 
-`brain/website.py` renders the station's public HTML page. At startup the rendered
-string is stored in `StationState.website_html` and served by the HTTP server at
-`GET /`. A separate JSON endpoint (`GET /api/nowplaying`) provides the live data
-that the page polls every 5 seconds.
+---
 
-The design intentionally stores HTML in `StationState` (not written to disk) so a
-planned future LLM-controlled self-editing mode can atomically swap it at runtime
-without ever serving a partially-written page.
+## Design (2026 glassmorphism, WEBUI-018)
 
-## How it works
+The page uses a single dark-gold palette defined as CSS custom properties:
 
-### Startup
-
-`brain/main.py` calls `render_website(cfg)` once during startup and stores the
-result:
-
-```python
-state.set_website_html(render_website(cfg))
+```css
+--bg: #0c0a06    --bg2: #0e0b07   --gold: #f5c542   --gold-soft: #c9a23a
+--ink: #f4eddb   --muted: #978c70  --glass: rgba(255,255,255,.04)
 ```
 
-`StationState.set_website_html` / `website_html` are protected by a lock,
-making the stored string safe to read from the HTTP handler thread at any time.
+Key visual elements:
 
-### Serving
+- **Gradient logo** — station name rendered with a gold linear-gradient text clip
+- **Animated LIVE dot** — dual-keyframe pulse + ring animation (reduced-motion aware)
+- **CSS-only 5-bar waveform** — staggered `@keyframes bounce` bars during playback
+- **Glassmorphism cards** — `background: var(--glass)`, `backdrop-filter: blur(8px)`, `border: 1px solid rgba(255,255,255,.06)`
+- **NOW PLAYING fade-swap** — when the airing track changes, the now-playing block fades out and in (`opacity` + `translateY` transition)
+- **BPM / key / energy badges** — shown when enrichment data is present in the poll response
+- **`/stats` link** — links to the analytics insight site (STATS-013)
 
-`brain/server.py` routes two endpoints related to the website:
+Layout: two-column grid (`1.3fr 1fr`) collapsing to single column at 760 px. Semantic HTML: `<main>`, `<header class="hero">`, `<section aria-label="...">`, `<footer>`. All interactive elements carry `aria-label`.
 
-| Endpoint | Handler | What it does |
-|---|---|---|
-| `GET /` | `_handle_root` | Returns `state.website_html()` as `text/html`. Falls back to a bare `<h1>` if the string is empty. |
-| `GET /api/nowplaying` | `_handle_nowplaying` | Returns a JSON object consumed by the page's polling loop. |
+All animations are wrapped in `@media (prefers-reduced-motion: no-preference)` — zero motion for users who prefer it.
 
-### `render_website(cfg: Config) -> str`
+---
 
-The single public function. Accepts a `Config` instance and returns a complete
-HTML document as a Python string. All station-specific values are interpolated
-at call time via f-string:
+## Durable last-played ring (WEBUI-018)
 
-| Config field | Environment variable | Default | Used for |
-|---|---|---|---|
-| `cfg.station_name` | `STATION_NAME` | `"Golden Shower Radio"` | Page `<title>`, header logo, footer |
-| `cfg.icecast_public_port` | `ICECAST_PUBLIC_PORT` | `8000` | Stream URL construction in client JS |
-| `cfg.icecast_mount` | `ICECAST_MOUNT` | `"/radio"` | Stream URL construction in client JS |
+The `#recent` list persists across brain restarts. `StationState` accepts a `ring_path` parameter:
 
-### Client-side polling (`/api/nowplaying`)
+```python
+state = StationState(
+    cfg.station_name,
+    recent_window=cfg.recent_window,
+    ring_path=os.path.join(cfg.db_dir, "recent_ring.json"),
+)
+```
 
-The page includes inline JavaScript that:
+**Persistence** — `_persist_recent()` is called after every `set_on_air()` (outside the state lock, so it never delays playout). It writes atomically via a temp file + `os.replace`:
 
-1. Constructs the stream URL from the same hostname the page was loaded from,
-   using the Icecast port and mount embedded at render time:
-   `"http://" + location.hostname + ":<port><mount>"`
-2. Sets that URL as the `<audio>` element's `src`.
-3. Calls `/api/nowplaying` immediately on load, then every 5 seconds via
-   `setInterval`. It also fires an immediate refresh when the page regains
-   visibility (`document.addEventListener("visibilitychange", ...)`) and when
-   the tab is focused (`window.addEventListener("focus", ...)`), so a listener
-   returning to a background tab sees the current track without waiting for the
-   next poll cycle.
-4. On each response it updates:
-   - `#np-title` / `#np-artist` — currently airing track (or a "Silence" message
-     when `now_playing` is null)
-   - `#np-album` — album name when present (hidden if absent)
-   - `#lib` — total tracks in library (`d.library`)
-   - `#dl` — count of active downloads (`d.downloading.length`)
-   - `#recent` — up to 12 recently played tracks (`d.recent`)
-5. Network errors are silently swallowed so the page keeps polling if the brain
-   briefly restarts.
+```json
+{ "items": [{ "artist": "...", "title": "...", "kind": "...", "played_at": "...", "album": "...", "path": "..." }] }
+```
+
+**Rehydration** — `_rehydrate_recent()` runs in `__init__`. It reads the JSON file and appends up to `recent_window` items into the ring, most-recent-first. All exceptions are swallowed — a missing or corrupt file just means an empty ring on startup.
+
+**DISPLAY-ONLY** — the ring is never consulted for rotation decisions. It is read only by the `/api/nowplaying` handler to populate the recent list on the page.
+
+---
+
+## Serving
+
+`brain/server.py` routes:
+
+| Endpoint | What it does |
+|---|---|
+| `GET /` | Returns `state.website_html()` as `text/html` |
+| `GET /api/nowplaying` | Returns JSON: `{ now_playing, recent, library, downloading, bpm, key, energy }` |
+| `GET /stats` | Returns the STATS-013 analytics insight page (inline SVG) |
 
 ### `/api/nowplaying` JSON shape
 
 ```json
 {
-  "now_playing": { "title": "...", "artist": "..." } | null,
-  "recent":      [ { "title": "...", "artist": "..." }, ... ],
+  "now_playing": { "title": "...", "artist": "...", "album": "...", "bpm": 128.0, "key": "Am", "energy": 0.82 } | null,
+  "recent":      [ { "title": "...", "artist": "...", "kind": "...", "played_at": "..." }, ... ],
   "library":     1234,
   "downloading": [ ... ]
 }
 ```
 
-`now_playing` and `recent` come from `StationState`; `library` from
-`Library.count()`; `downloading` from `StationState.downloading()`.
+---
 
-`now_playing` is set by `_handle_airing` whenever Liquidsoap reports a track
-change, so the displayed track reflects what is actually on air, not what is
-prefetched.
+## Client-side behaviour
 
-## What it looks like
+The inline JavaScript:
 
-The rendered page has:
+1. Constructs the stream URL from `location.hostname` + the Icecast port and mount baked in at render time.
+2. Sets that URL as the `<audio src>` on load.
+3. Polls `/api/nowplaying` every 5 s via `setInterval`; also fires on `visibilitychange` and `focus` events.
+4. Swaps NOW PLAYING content with a fade transition when `lastNowKey` (artist+title) changes.
+5. Renders BPM/key/energy badges when present; hides them when absent.
+6. Network errors are swallowed — the page keeps polling across brief brain restarts.
 
-- Dark gold-on-black theme with CSS custom properties.
-- A pulsing "Live" badge and an HTML5 `<audio>` player wired to the Icecast stream.
-- "Now Playing" card showing title, artist, and album (album line is hidden when absent).
-- Two-column grid: "Recently Played" list (up to 12 tracks) and a "Station" card
-  with library size, active-download count, and a static schedule note
-  ("Freeform, around the clock. Shows & hosts coming soon.").
-- Responsive layout that collapses to single-column below 640 px.
+---
 
-## Gotchas
+## Static render
 
-- **Static render.** The HTML is generated once at startup. Station name and
-  Icecast coordinates are baked into the string. Changing `STATION_NAME` or
-  Icecast config requires a brain restart to take effect.
+The HTML is generated once at startup from `render_website(cfg)`. Station name and Icecast coordinates are baked into the string. Changing `STATION_NAME` or Icecast config requires a brain restart. The self-editing LLM mode (REQ-E-001 through REQ-E-004) is defined in SPEC-RADIO-CORE-001 but not yet implemented.
 
-- **Self-editing not implemented.** REQ-E-001 through REQ-E-004 (staging area,
-  validation, atomic publish, auto-rollback) are SPEC requirements, not yet code.
-  Today the LLM has no mechanism to rewrite the page.
-
-- **Schedule section is a stub.** The page shows a static italic string
-  ("Freeform, around the clock. Shows & hosts coming soon.") — it does not pull
-  from the programming scheduler. REQ-E-005 requires showing the schedule, which
-  is deferred.
-
-- **Stream URL uses `location.hostname`.** The page adapts to whatever hostname
-  the browser used, so it works correctly behind a reverse proxy as long as the
-  Icecast port and mount are accessible from the same public hostname.
-
-- **Play history and show descriptions not rendered.** REQ-OB-006, REQ-OB-007,
-  and REQ-OB-008 (persisted play-history, per-show tracklists, AI-authored show
-  descriptions) are defined in SPEC-RADIO-OPS-004 and are not yet implemented.
-
-- **Durable last-played is not built.** The `#recent` list shown on the page
-  comes from the in-memory `StationState._recent` ring (cleared on brain restart).
-  Persisting play history across restarts is tracked as SPEC-WEBUI-018 (roadmap,
-  not implemented).
+---
 
 ## See also
 
-- **SPEC-RADIO-CORE-001 Group E** (REQ-E-001 through REQ-E-006) — full
-  requirements for the self-controlled website including the safety chain
-  (staging, validation, atomic publish, rollback) and required content.
-- **SPEC-RADIO-OPS-004** (REQ-OB-006, REQ-OB-007, REQ-OB-008, REQ-OB-009) —
-  planned extensions: play-history rendering, per-show tracklists, AI-authored
-  show descriptions, listener feedback form.
-- `brain/server.py` — HTTP routing and `_handle_nowplaying` / `_handle_root`.
-- `brain/state.py` — `StationState.set_website_html`, `website_html`,
-  `now_playing`, `recent`, `downloading`.
-- `brain/config.py` — `station_name`, `icecast_public_port`, `icecast_mount`.
+- `brain/state.py` — `StationState`, `_persist_recent()`, `_rehydrate_recent()`, `set_on_air()`
+- `brain/server.py` — HTTP routing, `_handle_nowplaying`, `_handle_root`
+- `brain/config.py` — `station_name`, `icecast_public_port`, `icecast_mount`, `db_dir`, `recent_window`
+- [Analytics](Analytics) — `/stats` insight site (STATS-013)
+- SPEC-RADIO-WEBUI-018 — durable ring + 2026 redesign requirements
