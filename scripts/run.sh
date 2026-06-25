@@ -522,10 +522,25 @@ resolve_seed() {
   local dropped="${SEED_DROPPED:-}"
   local acquire="${SEED_ACQUIRE:-}"
 
+  # ---- taste-seed fidelity menu -----------------------------------------------
+  # To add a new mode: extend _SEED_KEYS / _SEED_MODES / _SEED_DESCS in parallel,
+  # then add a matching branch in the case statement below.
+  local -a _SEED_KEYS=( "a"        "c"        "W" )
+  local -a _SEED_MODES=("anchor"   "compass"  "wopr")
+  local -a _SEED_DESCS=(
+    "Lean hard on your taste — stay close to what you already love"
+    "Use your taste as a loose compass — explore outward into adjacent sounds"
+    "Full autonomy — the AI decides everything itself, no seed (default)"
+  )
+
   # Prompt only on a TTY with no explicit SEED_MODE; otherwise take the safe default (decline).
   if [[ -z "$mode" ]]; then
     if [[ -t 0 ]]; then
-      printf "Pre-seed the station's taste now? Choose fidelity [a]nchor / [c]ompass / [W]opr(none): "
+      printf "\nPre-seed the station's taste? (ONE-TIME choice — restarts never re-ask)\n\n"
+      for _i in "${!_SEED_MODES[@]}"; do
+        printf "  [%s] %-8s  %s\n" "${_SEED_KEYS[$_i]}" "${_SEED_MODES[$_i]}" "${_SEED_DESCS[$_i]}"
+      done
+      printf "\nChoice [a/c/W]: "
       local _ans
       read -r _ans || _ans=""
       case "$(printf '%s' "$_ans" | tr '[:upper:]' '[:lower:]')" in

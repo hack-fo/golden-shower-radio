@@ -171,6 +171,23 @@ the stack up, then verifies the live stream, site, and containers.
 **slskd is off by default.** Music can always be dropped manually into
 `data/music/`.
 
+#### First-run: taste seed (one-time)
+
+On a fresh install, `run.sh` will ask how closely the AI should follow your musical
+taste. This is a **one-time choice** — restarts never re-ask.
+
+| Choice | Mode | What it does |
+|--------|------|--------------|
+| `a` | **Anchor** | Lean hard on your taste — stay close to what you already love |
+| `c` | **Compass** | Use your taste as a loose guide — explore outward from there |
+| `W` | **WOPR** | Full autonomy — the AI decides everything itself *(default)* |
+
+You can optionally provide a Spotify CSV export (drop it in `data/db/`) and/or let
+the AI read your existing music files as taste signals. The seed is a soft bias, never
+a hard filter — the station always plays regardless of what you choose.
+
+See [[Taste-Seeding]] in the wiki for the full explanation.
+
 ### 3. Tune in
 
 | | URL |
