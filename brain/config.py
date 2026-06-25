@@ -29,6 +29,12 @@ class Config:
 
     # --- LLM: Claude via subscription. Sonnet is cheaper/faster than opus for curation. ---
     anthropic_model: str = field(default_factory=lambda: _env("ANTHROPIC_MODEL", "claude-sonnet-4-6"))
+    # Auth mode controls how the brain authenticates with Claude.
+    # "oauth"   (default): reads ~/.claude OAuth creds from the mounted host directory.
+    # "token":  headless OAuth — put the token in CLAUDE_CODE_OAUTH_TOKEN (no ~/.claude mount needed).
+    # "api_key": pass ANTHROPIC_API_KEY through to the subprocess (pay-per-use billing).
+    # WARNING: "api_key" mode overrides the subscription; charges accrue against credits.
+    llm_auth_mode: str = field(default_factory=lambda: _env("BRAIN_LLM_AUTH", "oauth"))
 
     # --- filesystem (container paths) ---
     music_dir: str = field(default_factory=lambda: _env("MUSIC_DIR", "/music"))

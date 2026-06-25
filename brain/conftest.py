@@ -12,6 +12,17 @@ reconcile it. Remove an entry the moment its owning SPEC fixes the test.
 
 from __future__ import annotations
 
+# Files excluded from collection entirely (import-time failure, not a test failure).
+# Use this ONLY when the module under test does not exist yet (SPEC written but not
+# implemented). Remove the entry the moment brain/memory.py is shipped by MEMORY-031.
+collect_ignore = [
+    "test_md_document.py",   # MEMORY-031: imports brain.memory (not yet built)
+    "test_me_referential.py",
+    "test_mk_coherence.py",
+    "test_ml_taxonomy.py",
+    "test_mp_purge.py",
+]
+
 # nodeid -> (owning SPEC, reason). nodeid is "<relpath-from-rootdir>::<testname>".
 KNOWN_STALE = {
     # NOTE: the former ENRICH-012 entry

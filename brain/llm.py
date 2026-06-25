@@ -98,10 +98,16 @@ def _build_options(model: str, system_prompt: str = PERSONA):
     so the heavy claude_code preset never loads - see the ANCHOR below."""
     from claude_agent_sdk import ClaudeAgentOptions  # type: ignore
 
-    # Hand the CLI a copy of the environment WITHOUT ANTHROPIC_API_KEY so it uses
-    # the subscription OAuth creds, never pay-per-use credits. Keep HOME so the SDK
-    # finds /root/.claude.
-    child_env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+    auth_mode = os.environ.get("BRAIN_LLM_AUTH", "oauth")
+
+    if auth_mode == "api_key":
+        # Pay-per-use: pass ANTHROPIC_API_KEY through to the subprocess unchanged.
+        child_env = dict(os.environ)
+    else:
+        # "oauth" or "token": strip ANTHROPIC_API_KEY so the CLI uses subscription
+        # credentials. In "token" mode CLAUDE_CODE_OAUTH_TOKEN is already in env;
+        # the CLI picks it up automatically. Keep HOME so the SDK finds /root/.claude.
+        child_env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
     child_env.setdefault("HOME", "/root")
 
     # @MX:ANCHOR: [AUTO] minimal Claude config - the subscription-quota + auth contract
@@ -117,7 +123,7 @@ def _build_options(model: str, system_prompt: str = PERSONA):
         setting_sources=[],           # do not load CLAUDE.md / settings / MCP / hooks
         max_turns=1,                  # one response only
         model=model,                  # from env ANTHROPIC_MODEL (default sonnet)
-        env=child_env,                # ANTHROPIC_API_KEY stripped => subscription auth
+        env=child_env,                # ANTHROPIC_API_KEY stripped unless BRAIN_LLM_AUTH=api_key
     )
 
 

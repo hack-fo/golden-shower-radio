@@ -30,23 +30,45 @@ Organised by whether you **need** an account to use it.
 
 ### Claude MAX subscription — REQUIRED
 
-The brain's intelligence runs entirely through Claude. It authenticates via the
-host's `~/.claude` OAuth credentials — a logged-in **Claude MAX subscription**.
+The brain's intelligence runs entirely through Claude. By default it authenticates
+via the host's `~/.claude` OAuth credentials — a logged-in **Claude MAX subscription**.
 
-**How to set up:**
+#### Auth modes (`BRAIN_LLM_AUTH`)
+
+| Mode | Value | How it works | When to use |
+|---|---|---|---|
+| **OAuth / mount** | `oauth` *(default)* | Reads `~/.claude/.credentials.json` mounted from the host | Standard setup with a logged-in host machine |
+| **OAuth / token** | `token` | Reads `CLAUDE_CODE_OAUTH_TOKEN` from env — no mount needed | CI, headless Docker, secondary account |
+| **API key** | `api_key` | Passes `ANTHROPIC_API_KEY` to the Claude CLI subprocess | Pay-per-use billing (uncommon, billed separately) |
+
+**Default (`oauth`) setup:**
 1. Subscribe to Claude MAX at claude.ai
 2. Install the Claude CLI: `npm install -g @anthropic-ai/claude-code`
 3. Log in: `claude login`
 4. Confirm `~/.claude/.credentials.json` exists on the host
 
-**IMPORTANT: Do NOT set `ANTHROPIC_API_KEY`** in `secrets/.env` or anywhere in the
-environment. If that variable is present the brain will silently switch from the MAX
-subscription to pay-per-use billing. Three layers of defense strip it at boot: the
-Docker Compose service definition, `brain/main.py` at startup, and `brain/llm.py`
-before every LLM subprocess. See `brain/config.py` line 1–8 for the authoritative
-explanation.
+**Headless / token setup** (e.g., second account or CI):
+1. Run `claude setup-token` on any logged-in machine to generate a token
+2. Add to `secrets/.env`:
+   ```dotenv
+   BRAIN_LLM_AUTH=token
+   CLAUDE_CODE_OAUTH_TOKEN=your-token-here
+   ```
+   No `~/.claude` mount required.
 
-**Config field:** `anthropic_model` (`ANTHROPIC_MODEL`, default `claude-sonnet-4-6`)
+**API key setup** (pay-per-use, not recommended for daily use):
+```dotenv
+BRAIN_LLM_AUTH=api_key
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+**IMPORTANT:** Do NOT set `ANTHROPIC_API_KEY` without also setting `BRAIN_LLM_AUTH=api_key`.
+If `ANTHROPIC_API_KEY` is present without the mode override, the brain strips it at boot
+(in `brain/main.py`) and `brain/llm.py` also strips it from every subprocess — three
+layers of defense ensure accidental key presence never silently bills pay-per-use credits.
+
+**Config fields:** `anthropic_model` (`ANTHROPIC_MODEL`, default `claude-sonnet-4-6`) ·
+`llm_auth_mode` (`BRAIN_LLM_AUTH`, default `oauth`)
 
 ---
 
@@ -302,6 +324,13 @@ STATION_NAME=Golden Shower Radio
 ANTHROPIC_MODEL=claude-sonnet-4-6
 ICECAST_SOURCE_PASSWORD=change-me-please
 
+# LLM auth (default: oauth — reads ~/.claude from host mount)
+# BRAIN_LLM_AUTH=oauth             # default — requires ~/.claude mount
+# BRAIN_LLM_AUTH=token             # headless OAuth, set CLAUDE_CODE_OAUTH_TOKEN too
+# CLAUDE_CODE_OAUTH_TOKEN=...      # only when BRAIN_LLM_AUTH=token
+# BRAIN_LLM_AUTH=api_key           # pay-per-use, set ANTHROPIC_API_KEY too
+# ANTHROPIC_API_KEY=sk-ant-...     # only when BRAIN_LLM_AUTH=api_key
+
 # Soulseek acquisition (only when running --with-slskd)
 SLSKD_API_KEY=your-slskd-api-key
 
@@ -310,8 +339,6 @@ BRAIN_ACOUSTID_API_KEY=your-acoustid-key
 BRAIN_LASTFM_API_KEY=your-lastfm-key
 BRAIN_DISCOGS_TOKEN=your-discogs-token
 BRAIN_GUARDIAN_API_KEY=your-guardian-key
-
-# DO NOT SET ANTHROPIC_API_KEY — it breaks MAX subscription billing
 ```
 
 The brain will start and play music with only `STATION_NAME`,

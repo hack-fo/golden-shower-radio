@@ -49,10 +49,12 @@ def run() -> int:
     setup_logging()
     cfg = load_config()
 
-    # Defense in depth: if ANTHROPIC_API_KEY somehow leaked into our env, drop it
-    # so the LLM uses the subscription OAuth creds and never bills credits.
-    if os.environ.pop("ANTHROPIC_API_KEY", None):
-        log_event(log, "main.dropped_anthropic_api_key", note="forcing subscription auth")
+    # Defense in depth: unless BRAIN_LLM_AUTH=api_key is explicitly set, drop any
+    # ANTHROPIC_API_KEY that leaked into the env so the LLM uses subscription OAuth
+    # creds and never silently bills pay-per-use credits.
+    if cfg.llm_auth_mode != "api_key" and os.environ.pop("ANTHROPIC_API_KEY", None):
+        log_event(log, "main.dropped_anthropic_api_key",
+                  note=f"forcing {cfg.llm_auth_mode} auth")
 
     os.makedirs(cfg.db_dir, exist_ok=True)
     os.makedirs(cfg.music_dir, exist_ok=True)
