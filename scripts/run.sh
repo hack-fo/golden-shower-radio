@@ -16,6 +16,13 @@
 #                              [--dry-run] [--help]
 #          (no flags = build + up + light post-up verify; slskd per the prompt)
 #
+# First-run experience:
+#   • Creates secrets/.env if missing, prompting for station name + Icecast password
+#   • Prompts once to choose a Claude model (sonnet / opus / haiku) if not configured
+#   • Warns about the ~2.5 GB first-time Docker build (Kokoro TTS + PyTorch) and asks
+#     to confirm before downloading; subsequent runs reuse the Docker layer cache
+#   • GSR_MODEL=<id> env var bypasses the model-selection prompt (for CI / scripted use)
+#
 # This file is SOURCEABLE: all logic lives in functions; `main` runs only when the
 # script is executed directly (not when sourced), so scripts/test-run.sh can source
 # it and unit-test individual functions without launching anything.
@@ -154,6 +161,7 @@ ENV OVERRIDES (defaults shown):
   GSR_DISK_MIN_GB=$GSR_DISK_MIN_GB
   GSR_HEALTH_TIMEOUT=${GSR_HEALTH_TIMEOUT}s  GSR_HEALTH_TRIES=$GSR_HEALTH_TRIES  GSR_HEALTH_GAP=${GSR_HEALTH_GAP}s
   GSR_DRY_RUN=$DRY_RUN
+  GSR_MODEL=<model-id>  (e.g. claude-sonnet-4-6) — bypass the model-selection prompt
 EOF
 }
 
@@ -174,7 +182,8 @@ resolve_compose() {
 
 # --------------------------------------------------------------------------- #
 # Core prerequisite guards (FATAL). docker binary, a reachable docker DAEMON, a
-# compose implementation, the env file, the compose file. Any miss is fatal.
+# compose implementation, and the compose file. Any miss is fatal.
+# secrets/.env is handled separately by first_run_setup (may not exist on first run).
 # --------------------------------------------------------------------------- #
 DC=""
 require_core_prereqs() {
@@ -191,17 +200,179 @@ require_core_prereqs() {
     log "FATAL: neither 'docker compose' (v2 plugin) nor 'docker-compose' (v1) is available."
     ok=1
   fi
-  [[ -f "$GSR_ENV_FILE" ]] || {
-    log "FATAL: secrets env file missing at '$GSR_ENV_FILE'."
-    ok=1
-  }
   [[ -f "$GSR_COMPOSE_FILE" ]] || {
     log "FATAL: compose file missing at '$GSR_COMPOSE_FILE'."
     ok=1
   }
   [[ "$ok" -eq 0 ]] || return 1
-  log "Core prereqs OK: docker daemon up, compose='$DC', secrets + compose file present."
+  log "Core prereqs OK: docker daemon up, compose='$DC', compose file present."
   return 0
+}
+
+# --------------------------------------------------------------------------- #
+# First-run setup: create secrets/.env if it doesn't exist yet, prompting for
+# required values. On non-interactive runs, writes safe defaults so the stack
+# can still start (users can edit later). Idempotent: does nothing if file exists.
+# --------------------------------------------------------------------------- #
+first_run_setup() {
+  if [[ -f "$GSR_ENV_FILE" ]]; then
+    return 0
+  fi
+  log "First run: '$GSR_ENV_FILE' not found — creating it now."
+  printf '\nFirst-time setup. A few questions to configure the station.\n'
+  printf 'All values can be changed later by editing %s.\n\n' "$GSR_ENV_FILE"
+
+  local station_name="Golden Shower Radio"
+  local icecast_pw="change-me-please"
+  local slskd_key=""
+
+  if [[ -t 0 ]]; then
+    printf 'Station name [%s]: ' "$station_name"
+    local _n; read -r _n || _n=""
+    [[ -n "$_n" ]] && station_name="$_n"
+
+    printf 'Icecast source password [%s]: ' "$icecast_pw"
+    local _p; read -r _p || _p=""
+    [[ -n "$_p" ]] && icecast_pw="$_p"
+
+    printf 'slskd API key (blank to skip — required only with --with-slskd): '
+    local _s; read -r _s || _s=""
+    slskd_key="$_s"
+  fi
+
+  mkdir -p "$(dirname "$GSR_ENV_FILE")"
+  cat >"$GSR_ENV_FILE" <<ENVFILE
+# Golden Shower Radio secrets — gitignored, NEVER commit this file.
+# Edit values here and restart the stack to apply.
+
+STATION_NAME=${station_name}
+
+# Claude model for LLM curation (written by run.sh model-selection prompt).
+# Options: claude-sonnet-4-6 (recommended), claude-opus-4-8, claude-haiku-4-5-20251001
+ANTHROPIC_MODEL=
+
+# Icecast source password (must match deploy/config/icecast.xml SOURCE_PASSWORD).
+ICECAST_SOURCE_PASSWORD=${icecast_pw}
+
+# slskd / Soulseek API key (only needed when running with --with-slskd).
+SLSKD_API_KEY=${slskd_key}
+
+# DO NOT set ANTHROPIC_API_KEY here. The brain authenticates via the MAX subscription
+# through the mounted ~/.claude OAuth creds. Setting this key silently overrides the
+# subscription and bills pay-per-use credits — which broke the old brain.
+ENVFILE
+  chmod 600 "$GSR_ENV_FILE"
+  log "Created '$GSR_ENV_FILE'. Secrets directory is gitignored."
+}
+
+# --------------------------------------------------------------------------- #
+# Model selection: prompt once for the Claude curation model if not configured.
+# Writes ANTHROPIC_MODEL into secrets/.env (idempotent; replaces empty/missing line).
+# Env override: GSR_MODEL=<model> skips the prompt entirely.
+# --------------------------------------------------------------------------- #
+resolve_model() {
+  local current_model
+  current_model="$(grep -E '^ANTHROPIC_MODEL=' "$GSR_ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')"
+
+  # Explicit env override (e.g. for scripted/CI use).
+  if [[ -n "${GSR_MODEL:-}" ]]; then
+    current_model="$GSR_MODEL"
+    _set_env_var "ANTHROPIC_MODEL" "$current_model"
+    log "Model: '$current_model' (from GSR_MODEL override)."
+    return 0
+  fi
+
+  if [[ -n "$current_model" ]]; then
+    log "Model: '$current_model' (from secrets/.env)."
+    return 0
+  fi
+
+  # Not configured — prompt on a TTY; fall back to Sonnet on non-interactive runs.
+  local model="claude-sonnet-4-6"
+  if [[ -t 0 ]]; then
+    printf '\nWhich Claude model should the AI director use for curation?\n'
+    printf '  [1] claude-sonnet-4-6          (recommended — fast, cost-effective)\n'
+    printf '  [2] claude-opus-4-8            (most capable — higher quota usage)\n'
+    printf '  [3] claude-haiku-4-5-20251001  (fastest, lightest curation)\n'
+    printf '  [4] Other (enter a model ID manually)\n'
+    printf 'Choice [1]: '
+    local _m; read -r _m || _m=""
+    case "$_m" in
+      2) model="claude-opus-4-8" ;;
+      3) model="claude-haiku-4-5-20251001" ;;
+      4)
+        printf 'Model ID: '
+        local _mid; read -r _mid || _mid=""
+        [[ -n "$_mid" ]] && model="$_mid"
+        ;;
+      *) model="claude-sonnet-4-6" ;;
+    esac
+  fi
+
+  _set_env_var "ANTHROPIC_MODEL" "$model"
+  log "Model: configured as '$model' in secrets/.env."
+}
+
+# _set_env_var KEY VALUE: upserts KEY=VALUE in secrets/.env in-place.
+_set_env_var() {
+  local key="$1" val="$2" envfile="$GSR_ENV_FILE"
+  if grep -qE "^${key}=" "$envfile" 2>/dev/null; then
+    python3 - "$envfile" "$key" "$val" <<'PY'
+import sys, re
+path, key, val = sys.argv[1], sys.argv[2], sys.argv[3]
+content = open(path).read()
+new = re.sub(rf'^{re.escape(key)}=.*$', f'{key}={val}', content, flags=re.MULTILINE)
+open(path, 'w').write(new)
+PY
+  else
+    printf '%s=%s\n' "$key" "$val" >>"$envfile"
+  fi
+}
+
+# --------------------------------------------------------------------------- #
+# Image build check: on first run, the gsr-brain image doesn't exist and the
+# build will download Kokoro TTS voice packs + PyTorch CPU (~2.5 GB total).
+# Warns the user and asks to confirm before the long download.
+# --------------------------------------------------------------------------- #
+check_image_build() {
+  [[ "$WANT_BUILD" -eq 0 ]] && return 0  # --no-build: user already decided
+  [[ "$DRY_RUN" == "1" ]] && return 0
+
+  # Probe whether any gsr-brain image variant already exists locally.
+  local image_found=0
+  if docker image inspect "${GSR_PROJECT}-brain" >/dev/null 2>&1 || \
+     docker image inspect "gsr-brain" >/dev/null 2>&1; then
+    image_found=1
+  fi
+  # Also check via compose — it may use a different naming convention.
+  if [[ "$image_found" -eq 0 ]] && \
+     $DC -p "$GSR_PROJECT" -f "$GSR_COMPOSE_FILE" --env-file "$GSR_ENV_FILE" \
+       images --quiet brain 2>/dev/null | grep -q .; then
+    image_found=1
+  fi
+
+  if [[ "$image_found" -eq 1 ]]; then
+    log "Image check: brain image present — rebuild will use the layer cache (fast)."
+    return 0
+  fi
+
+  log "Image check: brain image not found — first build downloads AI models (~2.5 GB):"
+  log "  • PyTorch CPU (torch wheel, ~900 MB)"
+  log "  • Kokoro TTS (model + English voice palette, ~500 MB in HuggingFace cache)"
+  log "  • spaCy en_core_web_sm + librosa / pyloudnorm / soundfile"
+  log "  This only happens once; subsequent runs reuse the cached layers."
+
+  if [[ -t 0 ]]; then
+    printf '\nFirst-time build: download ~2.5 GB of AI model files now? [Y/n] '
+    local _ans; read -r _ans || _ans=""
+    case "$(printf '%s' "$_ans" | tr '[:upper:]' '[:lower:]')" in
+      n | no)
+        log "Build cancelled. Re-run this script when ready to download models."
+        exit 0
+        ;;
+    esac
+  fi
+  log "Building images. This may take 10-20 minutes on first run..."
 }
 
 # --------------------------------------------------------------------------- #
@@ -579,11 +750,14 @@ main() {
     return 0
   fi
 
-  require_core_prereqs || return 1   # FATAL guards
+  require_core_prereqs || return 1   # FATAL guards (Docker, compose, compose file)
+  first_run_setup                    # create secrets/.env if missing (no-op if exists)
   load_secrets
+  resolve_model                      # configure ANTHROPIC_MODEL if unset (prompts once)
   check_subscription_auth            # non-fatal skip-with-report (#1 lesson guard)
   check_disk                         # non-fatal warn
   prepare_filesystem
+  check_image_build                  # first-run: warn about ~2.5 GB model download
   resolve_seed                       # SEEDING-029: first-run taste-seed setup (no-op if decided)
   resolve_slskd
   note_ports
