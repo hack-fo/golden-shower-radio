@@ -15,3 +15,9 @@
   - OB-014 by construction: hiatus->discontinued via lifecycle.discontinue_show; no show_relaunched emitted by LINEUP.
   - Ordered-bounds clamp (long lowered to max) = safe-degrade reading of AC-SY-002.
   - Config bounds read via getattr(cfg, "lineup_max_hiatus_seconds"/"lineup_long_hiatus_seconds", 90d/30d) — M6 adds the real knobs.
+
+- Phase C complete (M5+M6): WeeklyMatrixPlanner + world_model feed + config knobs + docs. 26 new tests, 1819 passed 0 regressions, ruff clean. Committed.
+  - program_cycle show_id wired at lineup layer (lazy import EV_PROGRAM_CYCLE), no schedule.py touch.
+  - toggle-OFF byte-identical proven (test_schedule_context_byte_identical_when_lineup_off + zero-read counter).
+  - NFR-LU-5: reused shows_novelty_threshold/shows_max_regenerate; NO second similarity knob (divergence ratified).
+- ALL 6 MILESTONES CODE-COMPLETE. Remaining: quality pass (TRUST 5 + evaluator-active) + /moai sync -> PR.
