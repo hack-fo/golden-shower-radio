@@ -185,14 +185,13 @@ def _scan_staccato(text: str) -> List[LintResult]:
     return results
 
 
+_PATTERN10_REGEX = re.compile(r'\b\w+,\s+\w+,\s+(?:and\s+)?\w+\b')
+
+
 def _scan_rule_of_three(text: str) -> List[LintResult]:
     """Pattern 10: 3+ consecutive adjectives in a 10-word span."""
-    # Simple heuristic: look for comma-separated word sequences with adjective feel
-    # We use a pragmatic approach: find 3+ words in a row joined by commas or 'and'
     results: List[LintResult] = []
-    # Find patterns like "X, Y, and Z" or "X, Y, Z" in text
-    pattern = re.compile(r'\b\w+,\s+\w+,\s+(?:and\s+)?\w+\b')
-    for m in pattern.finditer(text):
+    for m in _PATTERN10_REGEX.finditer(text):
         span_text = m.group()
         words = re.sub(r'[,\s]+', ' ', span_text).split()
         if len(words) >= 3:

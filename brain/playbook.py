@@ -354,7 +354,12 @@ BREAK_TYPES: Tuple[BreakType, ...] = (
 # REQ-HB-004/005 — weighted no-repeat selector with REFLECTION max-1-per-hour cap.
 def next_break_type(prev: str = "", hour_state: Optional[Dict[str, Any]] = None) -> str:
     """Select the next break type by weighted draw, never back-to-back the same type.
-    REFLECTION is capped at 1 per show-hour: pass hour_state dict; it is mutated in-place."""
+
+    REQ-HB-004: weighted random draw; back-to-back repeat suppressed.
+    REQ-HB-005: REFLECTION capped at 1 per show-hour via ``hour_state``.
+    ``hour_state`` is mutated in-place (sets ``hour_state["reflection_used"] = True``
+    when REFLECTION is chosen). The caller is responsible for clearing it at each
+    new show-hour so REFLECTION can fire again — see TalkDirector._hour_state_hour."""
     import random
     if hour_state is None:
         hour_state = {}

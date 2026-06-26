@@ -349,6 +349,9 @@ def curate_batch(
 
 # A distinct persona for the SPOKEN voice. The curator picks tracks; the HOST talks on
 # air. Kept short (ships in every talk call) and explicitly anti-AI-slop.
+# @MX:NOTE: [AUTO] DEPRECATED — use HUMAN_HOST_PERSONA for new work (SPEC-RADIO-HOSTVOICE-049
+#   REQ-HP-001). Aliases intentionally NOT repointed: repointing breaks test_pv_wiring.py
+#   which pins persona content (NFR-HV-6 no-regression rail). Migrate callers then remove.
 HOST_PERSONA = (
     "You are the live on-air host (DJ) of an autonomous freeform internet radio "
     "station. You speak in a natural, warm, slightly witty radio-host voice - the "

@@ -120,6 +120,9 @@ class TalkDirector:
         # [HARD] Inert when human_dj_taxonomy_enabled is OFF (byte-identical).
         self._last_break_type: str = ""
         self._hour_state: Dict[str, Any] = {}   # tracks REFLECTION cap etc.
+        # REQ-HB-005: _hour_state resets at each new show-hour so REFLECTION can fire again.
+        # Seeded to -1 so the first break always triggers an initialising reset.
+        self._hour_state_hour: int = -1
 
     def start(self) -> None:
         if not self.cfg.talk_enabled:
@@ -310,7 +313,13 @@ class TalkDirector:
         # fragment permission for MICRO/CASUAL_OBS (REQ-HI). With the flag OFF the key is absent
         # and the prompt is byte-identical. Rotation state advances ONLY on this enabled path.
         if getattr(self.cfg, "human_dj_taxonomy_enabled", False):
+            import datetime as _dt
             from . import playbook as _pb
+            # REQ-HB-005: reset REFLECTION cap when the show-hour rolls over.
+            current_hour = _dt.datetime.now().hour
+            if current_hour != self._hour_state_hour:
+                self._hour_state.clear()
+                self._hour_state_hour = current_hour
             break_type = _pb.next_break_type(self._last_break_type, self._hour_state)
             self._last_break_type = break_type
             context["break_type"] = break_type

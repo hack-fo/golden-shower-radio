@@ -202,6 +202,35 @@ def test_human_lint_context_custom_banned_overrides_default():
 
 
 # ---------------------------------------------------------------------------
+# REQ-HB-005 — REFLECTION hourly cap resets when hour_state is cleared.
+# ---------------------------------------------------------------------------
+def test_break_type_reflection_resets_per_hour():
+    from brain.playbook import next_break_type
+    hour_state = {}
+    # Force REFLECTION to be chosen by making it the only candidate (patch prev to all others).
+    # We can verify cap by saturating hour_state manually.
+    hour_state["reflection_used"] = True
+    # With cap set, REFLECTION must never be chosen over 50 draws.
+    for _ in range(50):
+        chosen = next_break_type("", hour_state)
+        assert chosen != "REFLECTION", "REFLECTION chose despite hourly cap being set"
+    # Simulate new-hour reset by clearing hour_state.
+    hour_state.clear()
+    # After reset, REFLECTION is eligible again (low prob but verify via direct state).
+    assert not hour_state.get("reflection_used"), "hour_state should be empty after clear"
+    # Drive enough draws to confirm REFLECTION is reachable (at 2% weight, 500 draws
+    # gives statistical near-certainty; we just verify it isn't permanently blocked).
+    seen_reflection = False
+    for _ in range(500):
+        chosen = next_break_type("", hour_state)
+        if chosen == "REFLECTION":
+            seen_reflection = True
+            break
+        hour_state.clear()  # reset cap each draw so REFLECTION stays eligible
+    assert seen_reflection, "REFLECTION never chosen across 500 draws after hour_state.clear()"
+
+
+# ---------------------------------------------------------------------------
 # NFR-HV-6 — gate is byte-identical when humandj_ctx is None vs absent.
 # ---------------------------------------------------------------------------
 def test_gate_byte_identical_when_humandj_ctx_none():
