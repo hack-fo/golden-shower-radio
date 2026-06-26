@@ -9,3 +9,9 @@
 - Phase A complete (M1+M2): brain/lineup.py + test_lineup.py, 31 tests 100% cov, 0 regressions. Committed.
   - Boundary decisions ratified: fingerprint=JSON+flat text; SQ-003 re-vet corpus includes active rows registered during sleep (B9 hazard).
   - revet_reactivation() exposed as the clean entry point M4 will call.
+
+- Phase B complete (M3+M4): lineup.py extended (LineupController, make_caps_ok, hiatus FSM). 33 new tests, 96% cov, 0 regressions. Committed.
+  - PR-004 reachable: roster.validate_candidate (persona.py:445), composed same as lifecycle._caps_ok_predicate (lifecycle.py:277).
+  - OB-014 by construction: hiatus->discontinued via lifecycle.discontinue_show; no show_relaunched emitted by LINEUP.
+  - Ordered-bounds clamp (long lowered to max) = safe-degrade reading of AC-SY-002.
+  - Config bounds read via getattr(cfg, "lineup_max_hiatus_seconds"/"lineup_long_hiatus_seconds", 90d/30d) — M6 adds the real knobs.
