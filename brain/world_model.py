@@ -136,6 +136,7 @@ class WorldModelBuilder:
                  schedule: Optional[Any] = None,
                  od_diary: Optional[Any] = None,
                  playbook: Optional[Any] = None,
+                 show_registry: Optional[Any] = None,
                  clock: Optional[Any] = None) -> None:
         self._cfg = cfg
         self._state = state
@@ -148,6 +149,10 @@ class WorldModelBuilder:
         self._schedule = schedule
         self._od_diary = od_diary
         self._playbook = playbook
+        # SPEC-RADIO-LINEUP-050 REQ-SN-003 — the recurring-slot identity store the
+        # schedule_context show-identity feed resolves names/themes from. Optional + gated on
+        # cfg.lineup_enabled (default OFF => byte-identical slice); never on the playout pull path.
+        self._show_registry = show_registry
         self._clock = clock or time.time
 
     def build(self) -> WorldModel:
@@ -295,10 +300,55 @@ class WorldModelBuilder:
         try:
             ctx = self._schedule.current_context() if callable(
                 getattr(self._schedule, "current_context", None)) else {}
-            wm.schedule_context = dict(ctx) if ctx else {}
+            ctx = dict(ctx) if ctx else {}
+            # SPEC-RADIO-LINEUP-050 REQ-SN-003 — add the current/next recurring-show identity IN
+            # PLACE (beside the existing slot/persona keys), gated on the lineup enable toggle. With
+            # the toggle OFF (default) or no registry wired, this branch is skipped and the slice is
+            # byte-identical to before LINEUP-050 (NFR-LU-5).
+            if getattr(self._cfg, "lineup_enabled", False) and self._show_registry is not None:
+                self._add_show_identity(ctx)
+            wm.schedule_context = ctx
             wm.schedule_context_stale = False
         except Exception as exc:  # noqa: BLE001
             log_event(log, "world_model.schedule_context_error", error=str(exc))
+
+    def _add_show_identity(self, ctx: Dict[str, Any]) -> None:
+        """REQ-SN-003 — resolve the current+next recurring-show identity from ``show_registry`` and
+        add ``current_show``/``next_show`` keys (``show_id``+``name``+``theme``) BESIDE the existing
+        slot/persona keys. A house/unscheduled block or an unregistered show id OMITS that key (the
+        slice degrades to slot+persona only); never raises (the caller's try/except is the backstop,
+        plus per-lookup isolation here)."""
+        from .lineup import show_identity
+
+        current = (self._schedule.what_airs_now()
+                   if callable(getattr(self._schedule, "what_airs_now", None)) else None)
+        nxt = self._next_block(current)
+        for key, block in (("current_show", current), ("next_show", nxt)):
+            sid = getattr(block, "show_or_episode_id", "") if block is not None else ""
+            if not sid or sid == "unscheduled":
+                continue
+            try:
+                row = self._show_registry.get(sid)
+            except Exception as exc:  # noqa: BLE001 - a registry read fault omits the key
+                log_event(log, "world_model.show_identity_error", error=str(exc))
+                continue
+            ident = show_identity(row)
+            if ident:
+                ctx[key] = ident
+
+    def _next_block(self, current: Any) -> Any:
+        """The block governing the NEXT slot after ``current`` (REQ-SN-003): the earliest block
+        whose start hour is later than ``current``'s, wrapping to the first block of the day."""
+        if not callable(getattr(self._schedule, "blocks", None)):
+            return None
+        blocks = self._schedule.blocks()
+        if not blocks:
+            return None
+        if current is None:
+            return blocks[0]
+        cur_hour = getattr(current, "start_hour", None)
+        later = [b for b in blocks if getattr(b, "start_hour", 0) > cur_hour]
+        return later[0] if later else blocks[0]
 
     def _fill_ledger_diary(self, wm: WorldModel) -> None:
         if self._od_diary is None:

@@ -558,6 +558,8 @@ from types import SimpleNamespace  # noqa: E402
 
 from brain.ledger import EventLedger  # noqa: E402
 from brain.schedule import (  # noqa: E402
+    EV_PERSONA_ASSIGNED,
+    EV_PROGRAM_CYCLE,
     HOUSE_LANE,
     NoOrphanBootstrap,
     Schedule,
@@ -1016,3 +1018,481 @@ def test_ledger_fault_does_not_block_table_write(registry):
     result = ctl.to_hiatus("show1", now=1000.0)  # ledger.append raises internally
     assert result.ok is True
     assert registry.get("show1")["lineup_status"] == LINEUP_HIATUS  # table write survived
+
+
+# ========================================================================== #
+# M5 — 7-day weekly schedule programming (REQ-SN-001/002/003) — AC-SN-001/002/003
+# ========================================================================== #
+
+from brain.lineup import (  # noqa: E402
+    DEFAULT_MATRIX_CADENCE_SECONDS,
+    MatrixAssignment,
+    MatrixResult,
+    WeeklyMatrixPlanner,
+    show_identity,
+)
+from brain.world_model import WorldModelBuilder  # noqa: E402
+
+
+class _FakeBudget:
+    """A MeasuredChangeBudget double: applies the first ``allow`` evaluations, then rejects.
+
+    Mirrors the OD-006/010 ``evaluate(...) -> ChangeDecision(applied=...)`` seam the matrix
+    CONSUMES (it does not re-own the budget). Records each call for assertions.
+    """
+
+    def __init__(self, *, allow=2):
+        self.allow = allow
+        self.calls = []
+
+    def evaluate(self, *, tier, target, rationale="", editorial_reason="",
+                 canary=None, is_identity=False):
+        self.calls.append({"tier": tier, "target": target,
+                           "editorial_reason": editorial_reason, "is_identity": is_identity})
+        applied = len(self.calls) <= self.allow
+        return SimpleNamespace(applied=applied, code="ok" if applied else "rate_limited")
+
+
+def _seed_grid(slot_ids):
+    """A real ledger-backed Schedule with a base hour-0 slot + one slot per id (no-gap)."""
+    led = EventLedger()
+    sched = Schedule(led)
+    sched.add_slot(ScheduleBlock(slot_id="base", start_hour=0, daypart="night",
+                                 show_or_episode_id="unscheduled"), seed=True)
+    for i, sid in enumerate(slot_ids):
+        sched.add_slot(ScheduleBlock(slot_id=sid, start_hour=1 + i, daypart="day",
+                                     show_or_episode_id="unscheduled"), seed=True)
+    return led, sched
+
+
+def _matrix_concept(registry, show_id, *, persona_id, day, hour, slot_id):
+    """Register a concept row and return its MatrixAssignment."""
+    _register(registry, show_id, persona_id=persona_id, day=day, hour=hour,
+              status=LINEUP_CONCEPT, name=show_id)
+    return MatrixAssignment(persona_id=persona_id, slot_day_of_week=day, slot_hour=hour,
+                            show_id=show_id, slot_id=slot_id, is_new_identity=True,
+                            editorial_reason="weekly lineup")
+
+
+def test_matrix_clamp_one_per_day_drops_double_booking(registry):
+    """AC-SN-001 / B10: a proposal double-booking a persona on a day is rejected (clamped);
+    the grid is never partially corrupted (the offender is dropped BEFORE any apply)."""
+    led, sched = _seed_grid(["mon-08", "mon-17", "tue-20"])
+    ctl = LineupController(registry, schedule=sched)
+    planner = WeeklyMatrixPlanner(ctl, ledger=led)
+    a1 = _matrix_concept(registry, "s1", persona_id="P", day=0, hour=8, slot_id="mon-08")
+    a2 = _matrix_concept(registry, "s2", persona_id="P", day=0, hour=17, slot_id="mon-17")  # dup day
+    a3 = _matrix_concept(registry, "s3", persona_id="P", day=1, hour=20, slot_id="tue-20")
+
+    result = planner.apply_matrix([a1, a2, a3])
+    assert isinstance(result, MatrixResult)
+    applied_ids = {a.show_id for a in result.applied}
+    dropped_ids = {a.show_id for a in result.rejected_double_booked}
+    assert applied_ids == {"s1", "s3"}          # one Monday show + one Tuesday show
+    assert dropped_ids == {"s2"}                 # the 2nd Monday show is clamped
+    # The grid is consistent: the dropped slot is NOT bound to P (no half-applied double-book).
+    mon17 = next(b for b in sched.blocks() if b.slot_id == "mon-17")
+    assert mon17.persona_id == ""               # never bound -> no orphan, no corruption
+    assert registry.get("s2")["lineup_status"] == LINEUP_CONCEPT
+
+
+def test_matrix_clamp_respects_existing_active_show_on_day(registry):
+    """AC-SN-001: a proposal for a persona already ACTIVE on that day is clamped (one-per-day)."""
+    led, sched = _seed_grid(["wed-20"])
+    _register(registry, "incumbent", persona_id="P", day=2, hour=8, status=LINEUP_ACTIVE)
+    ctl = LineupController(registry, schedule=sched)
+    planner = WeeklyMatrixPlanner(ctl, ledger=led)
+    a = _matrix_concept(registry, "newshow", persona_id="P", day=2, hour=20, slot_id="wed-20")
+    result = planner.apply_matrix([a])
+    assert result.applied == []
+    assert {x.show_id for x in result.rejected_double_booked} == {"newshow"}
+
+
+def test_matrix_over_budget_deferred_rest_applied(registry):
+    """AC-SN-001 / B10: a proposal exceeding the Tier-1 rarity cap is clamped/deferred (the
+    rest applied within budget) — the grid stays consistent (no orphan)."""
+    led, sched = _seed_grid(["mon-20", "tue-20", "wed-20"])
+    ctl = LineupController(registry, schedule=sched)
+    budget = _FakeBudget(allow=2)  # only 2 identity-level changes fit
+    planner = WeeklyMatrixPlanner(ctl, budget=budget, ledger=led)
+    a1 = _matrix_concept(registry, "s1", persona_id="A", day=0, hour=20, slot_id="mon-20")
+    a2 = _matrix_concept(registry, "s2", persona_id="B", day=1, hour=20, slot_id="tue-20")
+    a3 = _matrix_concept(registry, "s3", persona_id="C", day=2, hour=20, slot_id="wed-20")
+
+    result = planner.apply_matrix([a1, a2, a3])
+    assert {a.show_id for a in result.applied} == {"s1", "s2"}
+    assert {a.show_id for a in result.deferred_over_budget} == {"s3"}
+    # The deferred slot is left on its safe (unscheduled) state — no partial corruption.
+    wed = next(b for b in sched.blocks() if b.slot_id == "wed-20")
+    assert wed.is_unscheduled()
+    assert registry.get("s3")["lineup_status"] == LINEUP_CONCEPT
+    # The budget was CONSUMED at the identity tier (not re-owned).
+    assert budget.calls and all(c["is_identity"] for c in budget.calls)
+
+
+def test_matrix_budget_uses_tier1_identity(registry):
+    """AC-SN-001: the matrix consumes the OD-010 Tier-1 identity rarity tier for new shows."""
+    from brain.ledger import TIER_IDENTITY
+
+    led, sched = _seed_grid(["mon-20"])
+    ctl = LineupController(registry, schedule=sched)
+    budget = _FakeBudget(allow=5)
+    planner = WeeklyMatrixPlanner(ctl, budget=budget, ledger=led)
+    a = _matrix_concept(registry, "s1", persona_id="A", day=0, hour=20, slot_id="mon-20")
+    planner.apply_matrix([a])
+    assert budget.calls[0]["tier"] == TIER_IDENTITY
+
+
+def test_matrix_journaled_as_existing_program_cycle_with_show_id(registry):
+    """AC-SN-002 / B10: the applied matrix is journaled as the EXISTING program_cycle event
+    with show_id ADDED — NO new event kind, NO new store."""
+    led, sched = _seed_grid(["mon-20", "tue-20"])
+    ctl = LineupController(registry, schedule=sched)
+    planner = WeeklyMatrixPlanner(ctl, ledger=led)
+    a1 = _matrix_concept(registry, "s1", persona_id="A", day=0, hour=20, slot_id="mon-20")
+    a2 = _matrix_concept(registry, "s2", persona_id="B", day=1, hour=20, slot_id="tue-20")
+    planner.apply_matrix([a1, a2])
+
+    cycles = led.events(event_type=EV_PROGRAM_CYCLE)
+    assert cycles, "the matrix must ride the existing program_cycle event"
+    payload = cycles[-1].data
+    assert set(payload.get("show_ids", [])) == {"s1", "s2"}      # show_id added to the payload
+    assert {x["show_id"] for x in payload.get("assignments", [])} == {"s1", "s2"}
+
+
+def test_matrix_persona_assigned_carries_show_id(registry):
+    """AC-SN-002: the binding emits the EXISTING persona_assigned events carrying the show id."""
+    led, sched = _seed_grid(["mon-20"])
+    ctl = LineupController(registry, schedule=sched)
+    planner = WeeklyMatrixPlanner(ctl, ledger=led)
+    a = _matrix_concept(registry, "s1", persona_id="A", day=0, hour=20, slot_id="mon-20")
+    planner.apply_matrix([a])
+    assigns = led.events(event_type=EV_PERSONA_ASSIGNED)
+    assert assigns and assigns[-1].data["show_or_episode_id"] == "s1"
+
+
+def test_matrix_no_new_event_kind_in_source():
+    """AC-SN-002 [HARD]: the matrix introduces NO new ledger event kind (rides program_cycle)."""
+    import brain.lineup as _lineup
+
+    with open(_lineup.__file__, "r", encoding="utf-8") as fh:
+        src = fh.read()
+    # The journal must reference the EXISTING program_cycle event, not invent a matrix event.
+    assert "program_cycle" in src
+    assert "EV_PROGRAM_CYCLE" in src
+    assert "matrix_cycle" not in src  # no bespoke matrix event kind
+
+
+def test_matrix_reuses_m3_bind_no_duplicate_caps_ok(registry):
+    """AC-SN-001 / NFR-LU-5: the matrix binds THROUGH the M3 LineupController.bind_show (a
+    non-None caps_ok), never a forked bind."""
+    sched = _SpySchedule()
+    ctl = LineupController(registry, schedule=sched)
+    planner = WeeklyMatrixPlanner(ctl, ledger=None)
+    _register(registry, "s1", persona_id="A", day=0, hour=20, status=LINEUP_CONCEPT, name="s1")
+    a = MatrixAssignment(persona_id="A", slot_day_of_week=0, slot_hour=20,
+                         show_id="s1", slot_id="mon-20")
+    planner.apply_matrix([a])
+    assert sched.calls and sched.calls[-1]["caps_ok"] is not None  # wired, not None
+
+
+def test_matrix_default_cadence_constant():
+    """AC-SN-001: the matrix cadence defaults to the OPS-004 program-cycle cadence (daily)."""
+    assert DEFAULT_MATRIX_CADENCE_SECONDS == 24 * 3600
+
+
+def test_matrix_bind_rejection_records_rejected_bind(registry):
+    """AC-SN-001 / NFR-LU-5: a bind the wired caps_ok/schedule rejects lands in rejected_bind —
+    the slot stays on its safe state (no orphan, never half-applied)."""
+    sched = _SpySchedule(accept=False)   # the grid refuses the assign
+    ctl = LineupController(registry, schedule=sched)
+    planner = WeeklyMatrixPlanner(ctl, ledger=None)
+    _register(registry, "s1", persona_id="A", day=0, hour=20, status=LINEUP_CONCEPT, name="s1")
+    a = MatrixAssignment(persona_id="A", slot_day_of_week=0, slot_hour=20,
+                         show_id="s1", slot_id="mon-20")
+    result = planner.apply_matrix([a])
+    assert result.applied == []
+    assert {x.show_id for x in result.rejected_bind} == {"s1"}
+    assert registry.get("s1")["lineup_status"] == LINEUP_CONCEPT  # not activated
+
+
+def test_matrix_budget_fault_degrades_open(registry):
+    """NFR-LU-2: a budget evaluate() fault degrades OPEN (the cell is still bound; the bind's own
+    caps_ok remains the correctness gate) and never crashes the programming tick."""
+    class _BoomBudget:
+        def evaluate(self, **k):
+            raise RuntimeError("budget down")
+
+    led, sched = _seed_grid(["mon-20"])
+    ctl = LineupController(registry, schedule=sched)
+    planner = WeeklyMatrixPlanner(ctl, budget=_BoomBudget(), ledger=led)
+    a = _matrix_concept(registry, "s1", persona_id="A", day=0, hour=20, slot_id="mon-20")
+    result = planner.apply_matrix([a])
+    assert {x.show_id for x in result.applied} == {"s1"}   # degraded OPEN, bound
+
+
+def test_matrix_journal_fault_does_not_block_apply(registry):
+    """NFR-LU-2/6: a program_cycle journal fault is swallowed; the binds still land (best-effort)."""
+    sched = _SpySchedule(accept=True)
+    ctl = LineupController(registry, schedule=sched)
+    planner = WeeklyMatrixPlanner(ctl, ledger=_BoomLedger())
+    _register(registry, "s1", persona_id="A", day=0, hour=20, status=LINEUP_CONCEPT, name="s1")
+    a = MatrixAssignment(persona_id="A", slot_day_of_week=0, slot_hour=20,
+                         show_id="s1", slot_id="mon-20")
+    result = planner.apply_matrix([a])   # ledger.append raises internally
+    assert {x.show_id for x in result.applied} == {"s1"}
+
+
+def test_matrix_clamp_read_fault_drops_cell(registry):
+    """NFR-LU-2: a registry read fault during the one-per-day clamp drops the cell CLOSED."""
+    class _BoomReadRegistry:
+        def active_show_ids_on_day(self, *a, **k):
+            raise RuntimeError("registry down")
+
+    ctl = LineupController(_BoomReadRegistry(), schedule=_SpySchedule())
+    planner = WeeklyMatrixPlanner(ctl, ledger=None)
+    a = MatrixAssignment(persona_id="A", slot_day_of_week=0, slot_hour=20,
+                         show_id="s1", slot_id="mon-20")
+    kept, dropped = planner.clamp_one_per_day([a])
+    assert kept == []
+    assert {x.show_id for x in dropped} == {"s1"}
+
+
+# ========================================================================== #
+# M5 — world-model schedule_context show-identity feed (REQ-SN-003) — AC-SN-003
+# ========================================================================== #
+
+
+class _StubSchedule:
+    """A schedule double carrying the existing slot/persona context PLUS the what_airs_now /
+    blocks resolvers the world-model feed reads — so show-identity keys land BESIDE the
+    existing slot/persona keys (REQ-SN-003)."""
+
+    def __init__(self, blocks, current):
+        self._blocks = list(blocks)
+        self._current = current
+
+    def current_context(self):
+        if self._current is None:
+            return {}
+        return {"current_slot": self._current.slot_id,
+                "persona_id": self._current.persona_id}
+
+    def what_airs_now(self, epoch=None):
+        return self._current
+
+    def blocks(self):
+        return sorted(self._blocks, key=lambda b: b.start_hour)
+
+
+def _wm_cfg(*, world_model=True, lineup=True):
+    return SimpleNamespace(world_model_enabled=world_model, lineup_enabled=lineup,
+                           station_timezone="Atlantic/Faroe", station_location="Torshavn")
+
+
+def test_schedule_context_carries_current_and_next_show_identity(registry):
+    """AC-SN-003 / B10: schedule_context carries the current+next recurring-show identity
+    (show_id+name+theme) resolved from show_registry, beside the slot/persona keys."""
+    _register(registry, "now1", persona_id="A", day=0, hour=20, status=LINEUP_ACTIVE,
+              name="Kvoldljod", fingerprint=make_fingerprint("Kvoldljod", "slow ambient", "deep"))
+    _register(registry, "next1", persona_id="B", day=0, hour=21, status=LINEUP_ACTIVE,
+              name="Harbour Tapes", fingerprint=make_fingerprint("Harbour Tapes", "coastal jazz", "warm"))
+    cur = ScheduleBlock(slot_id="s20", start_hour=20, daypart="evening",
+                        persona_id="A", show_or_episode_id="now1")
+    nxt = ScheduleBlock(slot_id="s21", start_hour=21, daypart="evening",
+                        persona_id="B", show_or_episode_id="next1")
+    sched = _StubSchedule([cur, nxt], cur)
+    wm = WorldModelBuilder(_wm_cfg(), schedule=sched, show_registry=registry).build()
+
+    ctx = wm.schedule_context
+    assert ctx["current_slot"] == "s20"          # existing slot/persona keys preserved
+    assert ctx["persona_id"] == "A"
+    assert ctx["current_show"] == {"show_id": "now1", "name": "Kvoldljod", "theme": "slow ambient"}
+    assert ctx["next_show"] == {"show_id": "next1", "name": "Harbour Tapes", "theme": "coastal jazz"}
+
+
+def test_schedule_context_omits_show_keys_when_registry_empty(registry):
+    """AC-SN-003: an absent show identity omits the show keys (degrade to slot+persona only)."""
+    cur = ScheduleBlock(slot_id="s20", start_hour=20, daypart="evening",
+                        persona_id="A", show_or_episode_id="unscheduled")
+    sched = _StubSchedule([cur], cur)
+    wm = WorldModelBuilder(_wm_cfg(), schedule=sched, show_registry=registry).build()
+    ctx = wm.schedule_context
+    assert ctx == {"current_slot": "s20", "persona_id": "A"}     # no show keys
+    assert "current_show" not in ctx and "next_show" not in ctx
+
+
+def test_schedule_context_omits_show_keys_when_no_registry_row(registry):
+    """AC-SN-003: a block whose show id is not in the registry omits that show key (no error)."""
+    cur = ScheduleBlock(slot_id="s20", start_hour=20, daypart="evening",
+                        persona_id="A", show_or_episode_id="ghost")  # not registered
+    sched = _StubSchedule([cur], cur)
+    wm = WorldModelBuilder(_wm_cfg(), schedule=sched, show_registry=registry).build()
+    assert "current_show" not in wm.schedule_context
+
+
+def test_schedule_context_byte_identical_when_lineup_off(registry):
+    """AC-NFR-LU-5: with the lineup toggle OFF, schedule_context is byte-identical to the
+    pre-SPEC slice (the show-identity feed is inert)."""
+    _register(registry, "now1", persona_id="A", day=0, hour=20, status=LINEUP_ACTIVE,
+              name="Kvoldljod", fingerprint=make_fingerprint("Kvoldljod", "slow ambient", "deep"))
+    cur = ScheduleBlock(slot_id="s20", start_hour=20, daypart="evening",
+                        persona_id="A", show_or_episode_id="now1")
+    sched = _StubSchedule([cur], cur)
+
+    off = WorldModelBuilder(_wm_cfg(lineup=False), schedule=sched,
+                            show_registry=registry).build()
+    # A builder WITHOUT the registry wired at all = the pre-SPEC behavior.
+    pre_spec = WorldModelBuilder(_wm_cfg(lineup=False), schedule=sched).build()
+    assert off.schedule_context == pre_spec.schedule_context
+    assert "current_show" not in off.schedule_context
+
+
+def test_schedule_context_lineup_off_no_registry_read(registry):
+    """AC-NFR-LU-5: with the toggle OFF the show_registry is NOT read at all (inert surface)."""
+    class _CountingRegistry:
+        def __init__(self, inner):
+            self.inner = inner
+            self.gets = 0
+
+        def get(self, sid):
+            self.gets += 1
+            return self.inner.get(sid)
+
+    _register(registry, "now1", persona_id="A", day=0, hour=20, status=LINEUP_ACTIVE)
+    cur = ScheduleBlock(slot_id="s20", start_hour=20, daypart="evening",
+                        persona_id="A", show_or_episode_id="now1")
+    counting = _CountingRegistry(registry)
+    WorldModelBuilder(_wm_cfg(lineup=False), schedule=_StubSchedule([cur], cur),
+                      show_registry=counting).build()
+    assert counting.gets == 0
+
+
+def test_schedule_context_show_identity_registry_fault_omits_key(registry):
+    """AC-SN-003 / NFR-LU-3: a show_registry read fault omits the show key, never crashes."""
+    class _BoomRegistry:
+        def get(self, sid):
+            raise RuntimeError("registry down")
+
+    cur = ScheduleBlock(slot_id="s20", start_hour=20, daypart="evening",
+                        persona_id="A", show_or_episode_id="now1")
+    sched = _StubSchedule([cur], cur)
+    wm = WorldModelBuilder(_wm_cfg(), schedule=sched, show_registry=_BoomRegistry()).build()
+    assert "current_show" not in wm.schedule_context     # degraded, no error
+    assert wm.schedule_context_stale is False
+
+
+def test_schedule_context_next_block_wraps_when_current_none(registry):
+    """REQ-SN-003: when nothing airs now, next_show wraps to the first block of the day."""
+    _register(registry, "first", persona_id="A", day=0, hour=6, status=LINEUP_ACTIVE,
+              name="Morning", fingerprint=make_fingerprint("Morning", "sunrise", "bright"))
+    b = ScheduleBlock(slot_id="s06", start_hour=6, daypart="morning",
+                      persona_id="A", show_or_episode_id="first")
+    sched = _StubSchedule([b], current=None)   # what_airs_now -> None
+    wm = WorldModelBuilder(_wm_cfg(), schedule=sched, show_registry=registry).build()
+    assert "current_show" not in wm.schedule_context           # nothing airs now
+    assert wm.schedule_context["next_show"]["show_id"] == "first"  # wrapped to first block
+
+
+def test_schedule_context_next_block_none_without_blocks_api(registry):
+    """REQ-SN-003: a schedule lacking a blocks() API yields no next_show (degrade, no error)."""
+    class _NoBlocksSchedule:
+        def current_context(self):
+            return {"current_slot": "s20"}
+
+        def what_airs_now(self, epoch=None):
+            return ScheduleBlock(slot_id="s20", start_hour=20, daypart="evening",
+                                 persona_id="A", show_or_episode_id="now1")
+
+    _register(registry, "now1", persona_id="A", day=0, hour=20, status=LINEUP_ACTIVE,
+              name="Now", fingerprint=make_fingerprint("Now", "evening", "calm"))
+    wm = WorldModelBuilder(_wm_cfg(), schedule=_NoBlocksSchedule(),
+                           show_registry=registry).build()
+    assert wm.schedule_context["current_show"]["show_id"] == "now1"
+    assert "next_show" not in wm.schedule_context              # no blocks() -> no next
+
+
+def test_show_identity_resolver_extracts_theme(registry):
+    """REQ-SN-003: show_identity resolves a row to {show_id, name, theme}; theme from fingerprint."""
+    _register(registry, "s1", name="Pier Sessions",
+              fingerprint=make_fingerprint("Pier Sessions", "harbour evening", "slow drift"))
+    ident = show_identity(registry.get("s1"))
+    assert ident == {"show_id": "s1", "name": "Pier Sessions", "theme": "harbour evening"}
+    assert show_identity(None) is None
+
+
+# ========================================================================== #
+# AC-NFR-LU-1 — the matrix/registry reads are OFF the sub-1s /api/next pull path
+# ========================================================================== #
+
+
+def test_pull_path_does_not_query_show_registry(registry):
+    """AC-NFR-LU-1: the /api/next pull resolves "what airs now" through Schedule/
+    NoOrphanBootstrap (carrying the bound show_or_episode_id) with NO synchronous registry read."""
+    class _CountingRegistry:
+        def __init__(self, inner):
+            self.inner = inner
+            self.reads = 0
+
+        def get(self, sid):
+            self.reads += 1
+            return self.inner.get(sid)
+
+        def non_active_rows(self, **k):
+            self.reads += 1
+            return self.inner.non_active_rows(**k)
+
+        def all_rows(self):
+            self.reads += 1
+            return self.inner.all_rows()
+
+    _register(registry, "s1", persona_id="A", day=0, hour=22, status=LINEUP_ACTIVE)
+    led, sched = _seed_grid(["fri-22"])
+    sched.assign_persona("fri-22", "A", "s1",
+                         caps_ok=make_caps_ok(registry, slot_day_of_week=4))
+    counting = _CountingRegistry(registry)
+
+    boot = NoOrphanBootstrap(sched)
+    block = boot.resolve(epoch=None)         # the pull path
+    now = sched.what_airs_now()
+    assert block is not None                 # never silenced
+    assert now is not None
+    assert counting.reads == 0               # the registry is never touched on the pull path
+
+
+# ========================================================================== #
+# M6 — config knobs (REQ config surface + NFR-LU-5)
+# ========================================================================== #
+
+
+def test_config_declares_lineup_knobs():
+    """M6: the new LINEUP knobs are real declared Config fields with the documented defaults."""
+    from brain.config import Config
+
+    cfg = Config()
+    assert cfg.lineup_enabled is False                                   # [HARD] OFF by default
+    assert cfg.lineup_max_hiatus_seconds == pytest.approx(90 * 24 * 3600)
+    assert cfg.lineup_long_hiatus_seconds == pytest.approx(30 * 24 * 3600)
+    assert cfg.lineup_long_hiatus_seconds <= cfg.lineup_max_hiatus_seconds  # ordered bounds
+    assert cfg.lineup_matrix_cadence_seconds == pytest.approx(24 * 3600)
+
+
+def test_config_lineup_bounds_resolve_in_controller(registry):
+    """M6 / AC-SY-002: the M4 controller's getattr reads now resolve to real Config fields."""
+    from brain.config import Config
+
+    cfg = Config()
+    ctl = LineupController(registry, cfg=cfg)
+    assert ctl.long_hiatus_seconds == pytest.approx(cfg.lineup_long_hiatus_seconds)
+    assert ctl.max_hiatus_seconds == pytest.approx(cfg.lineup_max_hiatus_seconds)
+
+
+def test_config_firewall_threshold_reuses_shows_knob(registry):
+    """M6 / NFR-LU-5: the firewall reuses shows_novelty_threshold / shows_max_regenerate
+    (no second similarity scale is introduced)."""
+    from brain.config import Config
+
+    cfg = Config()
+    fw = CrossPersonaFirewall(registry, cfg)
+    assert fw.threshold == pytest.approx(cfg.shows_novelty_threshold)
+    assert fw.max_regen == cfg.shows_max_regenerate

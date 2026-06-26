@@ -249,6 +249,17 @@ at song/talk transitions.
 | `BRAIN_KNOWLEDGE_REFRESH_TS_DAYS` | `3` | Re-research interval for time-sensitive facts |
 | `BRAIN_KNOWLEDGE_REFRESH_TL_DAYS` | `180` | Re-research interval for timeless facts |
 
+#### Weekly Lineup (LINEUP-050)
+
+The weekly lineup grid, hiatus state, flagship pin, and cross-persona show firewall. See [lineup](lineup.md) for the `show_registry` table and the full subsystem. The cross-persona similarity firewall deliberately **reuses** `BRAIN_SHOWS_NOVELTY_THRESHOLD` (0.6) and `BRAIN_SHOWS_MAX_REGEN` (3) — there is no second similarity scale.
+
+| Env Var | Default | Notes |
+|---|---|---|
+| `BRAIN_LINEUP_ENABLED` | `0` | [HARD] Master toggle for the whole LINEUP surface (the `show_registry` programming + the world-model show-identity feed). OFF = the `schedule_context` slice omits the show keys and the director tick + playout pull are byte-identical to before this SPEC. |
+| `BRAIN_LINEUP_MAX_HIATUS_SEC` | `7776000` (90d) | A hiatus exceeding this auto-transitions `hiatus→discontinued` through the existing `lifecycle.discontinue_show`. |
+| `BRAIN_LINEUP_LONG_HIATUS_SEC` | `2592000` (30d) | A reactivation from a hiatus longer than this re-runs the cross-persona firewall against shows registered meanwhile. Ordered bound: clamped to ≤ `BRAIN_LINEUP_MAX_HIATUS_SEC`. |
+| `BRAIN_LINEUP_MATRIX_CADENCE_SEC` | `86400` (1d) | The weekly-matrix programming cadence; aligns with the OPS-004 program-cycle cadence. |
+
 ---
 
 ## Logging (`brain/logging_setup.py`)

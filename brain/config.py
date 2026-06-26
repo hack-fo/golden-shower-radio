@@ -692,6 +692,26 @@ class Config:
     # [HARD] OFF by default — the ListenerMemory VIEW is only constructed when on.
     listener_memory_enabled: bool = field(default_factory=lambda: _env("BRAIN_LISTENER_MEMORY_ENABLED", "0") not in ("0", "false", "no"))
 
+    # --- SPEC-RADIO-LINEUP-050: weekly lineup grid, hiatus state & cross-persona firewall ---
+    # [HARD] OFF by default — the master toggle for the WHOLE LINEUP surface (the world-model
+    # show-identity feed + the recurring-slot programming). With it off the director tick + the
+    # playout pull are BYTE-IDENTICAL to before this SPEC (the schedule_context slice omits the
+    # show keys, NFR-LU-5). Additive + opt-in. NOTE: the cross-persona similarity firewall REUSES
+    # the SHOWS-020 ``shows_novelty_threshold`` (0.6) + ``shows_max_regenerate`` (3) knobs above —
+    # there is deliberately NO second similarity scale (NFR-LU-5), so no lineup-specific threshold
+    # knob is declared here.
+    lineup_enabled: bool = field(default_factory=lambda: _env("BRAIN_LINEUP_ENABLED", "0") not in ("0", "false", "no"))
+    # REQ-SY-002 max-hiatus auto-discontinue bound (seconds): a hiatus exceeding this auto-
+    # transitions hiatus->discontinued THROUGH the existing lifecycle.discontinue_show. Default 90d.
+    lineup_max_hiatus_seconds: float = field(default_factory=lambda: float(_env("BRAIN_LINEUP_MAX_HIATUS_SEC", str(90 * 24 * 3600))))
+    # REQ-SQ-003 long-hiatus re-vet bound (seconds): a reactivation from a hiatus longer than this
+    # re-runs the cross-persona firewall against shows registered meanwhile. [HARD] ordered bounds
+    # — MUST be <= lineup_max_hiatus_seconds (clamped in lineup.clamp_hiatus_bounds). Default 30d.
+    lineup_long_hiatus_seconds: float = field(default_factory=lambda: float(_env("BRAIN_LINEUP_LONG_HIATUS_SEC", str(30 * 24 * 3600))))
+    # REQ-SN-001 weekly-matrix cadence (seconds): aligns with the OPS-004 program-cycle cadence
+    # (one programming cycle per day). Informational for the WeeklyMatrixPlanner scheduling tick.
+    lineup_matrix_cadence_seconds: float = field(default_factory=lambda: float(_env("BRAIN_LINEUP_MATRIX_CADENCE_SEC", str(24 * 3600))))
+
     # --- OPS-004 Group OH: Library Management & Acquisition Policy ---
     # REQ-OH-006 bounded download queue: the acquisition wishlist queue is bounded to this
     # maximum item count; new enqueue() calls return False (deferred) when the queue is at

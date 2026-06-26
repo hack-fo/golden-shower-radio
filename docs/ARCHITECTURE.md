@@ -200,7 +200,7 @@ Every expensive operation runs on its own daemon thread:
 - **talk director** → LLM script + TTS + ffmpeg loudnorm, pre-rendering into a one-slot buffer
 - **research worker** → fills the knowledge base (bounded batch, pauses during downloads)
 
-**Deep dives:** [Runtime / Config](components/runtime-config.md) · [Playout](components/playout.md) · [Curation Director](components/curation-director.md) · [Acquisition](components/acquisition.md) · [Library + Ingestion](components/library-ingestion.md) · [Analysis](components/analysis.md) · [Enrichment](components/enrichment.md) · [Voice + Talk](components/voice-talk.md) · [Knowledge + Research](components/knowledge-research.md) · [Website](components/website.md) · [Persistence](components/persistence.md)
+**Deep dives:** [Runtime / Config](components/runtime-config.md) · [Playout](components/playout.md) · [Curation Director](components/curation-director.md) · [Acquisition](components/acquisition.md) · [Library + Ingestion](components/library-ingestion.md) · [Analysis](components/analysis.md) · [Enrichment](components/enrichment.md) · [Voice + Talk](components/voice-talk.md) · [Knowledge + Research](components/knowledge-research.md) · [Weekly Lineup](components/lineup.md) · [Website](components/website.md) · [Persistence](components/persistence.md)
 
 ---
 

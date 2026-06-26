@@ -35,7 +35,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .logging_setup import log_event
@@ -848,3 +848,185 @@ class LineupController:
         except Exception as exc:  # noqa: BLE001 - the ledger journal is best-effort (NFR-LU-6)
             log_event(log, "lineup.journal_error", show_id=show_id, transition=transition,
                       error=str(exc))
+
+
+# ========================================================================== #
+# M5 — AI weekly schedule programming (REQ-SN-001/002/003)
+# ========================================================================== #
+
+# The matrix cadence default = the OPS-004 program-cycle cadence (one programming cycle per
+# day). M6's ``lineup_matrix_cadence_seconds`` config knob resolves to this default; the
+# planner reads it via getattr(cfg, ...) with the SAME pattern M2/M4 use for their knobs.
+DEFAULT_MATRIX_CADENCE_SECONDS = 24.0 * 3600  # daily
+
+
+def show_identity(row: Optional[Dict[str, Any]]) -> Optional[Dict[str, str]]:
+    """Resolve a ``show_registry`` row to its world-model identity ``{show_id, name, theme}``
+    (REQ-SN-003). The ``theme`` is extracted from the row's ``lineup_fingerprint`` JSON (the
+    canonical field the firewall already stores). A falsy/absent row resolves to ``None`` so the
+    world-model feed OMITS the show key (degrade to slot+persona only, never error)."""
+    if not row:
+        return None
+    theme = ""
+    fp = row.get("lineup_fingerprint")
+    if fp:
+        try:
+            obj = json.loads(fp)
+            if isinstance(obj, dict):
+                theme = str(obj.get("theme", "") or "")
+        except (ValueError, TypeError):
+            theme = ""
+    return {"show_id": str(row.get("show_id", "") or ""),
+            "name": str(row.get("name", "") or ""), "theme": theme}
+
+
+@dataclass
+class MatrixAssignment:
+    """One persona->day_of_week->hour->show cell of the 7-day matrix proposal (REQ-SN-001).
+
+    ``is_new_identity`` marks a show LAUNCH (a Tier-1 identity change the OD-010 budget gates);
+    a routine reassignment can set it False (Tier-2 structural). ``slot_id`` is the existing grid
+    slot the bind targets THROUGH the M3 ``assign_persona`` path.
+    """
+
+    persona_id: str
+    slot_day_of_week: int
+    slot_hour: int
+    show_id: str
+    slot_id: str
+    is_new_identity: bool = True
+    editorial_reason: str = ""
+
+
+@dataclass
+class MatrixResult:
+    """The outcome of applying a 7-day matrix proposal (REQ-SN-001). Every cell lands in exactly
+    one bucket so the verdict is fully observable and the grid is provably never partially
+    corrupted (a dropped/deferred cell is left on its prior safe state, never half-applied)."""
+
+    applied: List[MatrixAssignment] = field(default_factory=list)
+    rejected_double_booked: List[MatrixAssignment] = field(default_factory=list)
+    deferred_over_budget: List[MatrixAssignment] = field(default_factory=list)
+    rejected_bind: List[MatrixAssignment] = field(default_factory=list)
+    cycle: int = 0
+
+
+# @MX:ANCHOR: [AUTO] the 7-day matrix planner — CONSUMES the OD-006/010 budget, never re-owns it.
+# @MX:REASON: fan_in >= 3 (the director's weekly-programming tick, the matrix tests, and any
+#   re-program trigger all apply the matrix through this one helper). REQ-SN-001 requires the grid
+#   to be NEVER partially corrupted: one-per-day clamping runs PURELY before any bind, and each
+#   per-slot bind is atomic THROUGH the M3 LineupController.bind_show (no forked bind, NFR-LU-5).
+#   The matrix rides the EXISTING program_cycle event (REQ-SN-002 [HARD]) — no new event kind/store.
+# @MX:SPEC: SPEC-RADIO-LINEUP-050 REQ-SN-001/002 / SPEC-RADIO-OPS-004 REQ-OD-006/010
+class WeeklyMatrixPlanner:
+    """The 7-day persona->day->hour->show assignment matrix proposal helper (REQ-SN-001/002).
+
+    CONSUMES (never re-owns) the OPS-004 measured-change budget + rarity tiers and binds THROUGH
+    the M3 ``LineupController.bind_show`` (the wired non-``None`` ``caps_ok`` path). The applied
+    matrix is journaled as the EXISTING ``program_cycle`` ledger event with ``show_id`` ADDED to
+    the payload — NO new event kind, NO new store (REQ-SN-002). All work is bounded +
+    exception-isolated, OFF the playout pull path (NFR-LU-1/2).
+    """
+
+    def __init__(self, controller: LineupController, *, budget: Any = None,
+                 ledger: Any = None, cfg: Any = None) -> None:
+        self.controller = controller
+        self.registry = controller.registry
+        self.budget = budget
+        # The ledger the program_cycle journal rides; falls back to the controller's ledger.
+        self.ledger = ledger if ledger is not None else getattr(controller, "ledger", None)
+        self.cadence_seconds = float(
+            getattr(cfg, "lineup_matrix_cadence_seconds", DEFAULT_MATRIX_CADENCE_SECONDS))
+        self._cycle = 0
+
+    def clamp_one_per_day(self, assignments: List[MatrixAssignment]
+                          ) -> Tuple[List[MatrixAssignment], List[MatrixAssignment]]:
+        """PURE one-per-day clamp (REQ-SH-002): drop any cell that double-books a persona on a
+        ``slot_day_of_week`` — within the proposal AND against the registry's existing ``active``
+        rows. Runs in full BEFORE any bind so the grid is never partially corrupted."""
+        kept: List[MatrixAssignment] = []
+        dropped: List[MatrixAssignment] = []
+        seen: Dict[Tuple[str, int], bool] = {}
+        for a in assignments:
+            key = (str(a.persona_id), int(a.slot_day_of_week))
+            if key in seen:
+                dropped.append(a)
+                continue
+            try:
+                existing = self.registry.active_show_ids_on_day(
+                    a.persona_id, a.slot_day_of_week, exclude_show_id=a.show_id)
+            except Exception as exc:  # noqa: BLE001 - a read fault clamps CLOSED (drop the cell)
+                log_event(log, "lineup.matrix_clamp_error", show_id=a.show_id, error=str(exc))
+                dropped.append(a)
+                continue
+            if existing:
+                dropped.append(a)
+                continue
+            seen[key] = True
+            kept.append(a)
+        return kept, dropped
+
+    def apply_matrix(self, assignments: List[MatrixAssignment], *, trigger: str = "weekly",
+                     editorial_reason: str = "weekly lineup matrix") -> MatrixResult:
+        """Clamp + budget-bound + bind a 7-day matrix proposal (REQ-SN-001), then journal it as
+        the EXISTING ``program_cycle`` event with ``show_id`` (REQ-SN-002).
+
+        Order (so the grid is NEVER partially corrupted): (1) PURE one-per-day clamp drops
+        double-bookings before any apply; (2) per accepted cell, CONSUME the OD-010 budget (a
+        rejection DEFERS the whole cell, leaving its slot on its prior safe state); (3) bind the
+        survivors THROUGH the M3 ``bind_show`` (atomic per slot); (4) journal the applied cells.
+        """
+        self._cycle += 1
+        result = MatrixResult(cycle=self._cycle)
+        kept, result.rejected_double_booked = self.clamp_one_per_day(assignments)
+        for a in kept:
+            if not self._budget_ok(a, editorial_reason=editorial_reason):
+                result.deferred_over_budget.append(a)
+                continue
+            reason = a.editorial_reason or editorial_reason
+            bind = self.controller.bind_show(a.show_id, a.slot_id, editorial_reason=reason)
+            if bind.bound:
+                result.applied.append(a)
+            else:
+                # A caps_ok/assign rejection leaves the slot on its safe state (no orphan).
+                result.rejected_bind.append(a)
+        self._journal_program_cycle(result.applied, trigger=trigger)
+        return result
+
+    def _budget_ok(self, a: MatrixAssignment, *, editorial_reason: str) -> bool:
+        """CONSUME the OPS-004 measured-change budget for one matrix cell (REQ-OD-006/010). A new
+        show launch is a Tier-1 identity change; a routine reassign is Tier-2 structural. With no
+        budget wired the cell is allowed (the budget is the throttle, not a correctness gate). A
+        budget fault degrades OPEN (allow) — the bind's own ``caps_ok`` still gates correctness."""
+        if self.budget is None:
+            return True
+        from .ledger import TIER_IDENTITY, TIER_STRUCTURAL
+        tier = TIER_IDENTITY if a.is_new_identity else TIER_STRUCTURAL
+        reason = a.editorial_reason or editorial_reason
+        try:
+            decision = self.budget.evaluate(
+                tier=tier, target=f"lineup.matrix.{a.slot_id}", rationale=reason,
+                editorial_reason=reason, is_identity=bool(a.is_new_identity))
+            return bool(getattr(decision, "applied", True))
+        except Exception as exc:  # noqa: BLE001 - a budget fault never blocks programming
+            log_event(log, "lineup.matrix_budget_error", slot_id=a.slot_id, error=str(exc))
+            return True
+
+    def _journal_program_cycle(self, applied: List[MatrixAssignment], *, trigger: str) -> None:
+        """Journal the applied matrix as the EXISTING OPS-004 ``program_cycle`` event with
+        ``show_id`` ADDED (REQ-SN-002 [HARD]: no new event kind, no new store). Best-effort —
+        a ledger fault is swallowed; the canonical ``show_registry`` rows already landed."""
+        if self.ledger is None:
+            return
+        try:
+            from .schedule import EV_PROGRAM_CYCLE
+            self.ledger.append(EV_PROGRAM_CYCLE, {
+                "cycle": self._cycle, "trigger": trigger, "planned": len(applied),
+                "run_mode": "",
+                "show_ids": [a.show_id for a in applied],
+                "assignments": [{"slot_id": a.slot_id, "persona_id": a.persona_id,
+                                 "show_id": a.show_id, "slot_day_of_week": a.slot_day_of_week,
+                                 "slot_hour": a.slot_hour} for a in applied],
+            })
+        except Exception as exc:  # noqa: BLE001 - the program_cycle journal is best-effort
+            log_event(log, "lineup.matrix_journal_error", trigger=trigger, error=str(exc))
