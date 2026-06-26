@@ -241,3 +241,29 @@ def test_gate_byte_identical_when_humandj_ctx_none():
     r_absent = grounding.tier1_lint(slop, contract)
     r_none = grounding.tier1_lint(slop, contract, humandj_ctx=None)
     assert r_absent.violations == r_none.violations
+
+
+# ---------------------------------------------------------------------------
+# REQ-HL-005 — non-None humandj_ctx causes slop to FAIL the tier1 gate.
+# Exercises grounding.py:562-563 (the humandj_ctx is not None branch).
+# ---------------------------------------------------------------------------
+def test_tier1_gate_fails_with_humandj_ctx_on_slop():
+    from brain import grounding
+    from brain.humanlint import HumanLintContext, _DEFAULT_BANNED, _DEFAULT_ADJECTIVES
+    contract = grounding.FactContract.from_context({})
+    slop = "It was a vibrant testament to the ethereal interplay."
+    ctx = HumanLintContext(
+        break_type="CASUAL_OBS",
+        banned_phrases=_DEFAULT_BANNED,
+        literary_adjectives=_DEFAULT_ADJECTIVES,
+        humanizer_patterns=(7,),
+    )
+    # With humandj_ctx, the gate must FAIL (slop tokens are violations).
+    result = grounding.tier1_lint(slop, contract, humandj_ctx=ctx)
+    assert not result.passed, "Gate should FAIL with slop script and active humandj_ctx"
+    assert len(result.violations) > 0
+
+    # Clean script must PASS even with humandj_ctx active.
+    clean = "That was good."
+    result_clean = grounding.tier1_lint(clean, contract, humandj_ctx=ctx)
+    assert result_clean.passed, "Gate should PASS for clean script with humandj_ctx"
