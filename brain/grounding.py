@@ -517,7 +517,8 @@ def _quote_is_sourced(quote: str, contract: FactContract) -> bool:
 # =====================================================================================
 
 def tier1_lint(script: str, contract: FactContract, pv_ctx: Any = None,
-               ear_ctx: Any = None, min_words: int = 0) -> GateResult:
+               ear_ctx: Any = None, min_words: int = 0,
+               humandj_ctx: Any = None) -> GateResult:
     """Run the full Tier-1 deterministic lint (REQ-PG-005): anti-slop (REQ-PG-004) +
     forbidden-fact (REQ-PG-002) + comparison-grounding (REQ-PG-003) + quote-sourcing
     (REQ-PG-008) + optional word-minimum (REQ-OF-006). LLM-free. PASS == every sub-scan clean.
@@ -555,6 +556,11 @@ def tier1_lint(script: str, contract: FactContract, pv_ctx: Any = None,
         # import so grounding.py carries no hard dependency on the ear_writing module.
         from . import ear_writing as _ew
         violations += _ew.ear_tier1_lint(script, ear_ctx)
+    if humandj_ctx is not None:
+        # The humanizer lint rides the Tier-1 gate (SPEC-RADIO-HOSTVOICE-049 REQ-HL-005). Lazy
+        # import so grounding.py carries no hard dependency on humanlint (byte-identical when None).
+        from . import humanlint as _hl
+        violations += [v.token for v in _hl.scan_ai_slop(script, humandj_ctx)]
     return GateResult(passed=not violations, violations=violations, tier="tier1")
 
 
@@ -605,6 +611,7 @@ def run_gate(
     pv_ctx: Any = None,
     ear_ctx: Any = None,
     min_words: int = 0,
+    humandj_ctx: Any = None,
 ) -> "GateOutcome":
     """The two-tier quality gate with regenerate-once-then-skip (REQ-PG-005 / REQ-OF-006).
 
@@ -624,7 +631,7 @@ def run_gate(
     #   would air a confident wrong fact — the exact failure mode the whole group prevents.
     attempts = 0
     current = script
-    last_result = _check_once(current, contract, adversarial, pv_ctx, ear_ctx, min_words)
+    last_result = _check_once(current, contract, adversarial, pv_ctx, ear_ctx, min_words, humandj_ctx)
     while not last_result.passed and regenerate is not None and attempts < max_attempts:
         attempts += 1
         fresh = regenerate(list(last_result.violations))
@@ -632,7 +639,7 @@ def run_gate(
             # Regeneration itself produced nothing -> skip (cannot ship a FAIL).
             return GateOutcome(script=None, result=last_result, attempts=attempts, skipped=True)
         current = fresh
-        last_result = _check_once(current, contract, adversarial, pv_ctx, ear_ctx, min_words)
+        last_result = _check_once(current, contract, adversarial, pv_ctx, ear_ctx, min_words, humandj_ctx)
     if last_result.passed:
         return GateOutcome(script=current, result=last_result, attempts=attempts, skipped=False)
     # Still failing after the bounded retries -> SKIP (never ship a FAIL).
@@ -642,13 +649,13 @@ def run_gate(
 def _check_once(script: str, contract: FactContract,
                 adversarial: Optional[AdversarialChecker],
                 pv_ctx: Any = None, ear_ctx: Any = None,
-                min_words: int = 0) -> GateResult:
+                min_words: int = 0, humandj_ctx: Any = None) -> GateResult:
     """One pass of both tiers; the aggregate FAILS if any tier fails. With ``pv_ctx`` the
     Group PV Tier-1 lints ride Tier-1 and the PV deterministic Tier-2 smuggled-token scan
     (REQ-PV-016) rides Tier-2 (it runs LLM-free, alongside the adversarial pass). With
     ``ear_ctx`` the Group PS script-side ear-writing lints (REQ-PS-001..005) ride Tier-1.
     With ``min_words`` > 0, the REQ-OF-006 word-minimum check rides Tier-1."""
-    t1 = tier1_lint(script, contract, pv_ctx, ear_ctx, min_words)
+    t1 = tier1_lint(script, contract, pv_ctx, ear_ctx, min_words, humandj_ctx)
     if not t1.passed:
         return t1
     t2 = tier2_adversarial(script, contract, adversarial)

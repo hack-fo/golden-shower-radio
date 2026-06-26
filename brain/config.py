@@ -420,6 +420,18 @@ class Config:
     # ON, the host speaks in the positive register and the delivery-craft lints are enforced.
     host_voice_pv_enabled: bool = field(default_factory=lambda: _env("BRAIN_HOST_VOICE_PV_ENABLED", "0") not in ("0", "false", "no"))
 
+    # --- SPEC-RADIO-HOSTVOICE-049: human DJ taxonomy + mood suppression (Groups HB/HM) ---
+    # When ON, talk.py draws a per-break BreakType (playbook.next_break_type) and threads it into
+    # _build_talk_prompt, which suppresses the next_mood tease for short breaks (REQ-HM) and grants
+    # fragment permission for MICRO/CASUAL_OBS (REQ-HI). OFF by default => the talk prompt is
+    # BYTE-IDENTICAL to before this SPEC (no break_type is set, no code path runs).
+    human_dj_taxonomy_enabled: bool = field(default_factory=lambda: _env("BRAIN_HUMAN_DJ_TAXONOMY_ENABLED", "0") not in ("0", "false", "no"))
+    # --- SPEC-RADIO-HOSTVOICE-049: humanizer lint gate (Group HL) ---
+    # When ON, talk.py builds a humanlint.HumanLintContext that RIDES the PG-005 Tier-1 gate via
+    # grounding.tier1_lint's humandj_ctx hook (scan_ai_slop). OFF by default => humandj_ctx is None
+    # and the gate is BYTE-IDENTICAL (the humanizer lints do not run).
+    humandj_lint_enabled: bool = field(default_factory=lambda: _env("BRAIN_HUMANDJ_LINT_ENABLED", "0") not in ("0", "false", "no"))
+
     # --- PROGRAMMING-007 Group PC: radio-craft playbook content + talk-generation rules ---
     # Master switch for the PC craft layer injected into the talk prompt (the talk-break ANATOMY
     # Hook->Body->Exit + backsell-default/frontsell-by-feeling REQ-PC-001, the rotating

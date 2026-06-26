@@ -64,7 +64,7 @@ talk-over, the anti-cheese firewall, the rotation discipline) are fixed.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 
 def _norm(s: Any) -> str:
@@ -322,6 +322,57 @@ def next_say_category(prev: str = "") -> str:
 def say_category_cue(category: str) -> str:
     """The short prompt cue for a say-category (REQ-PC-007). Falls back to the category text."""
     return _SAY_CATEGORY_CUE.get(category, str(category or "").strip())
+
+
+# =====================================================================================
+# REQ-HB-001/002/003 — 7-type break taxonomy with weighted default distribution.
+# [HARD] SAY_CATEGORIES above is UNCHANGED. BREAK_TYPES is the new HUMAN_DJ taxonomy.
+# TUNABLE: weights must sum to 1.0; envelopes are length hints for the prompt.
+# =====================================================================================
+
+class BreakType(NamedTuple):
+    name: str
+    weight: float
+    envelope: str  # human-readable length hint
+
+
+# @MX:ANCHOR: [AUTO] BREAK_TYPES + next_break_type are the HUMAN_DJ taxonomy contract (REQ-HB)
+# @MX:REASON: talk.py reads next_break_type to drive mood suppression (HM) and fragment
+#   permission (HI) in llm._build_talk_prompt; weights summing to 1.0 + the 7-name set is the
+#   acceptance rail (test 1) and a drift here changes the on-air break mix silently.
+BREAK_TYPES: Tuple[BreakType, ...] = (
+    BreakType("MICRO",        0.35, "1-5 words only"),
+    BreakType("CASUAL_OBS",   0.25, "1-2 sentences"),
+    BreakType("FACT_DROP",    0.15, "1-2 sentences"),
+    BreakType("ANECDOTE",     0.10, "2-4 sentences"),
+    BreakType("THEME_NOTE",   0.08, "1-2 sentences"),
+    BreakType("STATION_IDENT", 0.05, "1-2 sentences"),
+    BreakType("REFLECTION",   0.02, "3-6 sentences"),
+)
+
+
+# REQ-HB-004/005 — weighted no-repeat selector with REFLECTION max-1-per-hour cap.
+def next_break_type(prev: str = "", hour_state: Optional[Dict[str, Any]] = None) -> str:
+    """Select the next break type by weighted draw, never back-to-back the same type.
+    REFLECTION is capped at 1 per show-hour: pass hour_state dict; it is mutated in-place."""
+    import random
+    if hour_state is None:
+        hour_state = {}
+    candidates = list(BREAK_TYPES)
+    # REFLECTION cap: at most 1 per hour
+    if hour_state.get("reflection_used"):
+        candidates = [b for b in candidates if b.name != "REFLECTION"]
+    # No-repeat: remove prev from pool (unless only 1 candidate)
+    if len(candidates) > 1 and prev:
+        candidates = [b for b in candidates if b.name != prev] or candidates
+    if not candidates:
+        candidates = list(BREAK_TYPES)
+    names = [b.name for b in candidates]
+    weights = [b.weight for b in candidates]
+    chosen = random.choices(names, weights=weights, k=1)[0]
+    if chosen == "REFLECTION":
+        hour_state["reflection_used"] = True
+    return chosen
 
 
 # =====================================================================================

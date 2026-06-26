@@ -387,6 +387,23 @@ POSITIVE_HOST_PERSONA = (
     "markdown, or quotation marks — just the words you would say into the mic."
 )
 
+# SPEC-RADIO-HOSTVOICE-049 REQ-HP-001/002/003 — the HUMAN-DJ persona. A plainer, lower-ego
+# register than POSITIVE_HOST_PERSONA: a person who loves music and talks between songs, who
+# does NOT perform, sometimes says almost nothing, sounds the same enthusiastic or bored. The
+# community-radio / late-night NTS reference (NOT NPR, NOT formal BBC). [HARD] MUST NOT contain
+# "journalist", "press release", or "music criticism" (REQ-HP-002, test 7).
+# This is a NEW, additive constant. The legacy HOST_PERSONA and the PV POSITIVE_HOST_PERSONA are
+# left UNCHANGED so test_pv_wiring / test_persona pins stay green (NFR-HV-6 no-regression rail).
+HUMAN_HOST_PERSONA: str = (
+    "You are the host. You love music. You talk between songs.\n"
+    "You do not perform. You do not try to impress. You are not a music critic or a writer.\n"
+    "Sometimes you say almost nothing. Sometimes you tell a short story. "
+    "Sometimes you mention a fact. Sometimes you just react.\n"
+    "You sound the same whether you are enthusiastic or bored — it is always you, just talking.\n"
+    "Think community radio, late-night NTS. Not NPR. Not a formal BBC presentation.\n"
+    "You never describe music as if you are writing a review. You just talk about it like a person."
+)
+
 # REQ-PV-006 — the ban -> positive "say this instead" TWIN pairings carried IN the prompt to
 # fill the vacuum the bans leave (the diagnosed pink-elephant retreat). The bans stay the
 # Tier-1 firewall (enforced in grounding.py); the twins steer FORM only — the fact contract
@@ -397,6 +414,31 @@ _BAN_TWINS = (
     "When you'd reach for \"an infectious banger\", just say it goes, or it rules, or it kicks.",
     "When you'd reach for \"a sonic journey\", name one thing you can actually hear.",
     "Never say \"coming up\", \"up next\", \"stay tuned\", or \"don't go anywhere\".",
+    # SPEC-RADIO-HOSTVOICE-049 REQ-HM-004 — 8 added humanizer ban categories. The bans steer
+    # FORM only; the fact contract still supplies all CONTENT. Each line names the banned shape
+    # and the plain-words replacement (the same ban->twin idiom as the PV lines above).
+    # 1) Mood-transition narrations.
+    "Never narrate the mood shift as scenery — no \"does something to the room\", no \"sonic "
+    "journey\", no \"going somewhere warmer\". If the next one is slower, just say it is slower.",
+    # 2) Superficial -ing phrases.
+    "Drop the -ing padding — no \"showcasing\", \"highlighting\", \"reflecting the\", or "
+    "\"symbolizing\". Say the thing directly.",
+    # 3) AI vocabulary.
+    "Never reach for \"vibrant\", \"profound\", \"ethereal\", \"lush\", \"hypnotic\", "
+    "\"testament\", or \"pivotal\". Plain words only.",
+    # 4) Persuasive authority tropes.
+    "Never announce importance — no \"at its core\", \"what really matters\", or \"the real "
+    "question is\". Just say the thing.",
+    # 5) Staccato drama (structural — do not stack short fragments for effect).
+    "Do not stack three or more clipped fragments for drama. One short sentence carries rhythm "
+    "fine.",
+    # 6) Aphorism formulas ("X is the Y of Z").
+    "Do not turn it into a slogan — avoid the \"is the Y of\" aphorism shape. State the concrete "
+    "thing.",
+    # 7) Em dashes — banned outright.
+    "Use commas and periods. No em dashes (\"—\") and no en dashes (\"–\").",
+    # 8) Rhetorical openers.
+    "Do not open with \"Real talk\", \"Here's the thing\", or \"Let's be honest\". Just start.",
 )
 
 # REQ-PV-015 — 2-4 ROTATED GOOD-vs-BAD exemplar pairs using GENERIC/placeholder tracks (never
@@ -625,12 +667,49 @@ def _build_talk_prompt(context: Dict, persona=None) -> str:
     # supplied as a MOOD hint only (``next_mood``, derived from ANALYSIS-006 features), never a
     # name; the host MAY tease ONLY its feeling/energy shift and MUST NOT name it or use the
     # banned filler. The artist+title NAME is reserved for the FOLLOWING break's backsell.
+    # SPEC-RADIO-HOSTVOICE-049 Group HB/HM/HI — break-type-aware shaping. Gated by the PRESENCE
+    # of context["break_type"], which talk.py sets ONLY when cfg.human_dj_taxonomy_enabled is on.
+    # With the key ABSENT (the default OFF path) NONE of this runs and the prompt is
+    # BYTE-IDENTICAL to before this SPEC (NFR-HV-6).
+    break_type = str(context.get("break_type") or "").strip().upper()
     next_mood = str(context.get("next_mood") or "").strip()
     if next_mood:
+        if break_type:
+            # REQ-HM-001/002/003 — mood suppression by break type.
+            import random as _rnd
+            # Short, concrete breaks never carry the mood tease at all.
+            _suppress = {"MICRO", "CASUAL_OBS", "FACT_DROP", "ANECDOTE", "STATION_IDENT"}
+            # Reflective breaks may rarely mention the energy change, in plain words only.
+            _rare = {"THEME_NOTE", "REFLECTION"}
+            if break_type in _suppress:
+                pass  # tease suppressed entirely
+            elif break_type in _rare and _rnd.random() < 0.15:
+                parts.append(
+                    "You MAY rarely mention the energy is about to change — but only in plain "
+                    "words ('the next one is slow'), never as a mood-painting metaphor."
+                )
+            # else: not in _rare, or the rare draw failed -> no tease (keeps it sparse)
+        else:
+            parts.append(
+                f"The next track feels: {next_mood}. You MAY tease ONLY that shift in mood or "
+                "energy (\"the next one sits lower, slower\") — do NOT name the artist or title, "
+                "and do NOT say \"coming up\", \"up next\", or \"stay tuned\"."
+            )
+    # REQ-HI-001/002 — fragment permission for the shortest break types. A break does not need
+    # to be a complete thought.
+    if break_type in ("MICRO", "CASUAL_OBS"):
         parts.append(
-            f"The next track feels: {next_mood}. You MAY tease ONLY that shift in mood or "
-            "energy (\"the next one sits lower, slower\") — do NOT name the artist or title, "
-            "and do NOT say \"coming up\", \"up next\", or \"stay tuned\"."
+            "A break does not need to be a complete thought. 'Right.' is a valid break. "
+            "'Anyway.' is a valid break. 'That still works.' is a valid break."
+        )
+        parts.append(
+            "Good examples: \"That was Burial.\" / \"Still works.\" / \"Anyway.\" / "
+            "\"I always forget how good that is.\""
+        )
+        parts.append(
+            "Bad examples (form, not content): \"That Burial track always does something to the "
+            "room.\" / \"Up next we're going somewhere warmer — still heavy on the bass, just "
+            "lighter on the dread.\""
         )
     if station:
         parts.append(f"You may occasionally (not every time) drop the station name: {station}.")
@@ -1304,18 +1383,27 @@ SHOW_PREP_PERSONA = (
     '{"theme": ..., "tracklist": [{"artist":...,"title":...}], "talking_points": [...]} — no '
     "commentary, no markdown fences. 'talking_points' are short framing notes (genre/cultural "
     "context), NOT hard factual assertions; the hard facts come from the verified knowledge "
-    "store, not from you."
+    "store, not from you. "
+    # SPEC-RADIO-HOSTVOICE-049 REQ-HA-003 — anti-bias toward the obvious hits.
+    "Do not default to the artist's most famous or most-streamed songs. A good spotlight is not "
+    "a greatest-hits playlist."
 )
 
 
 def _build_show_prep_prompt(artist: str, theme: str,
                             grounded_facts: Optional[List[Dict[str, Any]]],
-                            avoid: Optional[List[str]]) -> str:
+                            avoid: Optional[List[str]],
+                            spotlight_diversity: bool = True) -> str:
     """One-shot Mode-B prompt: research a featured artist/theme into show-prep depth.
 
     ``grounded_facts`` are the facts ALREADY verified by KNOWLEDGE-008 (passed so the model
     does not re-fetch them and so it knows what is established); ``avoid`` is the recent-output
-    AVOID-LIST threaded ONLY to suppress repetition, NEVER as exemplars (REQ-OC-006)."""
+    AVOID-LIST threaded ONLY to suppress repetition, NEVER as exemplars (REQ-OC-006).
+
+    ``spotlight_diversity`` (SPEC-RADIO-HOSTVOICE-049 REQ-HA-001/002) DEFAULTS to True so the
+    selection always reaches past the commercial peak (deep cuts, early/developmental work,
+    collaborations, artistic evolution). research_show_prep does not thread it through, so the
+    default applies automatically on the live path."""
     parts = [
         f"Prepare a themed show featuring {artist or 'the featured artist'}"
         + (f", theme: {theme}." if theme else "."),
@@ -1330,6 +1418,12 @@ def _build_show_prep_prompt(artist: str, theme: str,
     if recent:
         parts.append("Recently aired (AVOID repeating these — this is a repeat-avoidance "
                      "list, NOT examples to copy): " + "; ".join(recent[:10]) + ".")
+    if spotlight_diversity:
+        parts.append(
+            "Track selection must include: at least one deep cut, one early or developmental "
+            "track, one collaboration or side project if the artist has any, and tracks that "
+            "reveal artistic evolution — not just the commercial peak."
+        )
     return "\n".join(parts)
 
 

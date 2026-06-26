@@ -27,7 +27,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from .config import Config
 from .library import Library, normalize_key
@@ -116,6 +116,10 @@ class TalkDirector:
         # (REQ-OD-007); this in-process state is the PC-owned half until that lands.
         self._last_say_category = ""
         self._breaks_since_reid = 0
+        # SPEC-RADIO-HOSTVOICE-049 Group HB: break-type rotation state.
+        # [HARD] Inert when human_dj_taxonomy_enabled is OFF (byte-identical).
+        self._last_break_type: str = ""
+        self._hour_state: Dict[str, Any] = {}   # tracks REFLECTION cap etc.
 
     def start(self) -> None:
         if not self.cfg.talk_enabled:
@@ -299,6 +303,18 @@ class TalkDirector:
             else:
                 self._breaks_since_reid += 1
 
+        # SPEC-RADIO-HOSTVOICE-049 Group HB/HM/HI — human-DJ break taxonomy, OFF by default. When
+        # cfg.human_dj_taxonomy_enabled is set, draw a per-break BreakType (weighted, no back-to-
+        # back repeat, REFLECTION capped per hour) and thread it into the context so
+        # _build_talk_prompt suppresses the next_mood tease for short breaks (REQ-HM) and grants
+        # fragment permission for MICRO/CASUAL_OBS (REQ-HI). With the flag OFF the key is absent
+        # and the prompt is byte-identical. Rotation state advances ONLY on this enabled path.
+        if getattr(self.cfg, "human_dj_taxonomy_enabled", False):
+            from . import playbook as _pb
+            break_type = _pb.next_break_type(self._last_break_type, self._hour_state)
+            self._last_break_type = break_type
+            context["break_type"] = break_type
+
         # KNOWLEDGE-008 GROUNDING FEED (REQ-KI-001): inject dated, sourced, FRESH, consensus-
         # marked facts + real graph edges for the artists in this break, all through the
         # freshness gate (REQ-KF-003). The LLM speaks ONLY from these — certain facts plainly,
@@ -425,10 +441,23 @@ class TalkDirector:
             # lints ride the SAME gate. ear_ctx is None when PS lints off => byte-identical.
             ear_ctx = self._ear_lint_context()
 
+            # SPEC-RADIO-HOSTVOICE-049 Group HL (REQ-HL-005): the humanizer lint rides the SAME
+            # PG-005 gate. humandj_ctx is None when humandj_lint_enabled is off => byte-identical.
+            humandj_ctx = None
+            if getattr(self.cfg, "humandj_lint_enabled", False):
+                from . import humanlint as _hl
+                humandj_ctx = _hl.HumanLintContext(
+                    break_type=str(context.get("break_type", "")),
+                    banned_phrases=_hl._DEFAULT_BANNED,
+                    literary_adjectives=_hl._DEFAULT_ADJECTIVES,
+                    humanizer_patterns=tuple(range(3, 34)),
+                )
+
             outcome = grounding.run_gate(
                 script, contract, regenerate=_regenerate, adversarial=adversarial,
                 pv_ctx=pv_ctx, ear_ctx=ear_ctx,
                 min_words=getattr(self.cfg, "min_script_words", 0),
+                humandj_ctx=humandj_ctx,
             )
             if outcome.skipped:
                 log_event(log, "talk.gate_skip",
