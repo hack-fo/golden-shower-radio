@@ -303,6 +303,26 @@ class ShowRegistry:
             cur = self.handle.conn.execute(sql, params)
             return [dict(r) for r in cur.fetchall()]
 
+    def active_show_ids_on_day(self, persona_id: str, slot_day_of_week: int, *,
+                               exclude_show_id: Optional[str] = None) -> List[str]:
+        """The ``active`` show ids a persona already holds on ``slot_day_of_week`` (REQ-SH-002).
+
+        Powers the one-active-show-per-persona-per-day rule the M3 ``caps_ok`` predicate
+        enforces: a non-empty result means the persona is already working that day (the
+        second same-day activation must be rejected). ``exclude_show_id`` lets the show
+        being (re)bound ignore its own row. Rides the ``idx_sr_persona_day_status`` index;
+        a director-tick read, OFF the playout pull path (NFR-LU-1).
+        """
+        sql = ("SELECT show_id FROM show_registry "
+               "WHERE persona_id = ? AND slot_day_of_week = ? AND lineup_status = ?")
+        params: List[Any] = [str(persona_id or ""), int(slot_day_of_week), LINEUP_ACTIVE]
+        if exclude_show_id is not None:
+            sql += " AND show_id != ?"
+            params.append(str(exclude_show_id))
+        with self.handle.lock:
+            cur = self.handle.conn.execute(sql, params)
+            return [str(r["show_id"]) for r in cur.fetchall()]
+
 
 # ========================================================================== #
 # M2 — the cross-persona similarity firewall (REQ-SQ-001/002/003)
@@ -501,3 +521,330 @@ class CrossPersonaFirewall:
             return self.admit(generate, exclude_show_id=show_id)
         return FirewallResult(status="escalated", score=score, matched_show_id=matched,
                               detail="long-hiatus collision")
+
+
+# ========================================================================== #
+# M3 — one-per-day rule + WIRED caps_ok bind (REQ-SH-002/003, NFR-LU-5)
+# ========================================================================== #
+
+
+# @MX:ANCHOR: [AUTO] the WIRED caps_ok predicate factory — the D7 linchpin.
+# @MX:REASON: fan_in >= 3 (bind_show, the active->hiatus replacement bind, and the
+#   same-persona default-curation rebind all build the slot gate THROUGH this factory).
+#   REQ-SH-003 [HARD] forbids any LINEUP bind passing caps_ok=None (schedule.py:907-908 =
+#   NO cap check). This factory is the single place a NON-None predicate is minted, composing
+#   the SH-002 one-per-day rule AND the PROGRAMMING-007 PR-004 anti-convergence firewall via
+#   the EXISTING Roster.validate_candidate (the SAME seam lifecycle._caps_ok_predicate uses,
+#   NFR-LU-5 single-source — no forked firewall). A predicate fault degrades CLOSED (blocks
+#   the bind, keeps the slot on its safe state) rather than crashing the tick (NFR-LU-2/4).
+# @MX:SPEC: SPEC-RADIO-LINEUP-050 REQ-SH-003 / SPEC-RADIO-PROGRAMMING-007 REQ-PR-004
+def make_caps_ok(registry: ShowRegistry, *, slot_day_of_week: int,
+                 roster: Any = None,
+                 exclude_show_id: Optional[str] = None) -> Callable[[str, str], bool]:
+    """Build the NON-``None`` ``caps_ok(persona_id, slot_id) -> bool`` predicate the bind wires
+    into the EXISTING ``Schedule.assign_persona`` (REQ-SH-003).
+
+    The predicate returns False (blocking the bind) when EITHER:
+      - SH-002 one-per-day: the persona already holds an ``active`` ``show_registry`` row on
+        ``slot_day_of_week`` (a second same-day active is rejected), OR
+      - PR-004 anti-convergence: the persona is absent/disabled, or fails the EXISTING
+        ``Roster.validate_candidate`` distinctness gate (only checked when a ``roster`` is wired;
+        production always wires it).
+
+    Exception-isolated (NFR-LU-2/4): any fault degrades CLOSED — the predicate returns False so
+    the slot stays on its safe state instead of the tick crashing.
+    """
+    day = int(slot_day_of_week)
+
+    def caps_ok(persona_id: str, slot_id: str) -> bool:
+        try:
+            # SH-002 — one active show per persona per day_of_week.
+            if registry.active_show_ids_on_day(
+                    persona_id, day, exclude_show_id=exclude_show_id):
+                return False
+            # PR-004 — the EXISTING roster anti-convergence firewall (single source, NFR-LU-5).
+            if roster is not None:
+                p = roster.get(persona_id)
+                if p is None or not getattr(p, "enabled", True):
+                    return False
+                res = roster.validate_candidate(p, exclude_id=persona_id)
+                if not getattr(res, "ok", False):
+                    return False
+            return True
+        except Exception as exc:  # noqa: BLE001 - degrade CLOSED, never crash the tick (NFR-LU-4)
+            log_event(log, "lineup.caps_ok_error", error=str(exc),
+                      persona_id=persona_id, slot_id=slot_id)
+            return False
+
+    return caps_ok
+
+
+@dataclass
+class BindResult:
+    """The outcome of a recurring-slot bind through the wired ``assign_persona`` (REQ-SH-003)."""
+
+    bound: bool
+    show_id: str = ""
+    slot_id: str = ""
+    reason: str = ""
+
+
+# ========================================================================== #
+# M4 — hiatus state machine + flagship pin, reconciled with OB-014
+# ========================================================================== #
+
+# The default ``unscheduled``/house show id (mirrors schedule.ScheduleBlock default) — the
+# slot value used to keep a slot STAFFED without naming the paused show (REQ-SY-001 lane (b)).
+LINEUP_UNSCHEDULED = "unscheduled"
+
+# M4 hiatus bounds defaults (seconds). The REAL config knobs land in M6; here we read them via
+# getattr(cfg, ...) with these sane defaults — the SAME pattern M2 used for the firewall knobs.
+DEFAULT_LONG_HIATUS_SECONDS = 30.0 * 24 * 3600   # 30 days — the SQ-003 re-vet bound
+DEFAULT_MAX_HIATUS_SECONDS = 90.0 * 24 * 3600    # 90 days — the SY-002 auto-discontinue bound
+
+
+def clamp_hiatus_bounds(long_hiatus: float, max_hiatus: float) -> Tuple[float, float]:
+    """Enforce the ordered-bounds invariant (REQ-SY-002): the ``long-hiatus`` re-vet bound MUST
+    be <= the ``max-hiatus`` auto-discontinue bound, so a reactivating show is always re-vetted
+    (REQ-SQ-003) BEFORE it could reach the auto-discontinue cap.
+
+    A config with ``long-hiatus > max-hiatus`` is CLAMPED (long lowered to max) and logged —
+    never silently honored, never crashing. Returns the ordered ``(long, max)`` pair.
+    """
+    long_v = float(long_hiatus)
+    max_v = float(max_hiatus)
+    if long_v > max_v:
+        log_event(log, "lineup.hiatus_bounds_clamped", long_hiatus=long_v, max_hiatus=max_v)
+        long_v = max_v
+    return long_v, max_v
+
+
+def _paused_at_of(row: Dict[str, Any], fallback: float) -> float:
+    """The pause epoch for a hiatus age computation, tolerant of an explicit ``0.0``.
+
+    Uses ``paused_at`` when present (including a literal ``0.0`` — a falsy ``or`` would wrongly
+    skip it), else ``created_at``, else ``fallback`` (REQ-SY-002 / SQ-003 age math)."""
+    paused = row.get("paused_at")
+    if paused is None:
+        paused = row.get("created_at")
+    if paused is None:
+        return float(fallback)
+    return float(paused)
+
+
+@dataclass
+class HiatusResult:
+    """The outcome of a ``hiatus`` state-machine transition (REQ-SY-001/002/003)."""
+
+    ok: bool
+    show_id: str = ""
+    transition: str = ""
+    staffed_via: str = ""   # "replacement" | "same_persona" | "house" | "none"
+    reason: str = ""
+
+
+class LineupController:
+    """The ``hiatus`` planned-pause state machine + the wired-``caps_ok`` bind (M3 + M4).
+
+    Owns the LINEUP recurring-identity transitions over ``show_registry`` and routes every
+    terminal exit THROUGH the EXISTING engines (NFR-LU-5): a bind goes through
+    ``Schedule.assign_persona`` (never a forked seam), a ``hiatus->discontinued`` exit goes
+    THROUGH ``lifecycle.discontinue_show`` (which invents a successor + obeys OB-014). LINEUP
+    emits NO show-relaunch event of its own and re-owns no FSM — it only flips the
+    ``lineup_status`` column and keeps the weekly slot STAFFED off the paused show.
+
+    All work is bounded + exception-isolated, OFF the playout pull path; on any fault the slot
+    degrades to the house lane (the stream is never silenced, NFR-LU-2/3/4).
+    """
+
+    def __init__(self, registry: ShowRegistry, *, schedule: Any = None,
+                 lifecycle: Any = None, roster: Any = None, ledger: Any = None,
+                 cfg: Any = None, firewall: Optional[CrossPersonaFirewall] = None) -> None:
+        self.registry = registry
+        self.schedule = schedule
+        self.lifecycle = lifecycle
+        self.roster = roster
+        self.ledger = ledger
+        self.firewall = firewall or CrossPersonaFirewall(registry, cfg)
+        self.long_hiatus_seconds, self.max_hiatus_seconds = clamp_hiatus_bounds(
+            getattr(cfg, "lineup_long_hiatus_seconds", DEFAULT_LONG_HIATUS_SECONDS),
+            getattr(cfg, "lineup_max_hiatus_seconds", DEFAULT_MAX_HIATUS_SECONDS),
+        )
+
+    # -- M3 bind (REQ-SH-002/003) ------------------------------------------ #
+
+    def bind_show(self, show_id: str, slot_id: str, *, editorial_reason: str = "",
+                  activate: bool = True) -> BindResult:
+        """Bind a recurring show to its weekly slot THROUGH the EXISTING ``assign_persona`` with a
+        WIRED non-``None`` ``caps_ok`` (REQ-SH-003). On a successful bind the ``show_id`` becomes
+        the slot's ``show_or_episode_id`` and (when ``activate``) the row goes ``active``; a
+        ``caps_ok`` rejection (one-per-day or PR-004) leaves the row inactive + the slot unbound
+        and notifies the director (REQ-SH-002 / B1 / B2)."""
+        row = self.registry.get(show_id)
+        if row is None:
+            return BindResult(False, show_id, slot_id, "unknown show")
+        if self.schedule is None:
+            return BindResult(False, show_id, slot_id, "no schedule wired")
+        caps_ok = make_caps_ok(self.registry, slot_day_of_week=row["slot_day_of_week"],
+                               roster=self.roster, exclude_show_id=show_id)
+        try:
+            ok = self.schedule.assign_persona(
+                slot_id, row["persona_id"], show_id,
+                caps_ok=caps_ok, editorial_reason=editorial_reason)
+        except Exception as exc:  # noqa: BLE001 - a bind fault leaves the slot safe (NFR-LU-4)
+            log_event(log, "lineup.bind_error", show_id=show_id, slot_id=slot_id, error=str(exc))
+            return BindResult(False, show_id, slot_id, f"assign raised: {exc}")
+        if not ok:
+            log_event(log, "lineup.bind_rejected", show_id=show_id, slot_id=slot_id,
+                      persona_id=row["persona_id"])
+            return BindResult(False, show_id, slot_id, "caps_ok rejected")
+        if activate:
+            self.registry.set_status(show_id, LINEUP_ACTIVE)
+        return BindResult(True, show_id, slot_id)
+
+    # -- M4 active -> hiatus (REQ-SY-001/003) ------------------------------- #
+
+    def to_hiatus(self, show_id: str, *, slot_id: Optional[str] = None,
+                  replacement: Optional[Dict[str, Any]] = None, editorial_reason: str = "",
+                  override: bool = False, now: Optional[float] = None) -> HiatusResult:
+        """Transition ``active->hiatus`` (REQ-SY-001): preserve the row (never delete), stamp
+        ``paused_at``, and bring the weekly slot to a STAFFED state that NEVER names the paused
+        show. A ``pinned`` flagship rejects an AUTOMATIC pause without ``override`` (REQ-SY-003).
+        Journaled best-effort on the ledger (NFR-LU-6)."""
+        row = self.registry.get(show_id)
+        if row is None:
+            return HiatusResult(False, show_id, "active->hiatus", reason="unknown show")
+        if bool(row.get("pinned")) and not override:
+            log_event(log, "lineup.pinned_transition_rejected", show_id=show_id,
+                      transition="active->hiatus")
+            return HiatusResult(False, show_id, "active->hiatus", reason="pinned: override required")
+        ts = float(now) if now is not None else time.time()
+        # The TABLE write is canonical and happens FIRST (NFR-LU-6).
+        self.registry.set_status(show_id, LINEUP_HIATUS, paused_at=ts)
+        staffed_via = self._staff_off_paused_show(row, slot_id, replacement, editorial_reason)
+        self._journal(show_id, "active->hiatus", persona_id=row.get("persona_id", ""),
+                      paused_at=ts, staffed_via=staffed_via)
+        return HiatusResult(True, show_id, "active->hiatus", staffed_via=staffed_via)
+
+    def _staff_off_paused_show(self, row: Dict[str, Any], slot_id: Optional[str],
+                               replacement: Optional[Dict[str, Any]],
+                               editorial_reason: str) -> str:
+        """Bring the weekly slot to a STAFFED state OFF the paused show, trying in order (REQ-SY-001):
+        (a) a vetted replacement via the wired ``assign_persona``; (b) the same persona on default
+        curation; (c) revert to the ``unscheduled``/house lane via ``remove_slot(discontinue=True)``.
+        With no grid wired the slot is the house lane by construction (NoOrphanBootstrap)."""
+        if self.schedule is None or not slot_id:
+            return "house"
+        day = int(row["slot_day_of_week"])
+        # (a) vetted replacement bound through the SH-003 path.
+        if replacement:
+            rep_show = replacement.get("show_id")
+            rep_persona = replacement.get("persona_id")
+            if rep_show and rep_persona:
+                caps_ok = make_caps_ok(self.registry, slot_day_of_week=day,
+                                       roster=self.roster, exclude_show_id=rep_show)
+                if self._safe_assign(slot_id, rep_persona, rep_show, caps_ok, editorial_reason):
+                    return "replacement"
+        # (b) keep the same persona on default curation (slot no longer names the paused show).
+        caps_ok = make_caps_ok(self.registry, slot_day_of_week=day, roster=self.roster,
+                               exclude_show_id=row["show_id"])
+        if self._safe_assign(slot_id, row.get("persona_id", ""), LINEUP_UNSCHEDULED,
+                             caps_ok, editorial_reason):
+            return "same_persona"
+        # (c) revert to the unscheduled/house lane (NoOrphanBootstrap degrade-staffs it).
+        try:
+            if self.schedule.remove_slot(slot_id, discontinue=True,
+                                         editorial_reason=editorial_reason):
+                return "house"
+        except Exception as exc:  # noqa: BLE001 - a remove fault never silences the stream
+            log_event(log, "lineup.staff_remove_error", slot_id=slot_id, error=str(exc))
+        return "none"
+
+    def _safe_assign(self, slot_id: str, persona_id: str, show_or_episode_id: str,
+                     caps_ok: Callable[[str, str], bool], editorial_reason: str) -> bool:
+        try:
+            return bool(self.schedule.assign_persona(
+                slot_id, persona_id, show_or_episode_id,
+                caps_ok=caps_ok, editorial_reason=editorial_reason))
+        except Exception as exc:  # noqa: BLE001 - a bind fault falls through to the next lane
+            log_event(log, "lineup.staff_assign_error", slot_id=slot_id, error=str(exc))
+            return False
+
+    # -- M4 hiatus -> active (REQ-SY-001 + SQ-003 re-vet) ------------------- #
+
+    def reactivate(self, show_id: str, *, slot_id: Optional[str] = None,
+                   generate: Optional[Callable[[], Optional[Concept]]] = None,
+                   editorial_reason: str = "", now: Optional[float] = None) -> FirewallResult:
+        """Transition ``hiatus->active`` (REQ-SY-001): calls the EXISTING M2
+        ``revet_reactivation`` (long hiatus re-vets against shows registered meanwhile; a short
+        hiatus / pinned flagship reactivates without a scan). Only a cleared verdict
+        (``reactivate``/``admitted``) flips the row back to ``active`` (+ rebinds the slot when
+        given); an ``escalated``/``failed`` verdict leaves the show on ``hiatus`` (never a silent
+        reactivation into a near-duplicate)."""
+        row = self.registry.get(show_id)
+        if row is None:
+            return FirewallResult(status="failed", detail="unknown show")
+        ts = float(now) if now is not None else time.time()
+        hiatus_age = ts - _paused_at_of(row, ts)
+        result = self.firewall.revet_reactivation(
+            show_id, hiatus_age=hiatus_age, long_hiatus_bound=self.long_hiatus_seconds,
+            generate=generate)
+        if result.status in ("reactivate", "admitted"):
+            self.registry.set_status(show_id, LINEUP_ACTIVE)
+            if slot_id and self.schedule is not None:
+                self.bind_show(show_id, slot_id, editorial_reason=editorial_reason)
+            self._journal(show_id, "hiatus->active", persona_id=row.get("persona_id", ""),
+                          hiatus_age=hiatus_age)
+        return result
+
+    # -- M4 hiatus -> discontinued (REQ-SY-002, THROUGH lifecycle) ---------- #
+
+    def auto_discontinue_if_expired(self, show_id: str, persona: Any, *,
+                                    editorial_reason: str = "", override: bool = False,
+                                    now: Optional[float] = None) -> Optional[Any]:
+        """Auto-transition ``hiatus->discontinued`` when the hiatus exceeds ``max-hiatus``
+        (REQ-SY-002) — routed THROUGH the EXISTING ``lifecycle.discontinue_show`` (which invents
+        a successor + obeys OB-014). LINEUP only flips the row to ``discontinued`` after the
+        engine succeeds; it emits NO show-relaunch event of its own. A ``pinned`` flagship is
+        protected without ``override`` (REQ-SY-003). Returns the lifecycle result, or None when
+        the show is not an expired hiatus / is protected / no lifecycle is wired."""
+        row = self.registry.get(show_id)
+        if row is None or row.get("lineup_status") != LINEUP_HIATUS:
+            return None
+        if bool(row.get("pinned")) and not override:
+            log_event(log, "lineup.pinned_transition_rejected", show_id=show_id,
+                      transition="hiatus->discontinued")
+            return None
+        ts = float(now) if now is not None else time.time()
+        if (ts - _paused_at_of(row, ts)) <= self.max_hiatus_seconds:
+            return None
+        if self.lifecycle is None:
+            return None
+        try:
+            result = self.lifecycle.discontinue_show(persona, editorial_reason=editorial_reason)
+        except Exception as exc:  # noqa: BLE001 - a lifecycle fault never crashes the tick
+            log_event(log, "lineup.discontinue_error", show_id=show_id, error=str(exc))
+            return None
+        if getattr(result, "ok", False):
+            self.registry.set_status(show_id, LINEUP_DISCONTINUED)
+            self._journal(show_id, "hiatus->discontinued",
+                          persona_id=row.get("persona_id", ""))
+        return result
+
+    # -- best-effort OD-007 ledger journal (NFR-LU-6) ---------------------- #
+
+    def _journal(self, show_id: str, transition: str, **extra: Any) -> None:
+        """Journal a LINEUP transition best-effort on the OPS-004 OD-007 ledger (NFR-LU-6).
+
+        SEPARATE from the canonical table write (which already committed) — a ledger fault is
+        logged and swallowed, never blocking the row write or the tick (no cross-file atomic
+        write). No new store; the ``show_registry`` row remains canonical."""
+        if self.ledger is None:
+            return
+        try:
+            self.ledger.append("lineup_transition",
+                               {"show_id": show_id, "transition": transition, **extra},
+                               persona_id=str(extra.get("persona_id", "") or ""))
+        except Exception as exc:  # noqa: BLE001 - the ledger journal is best-effort (NFR-LU-6)
+            log_event(log, "lineup.journal_error", show_id=show_id, transition=transition,
+                      error=str(exc))

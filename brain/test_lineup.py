@@ -22,13 +22,20 @@ import pytest
 from brain import sqlite_store
 from brain.shows import angle_similarity
 from brain.lineup import (
+    BindResult,
     Concept,
     CrossPersonaFirewall,
     FirewallResult,
+    LineupController,
     ShowRegistry,
+    clamp_hiatus_bounds,
     fingerprint_text,
+    make_caps_ok,
     make_fingerprint,
+    DEFAULT_LONG_HIATUS_SECONDS,
+    DEFAULT_MAX_HIATUS_SECONDS,
     LINEUP_ACTIVE,
+    LINEUP_CONCEPT,
     LINEUP_HIATUS,
     LINEUP_RETIRED,
     LINEUP_DISCONTINUED,
@@ -541,3 +548,471 @@ def test_firewall_result_is_dataclass_shape():
                        score=0.1, matched_show_id=None, attempts=1)
     assert r.status == "admitted"
     assert r.concept.text == "n t a"
+
+
+# ========================================================================== #
+# M3 + M4 fakes — a caps_ok-honoring spy schedule, a spy lifecycle, a fake roster.
+# ========================================================================== #
+
+from types import SimpleNamespace  # noqa: E402
+
+from brain.ledger import EventLedger  # noqa: E402
+from brain.schedule import (  # noqa: E402
+    HOUSE_LANE,
+    NoOrphanBootstrap,
+    Schedule,
+    ScheduleBlock,
+)
+
+
+class _SpySchedule:
+    """A minimal Schedule double that HONORS the caps_ok gate exactly like the real
+    assign_persona (schedule.py:907) so the one-per-day/PR-004 wiring is exercised."""
+
+    def __init__(self, *, accept=True):
+        self.accept = accept
+        self.calls = []
+        self.removed = []
+
+    def assign_persona(self, slot_id, persona_id, show_or_episode_id, *,
+                       caps_ok=None, editorial_reason=""):
+        self.calls.append({
+            "slot_id": slot_id, "persona_id": persona_id,
+            "show_or_episode_id": show_or_episode_id, "caps_ok": caps_ok,
+            "editorial_reason": editorial_reason,
+        })
+        if caps_ok is not None and not caps_ok(persona_id, slot_id):
+            return False
+        return self.accept
+
+    def remove_slot(self, slot_id, *, discontinue=False, editorial_reason=""):
+        self.removed.append({"slot_id": slot_id, "discontinue": discontinue})
+        return True
+
+
+class _SpyLifecycle:
+    """A LifecycleEngine double recording discontinue_show delegation (it NEVER emits
+    show_relaunched here — only the REAL engine does, and LINEUP must not duplicate it)."""
+
+    def __init__(self, *, ok=True):
+        self.ok = ok
+        self.calls = []
+
+    def discontinue_show(self, persona, *, editorial_reason="", library=None):
+        self.calls.append({"persona": persona, "editorial_reason": editorial_reason})
+        return SimpleNamespace(ok=self.ok)
+
+
+class _FakeRoster:
+    """A Roster double exposing the PR-004 seam (get + validate_candidate)."""
+
+    def __init__(self, *, ok=True, enabled=True, present=True):
+        self._ok = ok
+        self._enabled = enabled
+        self._present = present
+
+    def get(self, persona_id):
+        if not self._present:
+            return None
+        return SimpleNamespace(id=persona_id, enabled=self._enabled)
+
+    def validate_candidate(self, persona, exclude_id=None):
+        return SimpleNamespace(ok=self._ok)
+
+
+class _BoomLedger:
+    """A ledger whose append always raises — proves the journal is best-effort."""
+
+    def append(self, *a, **k):
+        raise RuntimeError("ledger down")
+
+
+# ========================================================================== #
+# M3 — one-per-day rule + WIRED caps_ok (REQ-SH-002/003) — AC-SH-002, AC-SH-003
+# ========================================================================== #
+
+
+def test_active_show_ids_on_day_one_per_day_query(registry):
+    """AC-SH-002: the registry surfaces a persona's active shows on a given day_of_week."""
+    _register(registry, "s1", persona_id="P", day=2, status=LINEUP_ACTIVE)
+    _register(registry, "s2", persona_id="P", day=3, status=LINEUP_ACTIVE)
+    _register(registry, "s3", persona_id="P", day=2, status=LINEUP_CONCEPT)  # not active
+    assert registry.active_show_ids_on_day("P", 2) == ["s1"]
+    assert registry.active_show_ids_on_day("P", 3) == ["s2"]
+    # exclude_show_id lets the bound show ignore its own active row.
+    assert registry.active_show_ids_on_day("P", 2, exclude_show_id="s1") == []
+
+
+def test_caps_ok_blocks_second_same_day_active(registry):
+    """AC-SH-002 / B2: a persona already active on day D fails caps_ok for a second day-D show."""
+    _register(registry, "s1", persona_id="P", day=2, status=LINEUP_ACTIVE)
+    caps_ok = make_caps_ok(registry, slot_day_of_week=2, exclude_show_id="s2")
+    assert caps_ok("P", "wed-17") is False  # P already works Wednesday
+
+
+def test_caps_ok_allows_different_day(registry):
+    """AC-SH-002 / B2: the same persona on a DIFFERENT day is allowed."""
+    _register(registry, "s1", persona_id="P", day=2, status=LINEUP_ACTIVE)
+    caps_ok = make_caps_ok(registry, slot_day_of_week=3, exclude_show_id="s2")
+    assert caps_ok("P", "thu-17") is True  # Thursday is free
+
+
+def test_caps_ok_composes_pr004_roster_firewall(registry):
+    """AC-SH-003: caps_ok ALSO enforces PROGRAMMING-007 PR-004 via Roster.validate_candidate."""
+    # No same-day active show, so only PR-004 can block.
+    ok_roster = _FakeRoster(ok=True)
+    blocked_roster = _FakeRoster(ok=False)
+    caps_pass = make_caps_ok(registry, slot_day_of_week=0, roster=ok_roster)
+    caps_block = make_caps_ok(registry, slot_day_of_week=0, roster=blocked_roster)
+    assert caps_pass("P", "mon-20") is True
+    assert caps_block("P", "mon-20") is False  # PR-004 firewall rejected
+
+
+def test_caps_ok_blocks_absent_or_disabled_persona(registry):
+    """AC-SH-003: an absent/disabled roster persona fails the PR-004 half (never bound)."""
+    absent = make_caps_ok(registry, slot_day_of_week=0, roster=_FakeRoster(present=False))
+    disabled = make_caps_ok(registry, slot_day_of_week=0, roster=_FakeRoster(enabled=False))
+    assert absent("ghost", "mon-20") is False
+    assert disabled("P", "mon-20") is False
+
+
+def test_caps_ok_degrades_closed_on_fault(registry):
+    """NFR-LU-4: a caps_ok fault degrades CLOSED (returns False), never raises."""
+    class _BoomRoster:
+        def get(self, pid):
+            raise RuntimeError("roster down")
+
+    caps_ok = make_caps_ok(registry, slot_day_of_week=0, roster=_BoomRoster())
+    assert caps_ok("P", "mon-20") is False
+
+
+def test_bind_always_supplies_non_none_caps_ok(registry):
+    """AC-SH-003 [HARD] / R-LU-3 / D7: NO LINEUP bind path may pass caps_ok=None.
+
+    This is the guard test that FAILS if a bind ever leaves caps_ok unset.
+    """
+    _register(registry, "s1", persona_id="P", day=1, status=LINEUP_CONCEPT)
+    sched = _SpySchedule()
+    ctl = LineupController(registry, schedule=sched)
+    ctl.bind_show("s1", "tue-21")
+    assert sched.calls, "assign_persona was never called"
+    for call in sched.calls:
+        assert call["caps_ok"] is not None
+        assert callable(call["caps_ok"])
+
+
+def test_bind_show_activates_through_assign_persona(registry):
+    """AC-SH-003 / B1: a clean bind goes THROUGH assign_persona and activates the row."""
+    _register(registry, "s1", persona_id="vesturljod", day=1, hour=21,
+              status=LINEUP_CONCEPT)
+    sched = _SpySchedule(accept=True)
+    ctl = LineupController(registry, schedule=sched, roster=_FakeRoster(ok=True))
+    result = ctl.bind_show("s1", "tue-21", editorial_reason="new slot")
+    assert isinstance(result, BindResult)
+    assert result.bound is True
+    assert registry.get("s1")["lineup_status"] == LINEUP_ACTIVE
+    # show_id is the slot's show_or_episode_id.
+    assert sched.calls[-1]["show_or_episode_id"] == "s1"
+    assert sched.calls[-1]["persona_id"] == "vesturljod"
+
+
+def test_bind_show_rejected_leaves_row_inactive(registry):
+    """AC-SH-002 / B2: caps_ok=False blocks the bind; the row is NOT set active."""
+    _register(registry, "s1", persona_id="P", day=2, status=LINEUP_ACTIVE)   # already Wed
+    _register(registry, "s2", persona_id="P", day=2, status=LINEUP_CONCEPT)  # second Wed show
+    sched = _SpySchedule(accept=True)
+    ctl = LineupController(registry, schedule=sched)
+    result = ctl.bind_show("s2", "wed-17")
+    assert result.bound is False  # one-per-day rejected via the wired caps_ok
+    assert registry.get("s2")["lineup_status"] == LINEUP_CONCEPT  # stays inactive
+
+
+def test_bind_second_show_allowed_on_different_day(registry):
+    """AC-SH-002 / B2: the same persona's second show on a DIFFERENT day binds."""
+    _register(registry, "s1", persona_id="P", day=2, status=LINEUP_ACTIVE)   # Wed
+    _register(registry, "s2", persona_id="P", day=3, status=LINEUP_CONCEPT)  # Thu
+    sched = _SpySchedule(accept=True)
+    ctl = LineupController(registry, schedule=sched)
+    result = ctl.bind_show("s2", "thu-17")
+    assert result.bound is True
+    assert registry.get("s2")["lineup_status"] == LINEUP_ACTIVE
+
+
+def test_bind_unknown_show_and_no_schedule(registry):
+    """Bind safety: an unknown show id or an unwired schedule never crashes."""
+    ctl_no_sched = LineupController(registry)
+    _register(registry, "s1", status=LINEUP_CONCEPT)
+    assert ctl_no_sched.bind_show("s1", "x").reason == "no schedule wired"
+    ctl = LineupController(registry, schedule=_SpySchedule())
+    assert ctl.bind_show("nope", "x").reason == "unknown show"
+
+
+def test_bind_assign_raises_degrades(registry):
+    """NFR-LU-4: an assign_persona fault leaves the slot safe, no crash."""
+    class _BoomSchedule:
+        def assign_persona(self, *a, **k):
+            raise RuntimeError("grid down")
+
+    _register(registry, "s1", status=LINEUP_CONCEPT)
+    ctl = LineupController(registry, schedule=_BoomSchedule())
+    result = ctl.bind_show("s1", "x")
+    assert result.bound is False
+    assert registry.get("s1")["lineup_status"] == LINEUP_CONCEPT
+
+
+# ========================================================================== #
+# M4 — hiatus state + flagship pin (REQ-SY-001/002/003) — AC-SY-001/002/003
+# ========================================================================== #
+
+
+def _real_grid_with_show(slot_id, *, persona_id, show_id, hour):
+    """A real ledger-backed Schedule with a base hour-0 slot + a show slot (no-gap)."""
+    led = EventLedger()
+    sched = Schedule(led)
+    sched.add_slot(ScheduleBlock(slot_id="base", start_hour=0, daypart="night",
+                                 show_or_episode_id="unscheduled"), seed=True)
+    sched.add_slot(ScheduleBlock(slot_id=slot_id, start_hour=hour, daypart="late",
+                                 persona_id=persona_id, show_or_episode_id=show_id), seed=True)
+    return sched
+
+
+def test_active_to_hiatus_preserves_row_and_staffs_slot(registry):
+    """AC-SY-001 / B4: active->hiatus preserves the row, sets paused_at, and the slot is
+    brought to a STAFFED state that NEVER names the paused show."""
+    _register(registry, "show1", persona_id="P", day=4, hour=22, status=LINEUP_ACTIVE)
+    sched = _real_grid_with_show("fri-22", persona_id="P", show_id="show1", hour=22)
+    ctl = LineupController(registry, schedule=sched)
+    result = ctl.to_hiatus("show1", slot_id="fri-22", now=1000.0)
+    assert result.ok is True
+    row = registry.get("show1")
+    assert row["lineup_status"] == LINEUP_HIATUS       # row preserved, not deleted
+    assert row["paused_at"] == pytest.approx(1000.0)   # paused_at set
+    # The Friday slot no longer NAMES the paused show.
+    fri = next(b for b in sched.blocks() if b.slot_id == "fri-22")
+    assert fri.show_or_episode_id != "show1"
+    assert result.staffed_via == "same_persona"        # default-curation lane (b)
+
+
+def test_hiatus_binds_vetted_replacement(registry):
+    """AC-SY-001 / B4 lane (a): a vetted replacement is bound via the assign_persona path."""
+    _register(registry, "show1", persona_id="P", day=4, hour=22, status=LINEUP_ACTIVE)
+    sched = _real_grid_with_show("fri-22", persona_id="P", show_id="show1", hour=22)
+    ctl = LineupController(registry, schedule=sched)
+    result = ctl.to_hiatus("show1", slot_id="fri-22",
+                           replacement={"persona_id": "Q", "show_id": "show2"}, now=1000.0)
+    assert result.staffed_via == "replacement"
+    fri = next(b for b in sched.blocks() if b.slot_id == "fri-22")
+    assert fri.show_or_episode_id == "show2"
+    assert fri.persona_id == "Q"
+
+
+def test_hiatus_no_grid_degrades_to_house_lane(registry):
+    """NFR-LU-3: with no schedule wired the hiatus slot is the house lane (never silenced)."""
+    _register(registry, "show1", persona_id="P", day=4, status=LINEUP_ACTIVE)
+    ctl = LineupController(registry)  # no schedule
+    result = ctl.to_hiatus("show1", slot_id="fri-22")
+    assert result.staffed_via == "house"
+    # The no-orphan rail still serves a non-silent block.
+    assert NoOrphanBootstrap(None).resolve() is HOUSE_LANE
+
+
+def test_hiatus_reverts_to_house_lane_when_no_replacement(registry):
+    """NFR-LU-3 / B4 lane (c): when (a)+(b) cannot staff, revert to the house lane; the
+    real grid still resolves a non-silent block at the slot's hour."""
+    _register(registry, "show1", persona_id="P", day=4, hour=22, status=LINEUP_ACTIVE)
+    sched = _real_grid_with_show("fri-22", persona_id="P", show_id="show1", hour=22)
+    # A rejecting roster makes the same-persona rebind (b) fail PR-004 -> falls to (c) remove.
+    ctl = LineupController(registry, schedule=sched, roster=_FakeRoster(ok=False))
+    result = ctl.to_hiatus("show1", slot_id="fri-22", now=1000.0)
+    assert result.staffed_via == "house"
+    assert all(b.slot_id != "fri-22" for b in sched.blocks())  # slot removed (house lane)
+    # The stream is never silenced: the base hour-0 block still governs hour 22.
+    boot = NoOrphanBootstrap(sched)
+    assert boot.resolve(epoch=None) is not None
+
+
+def test_hiatus_unknown_show_is_safe(registry):
+    """to_hiatus on an unknown show degrades without crashing."""
+    ctl = LineupController(registry)
+    result = ctl.to_hiatus("nope", slot_id="x")
+    assert result.ok is False
+    assert result.reason == "unknown show"
+
+
+def test_lineup_emits_no_show_relaunched_and_delegates_discontinue(registry):
+    """AC-SY-002 / B5 [HARD]: a hiatus->discontinued exit routes THROUGH
+    lifecycle.discontinue_show; LINEUP emits NO show_relaunched of its own."""
+    _register(registry, "harbour", persona_id="P", day=4, status=LINEUP_HIATUS,
+              paused_at=0.0)
+    life = _SpyLifecycle(ok=True)
+    ctl = LineupController(registry, lifecycle=life)
+    persona = SimpleNamespace(id="P")
+    # paused at 0, now well beyond max-hiatus -> auto-discontinue.
+    result = ctl.auto_discontinue_if_expired(
+        "harbour", persona, now=DEFAULT_MAX_HIATUS_SECONDS + 1000.0)
+    assert getattr(result, "ok", False) is True
+    assert len(life.calls) == 1                                  # delegated exactly once
+    assert life.calls[0]["persona"] is persona
+    assert registry.get("harbour")["lineup_status"] == LINEUP_DISCONTINUED
+
+
+def test_lineup_source_never_emits_show_relaunched():
+    """AC-SY-001 [HARD]: LINEUP re-owns no FSM — its source emits no show_relaunched event."""
+    import brain.lineup as _lineup
+
+    with open(_lineup.__file__, "r", encoding="utf-8") as fh:
+        src = fh.read()
+    assert "show_relaunched" not in src
+    assert "EV_SHOW_RELAUNCHED" not in src
+
+
+def test_auto_discontinue_not_expired_is_noop(registry):
+    """AC-SY-002: a hiatus WITHIN the max bound is not auto-discontinued."""
+    _register(registry, "harbour", persona_id="P", status=LINEUP_HIATUS, paused_at=1000.0)
+    life = _SpyLifecycle()
+    ctl = LineupController(registry, lifecycle=life)
+    result = ctl.auto_discontinue_if_expired("harbour", SimpleNamespace(id="P"), now=2000.0)
+    assert result is None
+    assert life.calls == []
+    assert registry.get("harbour")["lineup_status"] == LINEUP_HIATUS
+
+
+def test_auto_discontinue_ignores_non_hiatus(registry):
+    """AC-SY-002: only a hiatus row is eligible for auto-discontinue."""
+    _register(registry, "live", persona_id="P", status=LINEUP_ACTIVE, paused_at=0.0)
+    life = _SpyLifecycle()
+    ctl = LineupController(registry, lifecycle=life)
+    assert ctl.auto_discontinue_if_expired(
+        "live", SimpleNamespace(id="P"), now=DEFAULT_MAX_HIATUS_SECONDS + 1.0) is None
+    assert life.calls == []
+
+
+def test_ordered_bounds_clamp_long_le_max():
+    """AC-SY-002: a config with long-hiatus > max-hiatus is CLAMPED (long lowered to max)."""
+    long_v, max_v = clamp_hiatus_bounds(100.0, 50.0)
+    assert max_v == 50.0
+    assert long_v == 50.0
+    assert long_v <= max_v
+    # An already-ordered pair is preserved.
+    assert clamp_hiatus_bounds(20.0, 50.0) == (20.0, 50.0)
+
+
+def test_controller_clamps_bad_config_bounds(registry):
+    """AC-SY-002: the controller enforces the ordered-bounds invariant from cfg."""
+    cfg = SimpleNamespace(lineup_long_hiatus_seconds=999.0, lineup_max_hiatus_seconds=100.0)
+    ctl = LineupController(registry, cfg=cfg)
+    assert ctl.long_hiatus_seconds <= ctl.max_hiatus_seconds
+    assert ctl.max_hiatus_seconds == 100.0
+
+
+def test_controller_defaults_when_cfg_absent(registry):
+    """The controller falls back to the M4 default bounds when cfg lacks the knobs."""
+    ctl = LineupController(registry, cfg=None)
+    assert ctl.long_hiatus_seconds == DEFAULT_LONG_HIATUS_SECONDS
+    assert ctl.max_hiatus_seconds == DEFAULT_MAX_HIATUS_SECONDS
+
+
+def test_pinned_flagship_auto_hiatus_rejected(registry):
+    """AC-SY-003 / B6: a pinned flagship cannot be AUTO-hiatus'd without an override."""
+    _register(registry, "solstice", persona_id="P", status=LINEUP_ACTIVE, pinned=True)
+    ctl = LineupController(registry, schedule=_SpySchedule())
+    result = ctl.to_hiatus("solstice", slot_id="x")
+    assert result.ok is False
+    assert "pinned" in result.reason
+    assert registry.get("solstice")["lineup_status"] == LINEUP_ACTIVE  # stays active
+
+
+def test_pinned_flagship_auto_discontinue_rejected(registry):
+    """AC-SY-003 / B6: a pinned flagship cannot be AUTO-discontinued without an override."""
+    _register(registry, "solstice", persona_id="P", status=LINEUP_HIATUS, pinned=True,
+              paused_at=0.0)
+    life = _SpyLifecycle()
+    ctl = LineupController(registry, lifecycle=life)
+    result = ctl.auto_discontinue_if_expired(
+        "solstice", SimpleNamespace(id="P"), now=DEFAULT_MAX_HIATUS_SECONDS + 1000.0)
+    assert result is None
+    assert life.calls == []
+    assert registry.get("solstice")["lineup_status"] == LINEUP_HIATUS  # protected
+
+
+def test_pinned_override_allows_hiatus(registry):
+    """AC-SY-003: an EXPLICIT override permits pausing a pinned flagship."""
+    _register(registry, "solstice", persona_id="P", day=0, status=LINEUP_ACTIVE, pinned=True)
+    ctl = LineupController(registry)
+    result = ctl.to_hiatus("solstice", override=True, now=1000.0)
+    assert result.ok is True
+    assert registry.get("solstice")["lineup_status"] == LINEUP_HIATUS
+
+
+def test_pinned_exempt_from_remint_firewall(registry):
+    """AC-SY-003 / B6: a pinned flagship's fingerprint does NOT block a fresh re-mint."""
+    _register(registry, "solstice", persona_id="A", status=LINEUP_HIATUS, pinned=True,
+              fingerprint=make_fingerprint("Solstice Hour", "ceremony", "anthemic"))
+    fw = CrossPersonaFirewall(registry, _Cfg())
+    # An identical fresh concept is admitted because the pinned row is excluded from the scan.
+    clone = Concept("Solstice Hour", "ceremony", "anthemic")
+    result = fw.admit(lambda: clone)
+    assert result.status == "admitted"
+    assert result.concept is clone
+
+
+# ---- M4 reactivation (hiatus->active) via the M2 revet entry point ---------- #
+
+
+def test_reactivate_short_hiatus_no_revet(registry):
+    """AC-SY-001 / SQ-003: a short hiatus reactivates and flips the row back to active."""
+    _register(registry, "pier", persona_id="P", day=4, status=LINEUP_HIATUS,
+              created_at=100.0, paused_at=200.0)
+    ctl = LineupController(registry)
+    result = ctl.reactivate("pier", now=205.0)  # 5s hiatus << long bound
+    assert result.status == "reactivate"
+    assert registry.get("pier")["lineup_status"] == LINEUP_ACTIVE
+
+
+def test_reactivate_long_hiatus_collision_stays_hiatus(registry):
+    """AC-SY-001 / SQ-003 / B9: a long-hiatus collision escalates; the row STAYS hiatus
+    (never a silent reactivation into a near-duplicate)."""
+    _register(registry, "pier", persona_id="A", status=LINEUP_HIATUS,
+              fingerprint=make_fingerprint("Pier Sessions", "harbour evening tape drift",
+                                           "slow deep cuts coastal"),
+              created_at=100.0, paused_at=200.0)
+    _register(registry, "wharf", persona_id="B", status=LINEUP_ACTIVE,
+              fingerprint=make_fingerprint("Wharf Hours", "harbour evening tape drift",
+                                           "slow deep cuts coastal"),
+              created_at=300.0)
+    cfg = SimpleNamespace(lineup_long_hiatus_seconds=30.0,
+                          lineup_max_hiatus_seconds=90.0,
+                          shows_novelty_threshold=0.6, shows_max_regenerate=3)
+    ctl = LineupController(registry, cfg=cfg)
+    result = ctl.reactivate("pier", now=300.0)  # age 100 > long bound 30
+    assert result.status == "escalated"
+    assert registry.get("pier")["lineup_status"] == LINEUP_HIATUS  # not silently reactivated
+
+
+def test_reactivate_unknown_show_fails(registry):
+    """reactivate on an unknown show degrades to a failed verdict, no crash."""
+    ctl = LineupController(registry)
+    assert ctl.reactivate("nope").status == "failed"
+
+
+# ---- best-effort ledger journal (NFR-LU-6) --------------------------------- #
+
+
+def test_hiatus_journaled_best_effort(registry):
+    """NFR-LU-6: a hiatus transition is journaled on the ledger as a lineup_transition event."""
+    _register(registry, "show1", persona_id="P", day=4, status=LINEUP_ACTIVE)
+    led = EventLedger()
+    ctl = LineupController(registry, ledger=led)
+    ctl.to_hiatus("show1", now=1000.0)
+    evs = led.events(event_type="lineup_transition")
+    assert evs and evs[-1].data["show_id"] == "show1"
+    assert evs[-1].data["transition"] == "active->hiatus"
+
+
+def test_ledger_fault_does_not_block_table_write(registry):
+    """NFR-LU-6: a ledger fault is swallowed; the canonical table write still lands."""
+    _register(registry, "show1", persona_id="P", day=4, status=LINEUP_ACTIVE)
+    ctl = LineupController(registry, ledger=_BoomLedger())
+    result = ctl.to_hiatus("show1", now=1000.0)  # ledger.append raises internally
+    assert result.ok is True
+    assert registry.get("show1")["lineup_status"] == LINEUP_HIATUS  # table write survived
