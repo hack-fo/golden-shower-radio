@@ -1,7 +1,7 @@
 ---
 id: SPEC-RADIO-HOSTVOICE-049
 version: 0.2.0
-status: draft
+status: implemented
 created: 2026-06-26
 updated: 2026-06-26
 author: charlie

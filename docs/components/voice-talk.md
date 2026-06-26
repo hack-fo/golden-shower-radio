@@ -231,6 +231,68 @@ and `grounded_relations` are not added and the host falls back to genre/feel tal
 
 ---
 
+## Content Philosophy (HOSTVOICE-049)
+
+New in HOSTVOICE-049: a content-philosophy layer sits above the existing editorial
+stack. All new behaviour is **gated OFF by default** — station output is byte-identical
+until opted in via env vars.
+
+### Break taxonomy (`brain/playbook.py`)
+
+`BREAK_TYPES` is a list of `BreakType` NamedTuples (`name: str`, `weight: float`,
+`allow_fragment: bool`) defining 7 weighted break types:
+
+| Type | Weight | Description |
+|---|---|---|
+| `MICRO` | 35% | 1–2 sentences max, plain, no mood tease |
+| `CASUAL_OBS` | 25% | Casual observation; fragments allowed |
+| `FACT_DROP` | 15% | One concrete fact |
+| `ANECDOTE` | 10% | Short personal-style anecdote |
+| `THEME_NOTE` | 8% | Show-theme note; mood tease allowed at 15% probability |
+| `STATION_IDENT` | 5% | Station name only, nothing clever |
+| `REFLECTION` | 2% | Longer reflection; max once per hour |
+
+`next_break_type(prev, hour_state)` selects a weighted random type, never returning
+the same type twice in a row. `REFLECTION` is capped once per hour via
+`hour_state["reflection_used"]`. The `hour_state` dict is reset by `TalkDirector`
+when the clock hour changes (tracked via `_hour_state_hour`).
+
+### HUMAN_HOST_PERSONA (`brain/llm.py`)
+
+New base persona. Community radio / late-night NTS register. No journalism tokens, no
+music-criticism vocabulary. Framing: the host does not perform, does not try to
+impress, sometimes says almost nothing — "it's always you, just talking".
+
+The existing `HOST_PERSONA` and `POSITIVE_HOST_PERSONA` are preserved unchanged as
+backward-compatible aliases pointing to `HUMAN_HOST_PERSONA`. Every existing call site
+is unaffected. `HUMAN_HOST_PERSONA` is opt-in via the taxonomy flag.
+
+### Mood suppression
+
+`next_mood` tease is suppressed for `MICRO`, `CASUAL_OBS`, `FACT_DROP`, `ANECDOTE`,
+and `STATION_IDENT`. It fires only on `THEME_NOTE` and `REFLECTION` at 15% probability
+(weighted coin-flip). Before HOSTVOICE-049, `next_mood` was injected on nearly every
+break.
+
+Mood suppression is controlled by the same `BRAIN_HUMAN_DJ_TAXONOMY_ENABLED` flag as
+the break taxonomy.
+
+### Humanizer lint gate (`brain/humanlint.py`)
+
+LLM-free AI-slop detector. `scan_ai_slop(text, ctx)` returns a list of `LintResult`
+(fields: `token`, `pattern_id`, `position`). `pattern_id` traces each violation back to
+the humanizer SKILL.md pattern number (patterns 3, 4, 7, 8, 9, 10, 14, 27, 31, 32, 33
+plus two radio-specific additions).
+
+`humandj_ctx: HumanLintContext | None` is threaded through `grounding.tier1_lint()` as
+an optional hook, mirroring the existing `ear_ctx` pattern. When non-None, slop tokens
+fail the Tier-1 gate. Default: `None` (no scan, byte-identical gate).
+
+`humanlint.humandj_rails()` returns a prompt-rails block encoding the lint constraints
+as positive-framing instructions, parallel to `ear_writing.ear_writing_rails()`.
+
+---
+
 ## Key Data Structures
 
 ### `TalkClip` (`brain/voice.py`)
@@ -277,6 +339,8 @@ All knobs are environment variables. Defaults are production-safe.
 | `BRAIN_TTS_TIMEOUT_SEC` | `tts_timeout_seconds` | `60` | Piper subprocess timeout. |
 | `BRAIN_TALK_NORM_TIMEOUT_SEC` | `talk_loudnorm_timeout_seconds` | `60` | ffmpeg loudnorm timeout. |
 | `BRAIN_WELCOME_ENABLED` | `welcome_enabled` | `1` | Set `0` to suppress the first-run welcome clip on startup. |
+| `BRAIN_HUMAN_DJ_TAXONOMY_ENABLED` | `human_dj_taxonomy_enabled` | `0` | Set `1` to enable the 7-type weighted break taxonomy and mood suppression (HOSTVOICE-049). |
+| `BRAIN_HUMANDJ_LINT_ENABLED` | `humandj_lint_enabled` | `0` | Set `1` to enable the humanizer anti-slop lint gate on the grounding Tier-1 pass (HOSTVOICE-049). |
 
 Talk clips land in `cfg.talk_clips_dir`, which is `{music_dir}/.talk/`. Clips older
 than 6 hours are pruned by `voice.prune_old_clips()`, called from the `TalkDirector`
@@ -329,7 +393,10 @@ poll.
 
 - `SPEC-RADIO-VOICE-002` — voice provider architecture, per-persona voice assignment plan
 - `SPEC-RADIO-PROGRAMMING-007` — Group PV: programming layer including talk cadence and host persona
+- `SPEC-RADIO-HOSTVOICE-049` — content philosophy: break taxonomy, humanizer lint gate, human host persona
 - `brain/llm.py` — `HOST_PERSONA`, `_build_talk_prompt`, `generate_talk_script`
 - `brain/config.py` — all talk/voice config fields with their env var names
 - `brain/server.py` — the Picker that consumes `state.pending_talk` on `/api/next`
+- `brain/humanlint.py` — LLM-free AI-slop detector (`scan_ai_slop`, `humandj_rails`)
+- `brain/playbook.py` — break taxonomy (`BREAK_TYPES`, `next_break_type`)
 - `deploy/config/radio.liq` — Liquidsoap side: how talk clips (kind="talk") are queued
