@@ -387,6 +387,8 @@ poll.
 
 **Voice-only output (music bed/ducking not implemented).** `produce_talk_clip` renders dry voice only. The comment in `voice.py` identifies the exact line to extend for a bed/ducking/jingle mix without changing the `TalkClip` return contract.
 
+**A force-skip drops the parked talk clip.** `SkipGovernor` calls `State.clear_pending_talk()` on every accepted skip (SKIP-028), because the parked clip's back-announce names whatever had *just* played at prep time — a skip changes that. The cadence counter is left untouched so a fresh, correct clip is prepared on the next tick; the one-shot welcome clip is exempt. See [Skip Control — Talk-clip invalidation on skip](skip-control.md#talk-clip-invalidation-on-skip).
+
 ---
 
 ## See Also

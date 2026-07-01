@@ -7,22 +7,22 @@ Organised by whether you **need** an account to use it.
 
 ## Summary table
 
-| Service | Requires account? | Cost | Needed for | Env var / Config |
-|---|---|---|---|---|
-| **Claude MAX** | Yes — MAX subscription | Subscription | LLM (curation, talk, research) — required | OAuth creds in `~/.claude` |
-| **Soulseek / slskd** | Yes — Soulseek account | Free | P2P music acquisition | `SLSKD_API_KEY` + slskd own config |
-| **AcoustID** | Yes — free app key | Free | Audio fingerprint ID | `BRAIN_ACOUSTID_API_KEY` |
-| **Last.fm** | Yes — free API key | Free | Genre enrichment + show research | `BRAIN_LASTFM_API_KEY` |
-| **Discogs** | Yes — free personal token | Free | Cross-check enrichment | `BRAIN_DISCOGS_TOKEN` |
-| **The Guardian** | Yes — free developer key | Free | News enrichment | `BRAIN_GUARDIAN_API_KEY` |
-| **TheAudioDB** | No — public test key built in | Free | Genre/mood metadata | `BRAIN_THEAUDIODB_KEY` (default `123`) |
-| **MusicBrainz** | No — User-Agent only | Free | Track identification + metadata | `BRAIN_MB_USER_AGENT` |
-| **Cover Art Archive** | No | Free | Album artwork embed | _(automatic when albumart enabled)_ |
-| **yt-dlp / YouTube** | No (for public content) | Free | Acquisition fallback | _(no key)_ |
-| **RSS news feeds** | No | Free | News + music press content | `BRAIN_NEWS_FEEDS` (default seeded) |
-| **Human-DJ sources** | No | Free | Show research (off by default) | per-source flag |
-| **teldutala.fo** | No — unauthenticated | Free | Faroese TTS (planned, not yet built) | _(not yet wired)_ |
-| **ElevenLabs** | Yes — paid API key | Paid | Premium TTS (future opt-in) | _(not yet wired)_ |
+| Service | Requires account? | Cost | Needed for | Set in `secrets/.env` as | Reaches the brain as |
+|---|---|---|---|---|---|
+| **Claude MAX** | Yes — MAX subscription | Subscription | LLM (curation, talk, research) — required | OAuth creds in `~/.claude` | — |
+| **Soulseek / slskd** | Yes — Soulseek account | Free | P2P music acquisition | `SLSKD_API_KEY` + slskd own config | `SLSKD_API_KEY` |
+| **AcoustID** | Yes — free app key | Free | Audio fingerprint ID | `ACOUSTID_API_KEY` | `BRAIN_ACOUSTID_API_KEY` |
+| **Last.fm** | Yes — free API key | Free | Genre enrichment + show research | `LASTFM_API_KEY` | `BRAIN_LASTFM_API_KEY` |
+| **Discogs** | Yes — free personal access token | Free | Cross-check enrichment + website album-art fallback | `DISCOGS_TOKEN` | `BRAIN_DISCOGS_TOKEN` |
+| **The Guardian** | Yes — free developer key | Free | News enrichment | `GUARDIAN_API_KEY` | `BRAIN_GUARDIAN_API_KEY` |
+| **TheAudioDB** | No — public test key built in | Free | Genre/mood metadata | _(default built in)_ | `BRAIN_THEAUDIODB_KEY` (default `123`) |
+| **MusicBrainz** | No — User-Agent only | Free | Track identification + metadata | _(default built in)_ | `BRAIN_MB_USER_AGENT` |
+| **Cover Art Archive** | No | Free | Album artwork embed (ALBUMART-021) + website album-art fallback (`brain/cover.py`) | _(automatic when enabled)_ | _(no key — User-Agent only)_ |
+| **yt-dlp / YouTube** | No (for public content) | Free | Acquisition fallback | _(no key)_ | _(no key)_ |
+| **RSS news feeds** | No | Free | News + music press content | _(no key)_ | `BRAIN_NEWS_FEEDS` (default seeded) |
+| **Human-DJ sources** | No | Free | Show research (off by default) | per-source flag | same flag, `BRAIN_`-prefixed |
+| **teldutala.fo** | No — unauthenticated | Free | Faroese TTS (planned, not yet built) | _(not yet wired)_ | _(not yet wired)_ |
+| **ElevenLabs** | Yes — paid API key | Paid | Premium TTS (future opt-in) | _(not yet wired)_ | _(not yet wired)_ |
 
 ---
 
@@ -112,9 +112,11 @@ It is the most reliable way to identify music with wrong or missing tags.
 2. Go to "Your applications" → create a new application
 3. Copy the API key
 
-**Set in `secrets/.env`:**
+**Set in `secrets/.env`** (the `run.sh` first-run wizard writes this same
+unprefixed name; `deploy/docker-compose.yml` maps it to `BRAIN_ACOUSTID_API_KEY`
+for the brain container):
 ```dotenv
-BRAIN_ACOUSTID_API_KEY=your-key-here
+ACOUSTID_API_KEY=your-key-here
 ```
 
 **Without a key:** fingerprint identification is skipped gracefully. The brain
@@ -137,9 +139,10 @@ Last.fm is used in two independent places:
 2. Go to last.fm/api → "Get an API account"
 3. Copy the API key (the secret is not needed)
 
-**Set in `secrets/.env`:**
+**Set in `secrets/.env`** (unprefixed, same as the wizard writes; mapped to
+`BRAIN_LASTFM_API_KEY` for the brain container by `deploy/docker-compose.yml`):
 ```dotenv
-BRAIN_LASTFM_API_KEY=your-key-here
+LASTFM_API_KEY=your-key-here
 ```
 
 **Without a key:** both Last.fm providers log once at startup that the key is absent
@@ -151,21 +154,39 @@ off by default.
 
 ### Discogs — Optional
 
-Discogs provides a cross-check for MusicBrainz enrichment results, adding a second
-authoritative source for release metadata.
+Discogs serves two purposes in this codebase, both gated on the **same**
+`BRAIN_DISCOGS_TOKEN`:
 
-**How to get a token:**
+1. A cross-check for MusicBrainz metadata enrichment results, adding a second
+   authoritative source for release metadata.
+2. The third (last-resort) fallback in the **website album-art** resolution
+   chain (`brain/cover.py`) — tried only after an embedded cover and Cover Art
+   Archive both miss. See [Website — Album art](website.md#album-art) and
+   [Runtime Config](runtime-config.md#website-album-art-braincoverpy).
+
+**How to get a token — this is a Personal Access Token, NOT a consumer
+key/secret pair:**
 1. Create a free account at discogs.com
-2. Go to discogs.com/settings/developers → "Generate new token"
-3. Copy the personal access token (no OAuth needed)
+2. Go to discogs.com/settings/developers → **"Generate new token"**
+3. Copy the single **personal access token** string it generates (no OAuth
+   handshake, no separate consumer key or consumer secret — Discogs' OAuth
+   consumer key/secret flow is a *different*, unused credential type)
 
 **Set in `secrets/.env`:**
 ```dotenv
-BRAIN_DISCOGS_TOKEN=your-token-here
+DISCOGS_TOKEN=your-personal-access-token-here
 ```
 
-**Without a token:** the Discogs cross-check provider is disabled — it logs once
-at startup and returns empty. MusicBrainz and TheAudioDB enrichment continue.
+The `run.sh` first-run wizard (Phase 3) writes this unprefixed as
+`DISCOGS_TOKEN`; `deploy/docker-compose.yml` maps it to `BRAIN_DISCOGS_TOKEN`
+for the brain container (see the Gotchas note in
+[Runtime Config](runtime-config.md) about this mapping — it was a wiring gap
+until this session and previously discarded a configured token silently).
+
+**Without a token:** both the Discogs enrichment cross-check and the Discogs
+album-art fallback are disabled — each logs once (or is silently skipped) and
+returns empty/None. MusicBrainz/TheAudioDB enrichment and the rest of the
+cover-art chain (embedded cover, Cover Art Archive) continue unaffected.
 
 ---
 
@@ -178,9 +199,10 @@ news ledger, on top of the free RSS feeds.
 1. Register at open-platform.theguardian.com (free)
 2. Request an API key (approved instantly)
 
-**Set in `secrets/.env`:**
+**Set in `secrets/.env`** (unprefixed, same as the wizard writes; mapped to
+`BRAIN_GUARDIAN_API_KEY` for the brain container by `deploy/docker-compose.yml`):
 ```dotenv
-BRAIN_GUARDIAN_API_KEY=your-key-here
+GUARDIAN_API_KEY=your-key-here
 ```
 
 **Without a key:** Guardian enrichment is disabled gracefully. The news ledger
@@ -230,8 +252,26 @@ the config field is the seam.
 ### Cover Art Archive
 
 The open album art database (part of the MusicBrainz ecosystem). No credentials
-needed. The brain fetches front cover art and embeds it in the audio file when
-`BRAIN_ALBUMART_ENABLED=1` (default ON) and `BRAIN_ENRICH_WRITE_FILES=1` (default ON).
+needed — used in two places:
+
+1. **File-embed (ALBUMART-021, `brain/albumart.py`)** — fetches the front cover
+   by release-group MBID and embeds it in the audio file when
+   `BRAIN_ALBUMART_ENABLED=1` (default ON) and `BRAIN_ENRICH_WRITE_FILES=1`
+   (default ON).
+2. **Website album art (`brain/cover.py`)** — a separate, later fallback in the
+   [website's cover resolution chain](website.md#album-art) (embedded cover →
+   Cover Art Archive via a MusicBrainz release search → Discogs). See
+   [Runtime Config](runtime-config.md#website-album-art-braincoverpy) for the
+   `BRAIN_COVER_*` knobs.
+
+**Known issue:** in this deployment, `coverartarchive.org` has been observed to
+time out from inside the brain container, even though the MusicBrainz search
+API and Discogs are both reachable. The website album-art chain degrades
+gracefully — it falls through to Discogs (if `DISCOGS_TOKEN` is set) or the
+placeholder — but the CAA leg is effectively non-functional until the network
+reachability issue is diagnosed and resolved (DNS, firewall egress, or IPv6
+routing are the likely suspects; not yet investigated). This is a network
+condition, not a code defect.
 
 ---
 
@@ -334,11 +374,13 @@ ICECAST_SOURCE_PASSWORD=change-me-please
 # Soulseek acquisition (only when running --with-slskd)
 SLSKD_API_KEY=your-slskd-api-key
 
-# Optional enrichment
-BRAIN_ACOUSTID_API_KEY=your-acoustid-key
-BRAIN_LASTFM_API_KEY=your-lastfm-key
-BRAIN_DISCOGS_TOKEN=your-discogs-token
-BRAIN_GUARDIAN_API_KEY=your-guardian-key
+# Optional enrichment — set UNPREFIXED (matches what the run.sh wizard writes);
+# deploy/docker-compose.yml maps each to its BRAIN_-prefixed name for the brain
+# container. Setting the BRAIN_-prefixed name directly here has no effect.
+ACOUSTID_API_KEY=your-acoustid-key
+LASTFM_API_KEY=your-lastfm-key
+DISCOGS_TOKEN=your-discogs-personal-access-token
+GUARDIAN_API_KEY=your-guardian-key
 ```
 
 The brain will start and play music with only `STATION_NAME`,
