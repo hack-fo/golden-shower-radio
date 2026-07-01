@@ -155,7 +155,12 @@ class StationState:
             if cur is not None and cur.get("artist", "") == artist and cur.get("title", "") == title \
                     and cur.get("kind", "music") == kind:
                 return False  # same item already on air - no-op
-            if cur is not None:
+            # Only MUSIC enters the Recently Played history. Talk breaks report the STATION
+            # NAME as their title (icy_title = station_name for a host break), so letting them
+            # into _recent pollutes the music history the website shows (e.g. "What-What Radio?
+            # 30m ago"). now_playing still updates for talk (the live break is shown); it just
+            # never becomes a history row.
+            if cur is not None and cur.get("kind", "music") == "music":
                 self._recent.appendleft(
                     {
                         "artist": cur.get("artist", ""),
