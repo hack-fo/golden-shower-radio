@@ -58,13 +58,13 @@ let _ = harbor.http.register(
   port=7138,
   method="POST",
   "/api/skip_cmd",
-  fun(_request) ->
+  fun(_request, response) ->
     begin
-      source.skip(source)
+      source.skip()
       log("skip: forceful skip command received — advancing gsr source")
-      {status_code=200,
-       headers=[("Content-Type", "text/plain")],
-       data="ok"}
+      response.status_code(200)
+      response.content_type("text/plain")
+      response.data("ok")
     end
 )
 
