@@ -430,6 +430,10 @@ def run() -> int:
     # the spec the hiatus transitions + matrix proposals are DIRECTOR-driven event decisions, not a
     # boot-time action — this block only makes the objects EXIST and be reachable (the ORCH feed +
     # wire below consume the registry). A build fault leaves them None, never failing boot (NFR-LU-5).
+    # @MX:NOTE: [AUTO] LINEUP-050 activation point — the ShowRegistry/LineupController/
+    # WeeklyMatrixPlanner are instantiated ONLY here; grep this tag to find where the
+    # dormant lineup layer becomes live. OFF (cfg.lineup_enabled default) => all None,
+    # byte-identical boot (AC-NFR-LU-5).
     show_registry = None
     lineup_controller = None
     lineup_planner = None
@@ -461,6 +465,11 @@ def run() -> int:
     # so passing the LINEUP local (None when lineup is off) is inert unless BOTH flags are on. The
     # ActionSurface rides the ONE OD-007 ledger (built only when od_ledger exists). A build fault
     # leaves the seams unwired (director byte-identical), never failing boot.
+    # @MX:NOTE: [AUTO] ORCH-005 activation point — the WorldModelBuilder + ActionSurface
+    # are built and director.wire_orch(...) is called ONLY here; this is the connective
+    # tissue that reaches the director tick. The show-identity feed is live only when
+    # cfg.world_model_enabled AND cfg.lineup_enabled (a wired show_registry). OFF =>
+    # director keeps its None seams, byte-identical tick.
     world_model_builder = None
     action_surface = None
     if cfg.world_model_enabled:

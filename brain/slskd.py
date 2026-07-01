@@ -140,6 +140,10 @@ class SlskdClient:
             log_event(log, "slskd.reconnect_error", error=str(exc))
             return False
 
+    # @MX:NOTE: [AUTO] the Soulseek-login preflight — exists because an empty/missing
+    # SLSKD_SLSK_USERNAME left slskd Disconnected and every search threw
+    # InvalidOperationException server-side (silent failure). Throttled so a healthy
+    # connection is ~free on the hot path; heals by kicking slskd's ConnectionWatchdog.
     def ensure_logged_in(self, *, heal: bool = True) -> bool:
         """Preflight the Soulseek login before a search.
 
@@ -173,6 +177,10 @@ class SlskdClient:
 
     # -- search lifecycle --------------------------------------------------------
 
+    # @MX:ANCHOR: [AUTO] the slskd search entry point — the external-system integration
+    # boundary between the acquirer and the Soulseek network.
+    # @MX:REASON: external integration point + fan_in (acquire._try_slskd + the health/
+    # acquire tests); its None-return-on-failure contract is relied on by every caller.
     def start_search(self, text: str) -> Optional[str]:
         # Preflight: a Disconnected / not-logged-in slskd otherwise raises
         # InvalidOperationException server-side and every search fails silently.
