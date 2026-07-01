@@ -277,5 +277,17 @@ check "SU-9 banner shows slskd URL"           'printf "%s" "$out" | grep -q "sls
 check "SU-9 banner shows creds-location hint" 'printf "%s" "$out" | grep -q "SLSKD_WEB_USERNAME"'
 check "SU-9 banner never prints the password" '! printf "%s" "$out" | grep -qF "$_bpw"'
 
+# SU-10: slskd web-auth + reachability probe (deep --check tier; network-free unit paths).
+# The live HTTP behaviour needs a running slskd and is verified by a manual `run.sh --check`;
+# here we cover the guards (disabled / dry-run no-op) and the WSL hint text.
+check "SU-10 check_slskd_web is defined"    'declare -F check_slskd_web >/dev/null'
+out="$(SLSKD_CHOICE=0 check_slskd_web 2>&1)"
+check "SU-10 no-op when slskd disabled"      '[[ -z "$out" ]]'
+out="$(SLSKD_CHOICE=1 DRY_RUN=1 check_slskd_web 2>&1)"
+check "SU-10 no-op under dry-run"            '[[ -z "$out" ]]'
+out="$(_wsl_localhost_hint 2>&1)"
+check "SU-10 WSL hint mentions localhost"    'printf "%s" "$out" | grep -qi "localhost"'
+check "SU-10 WSL hint clarifies NAT/inbound" 'printf "%s" "$out" | grep -qi "inbound"'
+
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]]

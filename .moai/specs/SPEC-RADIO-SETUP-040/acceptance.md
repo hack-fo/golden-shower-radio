@@ -218,6 +218,22 @@ the creds-location hint are present AND the fixture password value is absent.
 
 ---
 
+### SU-10 — slskd Web-Auth + Reachability Probe [NEW v0.4]
+
+**AC-SU-010:**
+- GIVEN `check_slskd_web` is defined,
+- WHEN slskd is disabled for the launch (`SLSKD_CHOICE!=1`) OR the run is `GSR_DRY_RUN=1`,
+- THEN the probe is a no-op (no output, exit 0);
+- AND when the web UI is unreachable under WSL, `_wsl_localhost_hint` prints a hint that mentions
+  localhost forwarding and clarifies that NAT only gates inbound (not localhost);
+- AND the live probe (reachable / anonymous-rejected / web-login-works) runs only on a real
+  `--check` against a running slskd (not in the zero-network harness), feeding the web password
+  to curl on stdin so it never lands on the argv/process list.
+
+**Automated gates (`scripts/test-run.sh`, network-free):** `check_slskd_web` is defined; it no-ops
+when `SLSKD_CHOICE=0` and under dry-run; `_wsl_localhost_hint` output mentions `localhost` and
+clarifies NAT-vs-inbound. Live HTTP behaviour is verified by a manual `bash scripts/run.sh --check`.
+
 ## Section B — Load-Bearing Scenarios
 
 ### B-1: Fresh-clone first-run golden path

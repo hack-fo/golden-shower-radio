@@ -84,6 +84,16 @@ The slskd web interface at `http://localhost:5030` previously set only an `api_k
 
 ---
 
+## Verifying the slskd web login (`--check`)
+
+`bash scripts/run.sh --check` runs a deep post-up health tier. When slskd is enabled it includes a non-fatal `check_slskd_web` probe that confirms:
+
+- the slskd web UI answers at `http://127.0.0.1:5030`;
+- a protected API endpoint rejects anonymous access (401/403) — the undocumented `slskd`/`slskd` default is closed;
+- the provisioned `SLSKD_WEB_USERNAME` / `SLSKD_WEB_PASSWORD` log in.
+
+If the port is unreachable under WSL, the probe prints a hint: `localhost:5030` forwards to Windows in WSL2's default NAT mode, so an unreachable port usually means the slskd container is down (check `docker compose ps`) rather than a NAT problem — NAT only blocks inbound connections from the LAN/internet, never localhost on the same host. The login probe feeds the password to curl on stdin, so it never appears in the process list.
+
 ## Re-running setup
 
 The wizard is gated on the `SETUP_COMPLETE=1` line in `secrets/.env`. To force the wizard to run again, remove that line (or delete `secrets/.env` to start clean):

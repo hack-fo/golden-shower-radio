@@ -918,6 +918,70 @@ verify_station() {
     else
       log "Deep check WARN: brain /status did not return the expected JSON at $STATUS_URL."
     fi
+    check_slskd_web              # SU-10: slskd web-auth + reachability probe
+  fi
+}
+
+# --------------------------------------------------------------------------- #
+# WSL localhost hint (SETUP-040 SU-10). Printed when the slskd web UI is unreachable
+# and we appear to be running under WSL: localhost port-forwarding works in WSL2's
+# default NAT mode, so an unreachable :5030 usually means the container is down, not
+# a NAT problem. NAT only gates INBOUND connections from the LAN/internet.
+# --------------------------------------------------------------------------- #
+_wsl_localhost_hint() {
+  log "  WSL note: localhost:$SLSKD_PORT should forward to Windows in WSL2's default NAT mode."
+  log "  If the browser cannot reach it, confirm the slskd container is up ('docker compose ps'),"
+  log "  or check for WSL 'mirrored' networking / a stale port-proxy. NAT only blocks INBOUND"
+  log "  connections from the LAN/internet (that is the TLS concern), never localhost on this host."
+}
+
+# --------------------------------------------------------------------------- #
+# slskd web-auth + reachability probe (SETUP-040 SU-10, deep --check tier). Confirms
+# the slskd web UI answers at :5030, that anonymous access to a protected API endpoint
+# is REJECTED (the undocumented default-account bypass is closed), and that the
+# provisioned web username/password log in. Non-fatal: every miss is a clear WARN. The
+# web password is fed to curl on stdin (--data @-), never on the argv/process list.
+# --------------------------------------------------------------------------- #
+check_slskd_web() {
+  [[ "$SLSKD_CHOICE" == "1" ]] || return 0          # only when slskd is up this launch
+  [[ "$DRY_RUN" == "1" ]] && return 0
+  command -v curl >/dev/null 2>&1 || { log "slskd check: curl unavailable — skipping web-auth probe."; return 0; }
+
+  local base="http://127.0.0.1:$SLSKD_PORT"
+  local api="$base/api/v0/application"
+  local sess="$base/api/v0/session"
+
+  # Reachability: any HTTP status means the port forwards and slskd is answering.
+  local code
+  code="$(curl -s -o /dev/null -m "$GSR_HEALTH_TIMEOUT" -w '%{http_code}' "$base/" 2>/dev/null)"
+  if [[ -z "$code" || "$code" == "000" ]]; then
+    log "slskd check WARN: no response from $base (is the slskd container running?)."
+    grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null && _wsl_localhost_hint
+    return 0
+  fi
+  log "slskd check OK: web UI reachable at $base (HTTP $code)."
+
+  # Auth enforced: a protected endpoint must reject anonymous access.
+  local anon
+  anon="$(curl -s -o /dev/null -m "$GSR_HEALTH_TIMEOUT" -w '%{http_code}' "$api" 2>/dev/null)"
+  case "$anon" in
+    401 | 403) log "slskd check OK: anonymous access rejected ($anon) — default-account bypass is closed." ;;
+    200)       log "slskd check WARN: $api answered 200 WITHOUT credentials — web auth is NOT enforced." ;;
+    *)         log "slskd check: anonymous probe returned '$anon' (inconclusive; endpoint may vary by slskd version)." ;;
+  esac
+
+  # Provisioned web username/password log in. Body via stdin so the password never
+  # reaches curl's argv (SU-1/SU-5: no secrets in the process list).
+  if [[ -n "${SLSKD_WEB_USERNAME:-}" && -n "${SLSKD_WEB_PASSWORD:-}" ]]; then
+    local login
+    login="$(printf '{"username":"%s","password":"%s"}' "$SLSKD_WEB_USERNAME" "$SLSKD_WEB_PASSWORD" \
+      | curl -s -o /dev/null -m "$GSR_HEALTH_TIMEOUT" -w '%{http_code}' \
+          -H 'Content-Type: application/json' --data @- "$sess" 2>/dev/null)"
+    case "$login" in
+      200)       log "slskd check OK: web login works for user '$SLSKD_WEB_USERNAME' (password not shown)." ;;
+      401 | 403) log "slskd check WARN: web login rejected ($login) — SLSKD_WEB_USERNAME/PASSWORD may not match the rendered config." ;;
+      *)         log "slskd check: web-login probe returned '$login' (inconclusive; slskd session API may vary by version)." ;;
+    esac
   fi
 }
 

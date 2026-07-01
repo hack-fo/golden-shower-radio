@@ -1,6 +1,6 @@
 ---
 id: SPEC-RADIO-SETUP-040
-version: 0.3.0
+version: 0.4.0
 status: draft
 created: 2026-06-25
 updated: 2026-07-01
@@ -18,6 +18,7 @@ depends_on:
 | Version | Date       | Change                              |
 |---------|------------|-------------------------------------|
 | 0.1.0   | 2026-06-25 | Initial draft                       |
+| 0.4.0   | 2026-07-01 | Amendment. (SU-10) Add a non-fatal slskd web-auth + reachability probe to the `--check` deep tier: confirms `:5030` answers, that anonymous access to a protected API endpoint is rejected (default-account bypass closed), and that the provisioned web username/password log in; on an unreachable port it prints a WSL localhost-forwarding hint (localhost forwards in WSL2 default NAT; NAT only gates inbound). The login body (with the web password) is fed to curl on stdin, never on argv. |
 | 0.3.0   | 2026-07-01 | Amendment (implemented SPEC). (1) RETIRE the RoboCop splash (SU-4) — "doesn't work as intended anyway"; removes `_ROBO_ART`, `run_header`, `--splash-test`, eye-animation constants, and the header comment block. (2) ADD ANSI colour helpers to run.sh output (SU-6), replacing the splash as the "station is alive" signal, with graceful no-colour degradation. (3) FIX slskd web-UI auth (SU-7/SU-8/SU-9): add a `web.authentication` username/password block to `slskd.yml.tmpl` alongside the existing api_key, generate/store `SLSKD_WEB_USERNAME` / `SLSKD_WEB_PASSWORD` in `secrets/.env`, and surface the URL + creds location (never the password) in the banner. (4) HARDEN SU-1: `_set_env_var` now trims leading/trailing whitespace + a stray pasted CR from every stored value, and the Phase 3 enrichment prompts switch from plain `read -r` to `read -rs` (they are secrets) — closing a latent cleartext-echo gap. (5) SU-8 credential display: the generated slskd web password is shown ONCE on the terminal at creation so the operator can log in, while still being kept out of the tee'd logfile and not re-printed on re-runs. Exclusions added: voice-model multi-select DROPPED. (Version 0.2.0 not recorded on-disk; this amendment supersedes v0.1.0 directly.) |
 
 ## 1. Purpose
@@ -276,6 +277,24 @@ obtain the login credentials (e.g. "username/password are in `secrets/.env` as
 
 **The banner shall NOT** print the actual `SLSKD_WEB_PASSWORD` value.
 
+### SU-10 — slskd Web-Auth + Reachability Probe (deep `--check` tier) [NEW v0.4]
+
+**WHERE** `run.sh` runs its deep health tier (`--check`) AND slskd is enabled for the
+launch (`SLSKD_CHOICE=1`), the script **shall** run a non-fatal probe that:
+  - confirms the slskd web UI answers at `http://127.0.0.1:$SLSKD_PORT` (any HTTP status),
+  - confirms a protected slskd API endpoint REJECTS anonymous access (401/403) — proving
+    the undocumented default-account bypass is closed, and
+  - confirms the provisioned `SLSKD_WEB_USERNAME` / `SLSKD_WEB_PASSWORD` authenticate.
+
+**WHEN** the web UI is unreachable AND the host appears to be WSL (`/proc/version` matches
+`microsoft`/`wsl`), **THEN** the probe **shall** print a hint that localhost forwarding works
+in WSL2's default NAT mode (so an unreachable port usually means the container is down, not
+NAT), and that NAT only gates inbound/LAN connections.
+
+**The probe shall be non-fatal** (every miss is a WARN, never an error), **shall NOT** place
+`SLSKD_WEB_PASSWORD` on the process argument list (the login body is fed to curl on stdin),
+and **shall** skip with a note when `curl` is unavailable.
+
 ## 5. Implementation Notes
 
 ### Splash Removal (v0.3)
@@ -327,7 +346,7 @@ the environment → `prepare_filesystem()` renders `${SLSKD_WEB_USERNAME}` /
 
 | File                          | Change                                                         |
 |-------------------------------|----------------------------------------------------------------|
-| `scripts/run.sh`              | Remove splash (SU-4); add colour helpers (SU-6); generate/store slskd web creds (SU-8); banner creds hint (SU-9) |
+| `scripts/run.sh`              | Remove splash (SU-4); add colour helpers (SU-6); generate/store slskd web creds (SU-8); banner creds hint (SU-9); slskd web-auth probe + WSL hint (SU-10) |
 | `deploy/config/slskd.yml.tmpl`| Add `web.authentication` username/password block, keep `api_key` (SU-7) |
 | `scripts/test-run.sh`         | Remove `--splash-test` assertions; add colour-degradation + slskd-web-cred dry-run tests |
 | `docs/components/run-sh.md`   | Replace splash docs with colour-helper + slskd-web-login docs   |
