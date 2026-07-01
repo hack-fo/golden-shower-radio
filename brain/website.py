@@ -213,10 +213,17 @@ def render_website(cfg: Config) -> str:
 
 <script>
   // Stream from the same host the page is served from, on the icecast port.
-  var STREAM = "http://" + location.hostname + ":{port}{mount}";
+  // Feature-detect Ogg Vorbis (NOT iOS/Android UA sniffing, which is brittle and lies):
+  // capable browsers (Chrome/Firefox/Android) get the efficient /radio.ogg mount with
+  // discrete UTF-8 metadata; Safari/iOS and anything without Vorbis fall back to the
+  // universal MP3 mount. The .ogg mount mirrors radio.liq's second output.icecast.
+  var MP3_STREAM = "http://" + location.hostname + ":{port}{mount}";
+  var OGG_STREAM = MP3_STREAM + ".ogg";
   var player = document.getElementById("player");
+  var canOgg = !!(player.canPlayType && player.canPlayType('audio/ogg; codecs="vorbis"'));
+  var STREAM = canOgg ? OGG_STREAM : MP3_STREAM;
   player.src = STREAM;
-  document.getElementById("streamhint").textContent = STREAM;
+  document.getElementById("streamhint").textContent = STREAM + (canOgg ? "  (Ogg Vorbis)" : "  (MP3)");
 
   function esc(s) {{ var d = document.createElement("div"); d.textContent = s == null ? "" : s; return d.innerHTML; }}
 
