@@ -219,7 +219,9 @@ def test_resolve_is_idempotent_when_already_cached(tmp_path, monkeypatch):
     r = C.CoverResolver(FakeCfg(tmp_path))
     key = r.key_for("Artist", "Album")
     r._write_cover(key, _FAKE_JPEG)
-    boom = lambda p: (_ for _ in ()).throw(AssertionError("should not extract when cached"))
+    def boom(p):
+        raise AssertionError("should not extract when cached")
+
     monkeypatch.setattr(C, "extract_embedded_cover", boom)
     r._resolve(key, "/music/x.mp3", "Artist", "Title", "Album")  # short-circuits, no work
     assert r.cover_bytes(key) == _FAKE_JPEG
