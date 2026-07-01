@@ -6,7 +6,7 @@ created: 2026-06-25
 updated: 2026-06-25
 author: charlie
 priority: Medium
-issue_number: 38
+issue_number: 40
 ---
 
 # SPEC-RADIO-KNOWLEDGE-038 — Editorial Knowledge Expansion: Concerts, Cultural Context, Lyrics & Press Curiosa

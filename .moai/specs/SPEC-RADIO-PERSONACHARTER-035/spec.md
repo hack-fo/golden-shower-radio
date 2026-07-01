@@ -6,7 +6,7 @@ created: 2026-06-24
 updated: 2026-06-24
 author: charlie
 priority: High
-issue_number: null
+issue_number: 37
 ---
 
 # SPEC-RADIO-PERSONACHARTER-035 — Per-Persona Taste-Charter Derivation (Cluster-and-Explore over the Real Library)

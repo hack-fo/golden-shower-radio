@@ -6,7 +6,7 @@ created: 2026-06-25
 updated: 2026-06-25
 author: charlie
 priority: Medium
-issue_number: null
+issue_number: 44
 ---
 
 # SPEC-RADIO-BROADCASTERLEARN-042 — Conversation-Learning & Broadcaster Intelligence (Diarized Multi-Speaker Transcript Corpus → Structured Conversation Model → Validated Broadcaster Technique, Style Source Only, Never a Fact Source)

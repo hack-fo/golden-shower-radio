@@ -6,7 +6,7 @@ created: 2026-06-26
 updated: 2026-06-26
 author: charlie
 priority: high
-issue_number: null
+issue_number: 51
 ---
 
 # SPEC-RADIO-HOSTVOICE-049 — Human DJ Voice: Content Philosophy

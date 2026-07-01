@@ -6,7 +6,7 @@ created: 2026-06-23
 updated: 2026-06-23
 author: charlie
 priority: High
-issue_number: null
+issue_number: 35
 ---
 
 # SPEC-RADIO-INTEGRITY-033 — Long-Term Memory Integrity, Anti-Slop & Knowledge-Trust Governance
