@@ -1,9 +1,9 @@
 ---
 id: SPEC-RADIO-VOICE-002
-version: 0.4.0
+version: 0.5.0
 status: draft
 created: 2026-06-22
-updated: 2026-06-23
+updated: 2026-07-01
 author: charlie
 priority: High
 issue_number: 2
@@ -103,6 +103,43 @@ issue_number: 2
   invariants preserved (never-block-the-stream, free-default operation, child-voice
   exclusion, Faroese single-host cap, LLM-authored content, no monetization). Count:
   33 → 40 REQ-V (+2 V-A, +5 V-C), 7 NFR-V unchanged = 47, REQ↔AC 1:1 preserved.
+- 2026-07-01 (v0.5.0): Multi-provider TTS + naturalness A/B pass — realizes the
+  deferred "VOICE-002 A/B" (Kokoro vs Qwen-TTS vs Chatterbox naturalness comparison,
+  user-flagged 2026-06-23). Adds three requirement groups behind the UNCHANGED
+  `TTSProvider` protocol (brain/voice.py:64) and the `make_provider` factory
+  (brain/voice.py:275), plus a per-line as-built seam grounding (new Section 2.2)
+  that supersedes the plan.md "Go daemon" wording — the brain is PYTHON. (a) Group
+  V-G — Local Neural-Model Discovery & New Providers: a model-root config key
+  (`BRAIN_TTS_MODELS_DIR`, default /mnt/f/gsr-models) with presence-on-disk detection
+  so selection only offers engines whose weights exist; a `ChatterboxProvider`
+  (Resemble-AI Chatterbox, zero-shot clone, 22.05 kHz) and a Qwen3-TTS provider
+  (standard safetensors + shared 12 Hz tokenizer, 24 kHz) behind the seam; graceful
+  degradation mirroring the existing Kokoro→Piper startup fallback (voice.py:292-300);
+  a `make_provider` extension recognizing the new names while preserving unknown→
+  house-default; OmniVoice + Voxtral specified future/optional with their Mistral/
+  tekken + HF-transformers format caveats (REQ-V-G-001..006). (b) Group V-H — Operator
+  Selection & Test Surface: a run.sh first-run TTS wizard mirroring `wizard_vpn_prompt`
+  (run.sh:403) called from `_first_time_setup`, persisting BRAIN_TTS_PROVIDER via
+  `_set_env_var` (run.sh:709); a `python -m brain.voice --provider X --text '…' --out
+  clip.mp3` __main__ CLI; a `./scripts/run.sh tts-test` action; PLUS hardware-aware
+  selection — a GPU/VRAM + Docker-GPU-plumbing probe (nvidia-smi; host-GPU-present ≠
+  container-usable, the RTX 2000 Ada is not yet in Docker), a per-model VRAM/compute table,
+  a fit-based recommendation with a fits/too-heavy/CPU-only marked menu, and a [HARD]
+  never-silently-accept-an-unloadable-pick guard with override — all reusing make_provider +
+  produce_talk_clip (REQ-V-H-001..007). (c) Group V-I — Naturalness A/B
+  Evaluation: render the SAME script across providers into labeled clips, human-in-the-
+  loop recorded selection (no automated "naturalness" winner), gated on model + GPU
+  availability (REQ-V-I-001..003). Adds REQ-V-E-006 (voice-palette size caps the
+  distinct-voice persona cast; new providers EXPAND the palette — references the 1:1
+  voice↔persona firewall owned by the persona/programming layer, not re-owned) and
+  NFR-V-8 (GPU-in-Docker + heavy-model resource constraint: the host RTX 2000 Ada 8 GB
+  is not yet plumbed into the brain container) / NFR-V-9 (uniform render contract —
+  every provider funnels through produce_talk_clip's loudnorm→MP3 at voice.py:334 so a
+  provider swap changes only naturalness, never loudness/format). Tail sections
+  renumbered (NFR 12→15, Exclusions 13→16, Risks 14→17, Roadmap 15→18, Traceability
+  16→19) to seat the three new groups as Sections 12/13/14. All FROZEN invariants
+  preserved. Count: 40 → 57 REQ-V (+6 V-G, +7 V-H, +3 V-I, +1 V-E), 7 → 9 NFR-V = 66,
+  REQ↔AC 1:1 preserved.
 
 ---
 
@@ -144,7 +181,7 @@ default engine:
   spoken CONTENT to the LLM — no canned scripts are mandated.
 - Live listener call-in is SEAM-ONLY here (Section 9, REQ-V-F-001). The full
   telephony + speech-to-text + two-way conversation + caller-audio-mixing
-  subsystem is deferred to SPEC-RADIO-CALLIN-003 (Section 14).
+  subsystem is deferred to SPEC-RADIO-CALLIN-003 (Section 18).
 
 ### 1.3 Inherited principles (from SPEC-RADIO-CORE-001)
 
@@ -249,6 +286,53 @@ segments to. Where a behavior could land in either SPEC, the rule is: a step tha
 DECIDES content/strategy/verification is LONGFORM-025; a step that DECLARES an engine
 capability or MECHANICALLY assembles already-rendered audio is VOICE-002.
 
+### 2.2 As-built implementation seams (multi-provider grounding, v0.5.0)
+
+Sections 6–11 (v0.1–0.4) specify the provider interface abstractly ("the system
+shall …"). As of v0.5.0 that interface is IMPLEMENTED in the Python "brain" (NOT a Go
+daemon — the plan.md "Go daemon" wording predates the implementation and is
+superseded). The multi-provider requirements added in v0.5.0 (Groups V-G/V-H/V-I,
+Sections 12–14) bind to these AS-BUILT seams so implementers EXTEND the existing
+surface rather than fork it. Citing them by file:line is deliberate (these are the
+stable extension points, cf. the `@MX:ANCHOR` on the factory):
+
+- **`TTSProvider` protocol — brain/voice.py:64.** The provider seam:
+  `synthesize_wav(text, out_wav_path) -> bool` plus `.name` and `.language`. REQ-V-A-001
+  is realized here. New providers (Chatterbox, Qwen3-TTS) MUST implement this protocol
+  and MUST return `False` (never raise) on expected failure, exactly like
+  `KokoroProvider` (brain/voice.py:155) and `PiperProvider` (brain/voice.py:75).
+- **`make_provider(cfg)` factory — brain/voice.py:275 (`@MX:ANCHOR` at voice.py:268).**
+  The single seam that selects the engine from `Config.tts_provider`. Today it
+  recognizes only `piper`/`kokoro`; an unknown name logs `voice.provider_unknown` and
+  falls through to the Kokoro→Piper chain (voice.py:287-300). REQ-V-G-005 extends this
+  factory to the new provider names while preserving that unknown→house-default
+  behavior and the STARTUP-time (never mid-broadcast) fallback.
+- **`produce_talk_clip(cfg, provider, text)` — brain/voice.py:334.** The shared
+  render→loudnorm (-16 LUFS / -1.5 dBTP)→MP3 pipeline reused by EVERY voice caller
+  (`talk.py:194/216`, `news.py:658`, `imaging.py:258`, `main.py`). Every provider —
+  old or new — funnels through this one function, which is why on-air loudness/format
+  is engine-independent (NFR-V-9). New providers MUST NOT add a parallel encode path.
+- **`Config.tts_provider` from `BRAIN_TTS_PROVIDER` (default `kokoro`) —
+  brain/config.py:98**, with voice knobs `BRAIN_KOKORO_VOICE` (af_heart),
+  `BRAIN_KOKORO_LANG` ('a'), `BRAIN_PIPER_VOICE`, `BRAIN_PIPER_DATA_DIR` (/app/voices).
+  REQ-V-G-001 adds the model-root key `BRAIN_TTS_MODELS_DIR`; REQ-V-H-001 persists the
+  operator's provider+voice choice into `secrets/.env` via run.sh `_set_env_var`.
+- **run.sh first-run wizard — `_first_time_setup` (~line 340) chaining
+  `wizard_vpn_prompt` (run.sh:403), persisting via `_set_env_var` (run.sh:709).**
+  REQ-V-H-001's TTS wizard mirrors `wizard_vpn_prompt` and is called from
+  `_first_time_setup`. run.sh today has NO TTS question, so `BRAIN_TTS_PROVIDER` is
+  never set and the brain always defaults to `kokoro`; Group V-H closes that gap. Note
+  run.sh's `main()` is a flag-only straight-line orchestrator with no sub-action today,
+  so the `tts-test` action (REQ-V-H-003) adds a new dispatch path in `parse_args`/`main`
+  that short-circuits before `compose_up`.
+
+Problem context (verified 2026-07-01): the operator's downloaded neural models under
+`/mnt/f/gsr-models` (Qwen3-TTS 0.6B/1.7B families + shared 12 Hz tokenizer, OmniVoice,
+Voxtral-TTS-2603, chatterbox-turbo) are currently UNREACHABLE by the running brain —
+Kokoro and Piper are baked into the Docker image / HF cache and none of the downloaded
+engines are wired in. `/mnt/f/gsr-models/hf` is EMPTY. Group V-G's model-root config +
+presence detection is precisely what makes those on-disk models selectable.
+
 ---
 
 ## 3. Glossary
@@ -313,8 +397,23 @@ capability or MECHANICALLY assembles already-rendered audio is VOICE-002.
    episode pre-render) (Group V-C, REQ-V-C-008..012). VOICE-002 OWNS this interface +
    assembly; the longform ORCHESTRATION that drives it is SPEC-RADIO-LONGFORM-025
    (Section 2.1), referenced not re-owned.
+8. **Local neural-model discovery & new providers** (v0.5.0) — a model-root config
+   key (`BRAIN_TTS_MODELS_DIR`, default /mnt/f/gsr-models) with presence-on-disk
+   detection so only providers whose model dir exists are offered; new `TTSProvider`
+   implementations behind the brain/voice.py:64 seam, prioritizing `ChatterboxProvider`
+   and a Qwen3-TTS provider, each degrading gracefully when runtime deps or model files
+   are absent (mirroring Kokoro→Piper); OmniVoice + Voxtral as future/optional with
+   format caveats. (Group V-G)
+9. **Operator selection & test surface** (v0.5.0) — a run.sh first-run TTS wizard
+   (mirroring `wizard_vpn_prompt`) that lists detected model dirs and persists
+   `BRAIN_TTS_PROVIDER` (+voice) via `_set_env_var`; a `python -m brain.voice` CLI
+   entrypoint and a `./scripts/run.sh tts-test` action, both reusing make_provider +
+   produce_talk_clip. (Group V-H)
+10. **Naturalness A/B evaluation** (v0.5.0) — a repeatable way to render the SAME
+    script across providers into labeled clips for human comparison, with the
+    human-in-the-loop selection recorded. (Group V-I)
 
-Plus NFRs (Section 11) and Risks/Open Questions (Section 13).
+Plus NFRs (Section 15) and Risks/Open Questions (Section 17).
 
 ### 4.2 Out of Scope (explicitly deferred)
 
@@ -435,7 +534,7 @@ are prerequisites for everything else, the descriptor included because episode
 assembly in Group V-C reads it); Medium for REQ-V-A-005 (optional ElevenLabs
 upgrade), REQ-V-A-008 (teldutala concurrency/retry hardening), and REQ-V-A-010
 (provider-switch compatibility detection — exercised only on a rare config swap),
-per the traceability table in Section 16.
+per the traceability table in Section 19.
 
 ### REQ-V-A-001 — Provider-agnostic TTS interface (Ubiquitous)
 
@@ -1142,6 +1241,29 @@ synthesis, with each variant kept strictly within the correct gender/age band.
   within-one-show co-hosting, which is forbidden for Faroese per REQ-V-D-005).
 - Variant definitions/parameters are configured, not hardcoded.
 
+### REQ-V-E-006 — Voice-palette size caps the distinct-voice persona cast (Ubiquitous)
+
+The system shall treat the number of distinct, verified voices available across the
+active providers as the upper bound on the number of personas that can each hold a
+UNIQUE voice, under the 1:1 voice↔persona firewall (owned by the persona/programming
+layer, NOT this SPEC); adding a provider (e.g. Qwen3-TTS or Chatterbox, Group V-G)
+EXPANDS the available voice palette and therefore the maximum distinct-voice persona
+cast, without altering the firewall.
+
+**Acceptance criteria:**
+- The count of personas that can be assigned a UNIQUE voice does not exceed the count
+  of distinct verified voices across the active providers (English today: the verified
+  Kokoro roster ~7 + Piper ~6, widenable via Kokoro's 54-voicepack palette and any
+  added provider's voices; Faroese: `Hanna22k_NT`/`Hanus22k_NT` plus optional PSOLA
+  variants per REQ-V-E-005).
+- [HARD] This SPEC does NOT define, fork, or weaken the 1:1 voice↔persona firewall
+  itself (that invariant is owned by the persona/programming layer, e.g.
+  SPEC-RADIO-PROGRAMMING-007 / the host roster); it only states the palette-size →
+  cast-size relationship and that new providers widen the palette.
+- Registering a new provider (Group V-G) makes its distinct voices selectable by the
+  per-persona voice profile (REQ-V-E-001) via config, with no code change to the
+  persona model — enlarging the palette without touching the firewall.
+
 ---
 
 ## 11. Requirement Group V-F — Call-In Integration Seam (SEAM ONLY)
@@ -1150,7 +1272,7 @@ Priority: Medium.
 
 [HARD] This group defines ONLY the integration seam. It MUST NOT implement
 telephony, speech-to-text, two-way conversation logic, or caller-audio mixing —
-all of which belong to SPEC-RADIO-CALLIN-003 (Section 14).
+all of which belong to SPEC-RADIO-CALLIN-003 (Section 18).
 
 ### REQ-V-F-001 — Typed call-in insertion seam (Ubiquitous)
 
@@ -1173,7 +1295,353 @@ behavior in this SPEC.
 
 ---
 
-## 12. Non-Functional Requirements
+## 12. Requirement Group V-G — Local Neural-Model Discovery & New Providers
+
+Priority: High for REQ-V-G-001/004/005 (model discovery, graceful degradation, and the
+factory extension — the safety spine that keeps talk alive); Medium for REQ-V-G-002/003
+(the concrete Chatterbox + Qwen3-TTS providers); Low for REQ-V-G-006 (OmniVoice/Voxtral
+future-optional).
+
+This group adds new engines behind the UNCHANGED `TTSProvider` protocol
+(brain/voice.py:64) and `make_provider` factory (brain/voice.py:275, Section 2.2), and
+makes on-disk models under a configurable model root SELECTABLE. It preserves the
+load-bearing Kokoro→Piper STARTUP fallback (never mid-broadcast) and the "unknown
+provider → house default" behavior. The problem it solves: the operator's downloaded
+neural models under /mnt/f/gsr-models are currently unreachable by the running brain
+(Section 2.2).
+
+### REQ-V-G-001 — Model-root config + presence-on-disk detection (State-driven)
+
+While selecting or listing available TTS providers, the system shall read a
+configurable model-root directory (`BRAIN_TTS_MODELS_DIR`, default `/mnt/f/gsr-models`)
+and detect, per provider, whether that provider's model files are present on disk, so
+that provider selection only offers engines whose models actually exist.
+
+**Acceptance criteria:**
+- A `BRAIN_TTS_MODELS_DIR` config key exists (default `/mnt/f/gsr-models`), surfaced
+  through `Config` alongside the existing tts knobs (brain/config.py:98).
+- For each on-disk neural provider, presence is detected by checking that provider's
+  expected model files under the model root (e.g. Chatterbox: `t3_turbo_v1.safetensors`
+  + s3gen + `ve.safetensors` + `conds.pt`; Qwen3-TTS: the safetensors family + the
+  shared Qwen3-TTS-Tokenizer-12Hz codec).
+- A provider whose model dir is absent is NOT offered for selection and NOT chosen; the
+  baked-in Kokoro/Piper remain available regardless of the model root (they live in the
+  image / HF cache, not under the model root).
+- [HARD] Presence detection reads only the filesystem (no model load), treats an
+  absent/detached mount as "provider not present" (never an error), and is logged.
+
+### REQ-V-G-002 — ChatterboxProvider behind the seam (Optional feature)
+
+Where the Chatterbox model files and runtime (chatterbox-tts / torch) are present, the
+system shall provide a `ChatterboxProvider` implementing the `TTSProvider` protocol
+(brain/voice.py:64), rendering a script line to a WAV consumed by the shared pipeline
+and returning `False` (never raising) on any synthesis failure.
+
+**Acceptance criteria:**
+- `ChatterboxProvider` implements `synthesize_wav(text, out_wav_path) -> bool` plus
+  `.name = "chatterbox"` and `.language`, and registers behind `make_provider` with NO
+  change to any `produce_talk_clip` caller (talk.py, news.py, imaging.py, main.py).
+- On success it writes a non-empty WAV consumed by `produce_talk_clip`
+  (brain/voice.py:334); on any failure (missing weights, torch/dep error, empty audio)
+  it returns `False` and the caller skips the talk break — no exception escapes.
+- Its native sample rate (22050 Hz) is declared through the REQ-V-A-009 capability
+  descriptor.
+- Chatterbox is zero-shot voice-clone; the reference-voice `conds` is configured, never
+  hardcoded.
+
+### REQ-V-G-003 — Qwen3-TTS provider behind the seam (Optional feature)
+
+Where the Qwen3-TTS model files (standard safetensors + the shared 12 Hz tokenizer) and
+runtime (transformers / torch) are present, the system shall provide a Qwen3-TTS
+provider implementing the `TTSProvider` protocol, rendering via the shared pipeline and
+returning `False` (never raising) on failure.
+
+**Acceptance criteria:**
+- A `QwenTTSProvider` (or equivalently named) implements the protocol with
+  `.name = "qwen"` (or "qwen3-tts") and registers behind `make_provider` without
+  changing any caller.
+- It loads the standard-safetensors Qwen3-TTS family (0.6B or 1.7B, config-selected)
+  plus the shared Qwen3-TTS-Tokenizer-12Hz codec; a missing model/tokenizer/dep
+  degrades gracefully (returns `False` / not offered), never crashing startup.
+- Its native sample rate (24000 Hz) is declared through the REQ-V-A-009 descriptor.
+- The operator lean (Qwen-TTS as the A/B frontrunner) is set up FIRST, but the choice of
+  primary is DECIDED by the operator in Group V-I — this requirement does not assert
+  Qwen as the winner.
+
+### REQ-V-G-004 — Graceful degradation on missing deps/models (Unwanted) [HARD]
+
+If a selected new provider's runtime dependencies (torch/transformers/chatterbox-tts/
+etc.) or model files are absent or fail to load, then the system shall NOT crash and
+shall fall back to an available provider — mirroring the existing Kokoro→Piper startup
+fallback (brain/voice.py:292-300) — so the station keeps talking (or degrades to music)
+and never blocks the stream.
+
+**Acceptance criteria:**
+- [HARD] Selecting a provider whose deps/models are missing logs a typed "unavailable"
+  event and falls back down a configured chain to an available engine (ultimately Piper,
+  or music if none) — it never raises out of `make_provider` and never silently disables
+  talk mid-broadcast.
+- The fallback happens at STARTUP / provider construction (like KokoroProvider's eager
+  model load in `__init__`), not on the per-clip synthesis path.
+- The fallback decision and the live engine are logged in one line, consistent with the
+  existing `voice.provider_active` / `voice.kokoro_unavailable` log events.
+
+### REQ-V-G-005 — make_provider factory extension (Event-driven)
+
+When the daemon builds the active provider, the system shall extend the
+`make_provider(cfg)` factory (brain/voice.py:275) to recognize the new provider names
+(`chatterbox`, `qwen`) in addition to `kokoro`/`piper`, while PRESERVING the existing
+contract: an unknown name logs `voice.provider_unknown` and falls through to the house
+default chain rather than disabling talk.
+
+**Acceptance criteria:**
+- `make_provider` returns a `ChatterboxProvider` / `QwenTTSProvider` when
+  `BRAIN_TTS_PROVIDER` names one AND its models+deps are present (else it degrades per
+  REQ-V-G-004).
+- [HARD] An unknown `BRAIN_TTS_PROVIDER` value still logs `voice.provider_unknown` and
+  falls through to the Kokoro→Piper default chain — behavior UNCHANGED for existing
+  values (regression-guarded).
+- No `produce_talk_clip` caller (talk.py, news.py, imaging.py, main.py) changes as a
+  result of adding providers, verifying REQ-V-A-001 / NFR-V-5 isolation against the real
+  callers.
+
+### REQ-V-G-006 — OmniVoice & Voxtral as future/optional providers (Optional feature)
+
+Where added later, the system MAY provide OmniVoice (HF-transformers, ~2.45 GB) and
+Voxtral-TTS (Mistral/tekken format: `consolidated.safetensors` ~8 GB + a
+`voice_embedding/` speaker-embedding dir, needs mistral-inference-style loading rather
+than plain HF `from_pretrained`) as additional providers behind the same seam; these are
+LOWER priority than Chatterbox/Qwen and are specified here ONLY as future extensions with
+their format caveats, not built in this pass.
+
+**Acceptance criteria:**
+- No OmniVoice/Voxtral provider is required to ship in this SPEC version; if added later,
+  each MUST implement the brain/voice.py:64 protocol, declare a REQ-V-A-009 descriptor,
+  and degrade gracefully per REQ-V-G-004.
+- The format caveats are recorded and honored: Voxtral uses the Mistral/tekken
+  `consolidated.safetensors` (~8 GB) with a `voice_embedding/` speaker dir and
+  mistral-inference-style loading; OmniVoice is HF-transformers (~2.45 GB); the empty
+  `/mnt/f/gsr-models/hf` dir is not a model source.
+- [HARD] No partial/stub OmniVoice/Voxtral code is built in this pass (NFR-V-6
+  no-partial-build).
+
+---
+
+## 13. Requirement Group V-H — Operator Selection & Test Surface
+
+Priority: High for REQ-V-H-002 (the CLI render path — prerequisite for the A/B) and
+REQ-V-H-007 (never silently accept an unloadable pick — the operator-facing safety guard);
+Medium for REQ-V-H-001 (first-run wizard), REQ-V-H-003 (the run.sh `tts-test` action),
+REQ-V-H-004 (hardware probe), REQ-V-H-005 (per-model VRAM table), and REQ-V-H-006 (fit
+recommendation + marked menu).
+
+This group gives the OPERATOR a way to choose and to HEAR a provider. It closes the gap
+that run.sh never asks about TTS (so `BRAIN_TTS_PROVIDER` is never set and the brain
+always defaults to `kokoro`, Section 2.2), and it provides the first-class TEST path the
+station lacks (no TTS CLI, no `/api/tts` endpoint today). It also PROBES the operator's
+hardware — GPU presence + VRAM AND whether that GPU is actually reachable from Docker (host
+GPU present ≠ container-usable, spec.md NFR-V-8 / R-V-10) — and recommends an engine that
+actually FITS, marking each choice "fits / too heavy for your GPU / CPU-only" so the
+operator never silently selects a model their hardware cannot load (with an override path,
+backed at runtime by the Kokoro→Piper fallback).
+
+### REQ-V-H-001 — First-run TTS wizard persists the provider choice (Event-driven)
+
+When the run.sh first-run wizard runs (`_first_time_setup`, ~line 340), the system shall
+present a TTS-provider question — mirroring `wizard_vpn_prompt` (run.sh:403) — that lists
+the providers detected as available (baked-in Kokoro/Piper always; any on-disk engine per
+REQ-V-G-001) and persists the operator's choice as `BRAIN_TTS_PROVIDER` (and, where
+applicable, the voice) into `secrets/.env` via `_set_env_var` (run.sh:709).
+
+**Acceptance criteria:**
+- The wizard adds a TTS question invoked from `_first_time_setup` (alongside the existing
+  Phase 1/2/2b/3 prompts), styled with the existing ANSI colour helpers, defaulting to the
+  current house default (`kokoro`) on empty input.
+- Detected on-disk providers (per REQ-V-G-001 presence check against
+  `BRAIN_TTS_MODELS_DIR`) are listed as selectable choices; undetected engines are not
+  offered.
+- The choice is written as `BRAIN_TTS_PROVIDER` (and the provider's voice knob, e.g.
+  `BRAIN_KOKORO_VOICE`, where relevant) via `_set_env_var`; re-running on an
+  already-configured install does not clobber a prior explicit choice unless the operator
+  changes it (consistent with the "skip if already configured" wizard phases).
+- [HARD] No model weight is downloaded or loaded by the wizard; it only detects presence
+  and records the choice.
+
+### REQ-V-H-002 — `python -m brain.voice` synthesis CLI (Ubiquitous)
+
+The system shall provide a `python -m brain.voice --provider X --text '…' --out clip.mp3`
+`__main__` entrypoint that synthesizes the given text with the named provider and writes a
+finished clip, reusing `make_provider` (brain/voice.py:275) and `produce_talk_clip`
+(brain/voice.py:334) — the SAME code paths used on air — so a provider can be exercised
+outside the running station.
+
+**Acceptance criteria:**
+- `python -m brain.voice --provider kokoro --text 'hello' --out /tmp/clip.mp3` produces a
+  playable, loudness-matched MP3 via `produce_talk_clip`; `--provider piper|chatterbox|qwen`
+  selects the corresponding engine through `make_provider`.
+- The CLI honours `BRAIN_TTS_MODELS_DIR` and the graceful-degradation chain (REQ-V-G-004):
+  naming an unavailable provider prints a clear message and either falls back or exits
+  non-zero WITHOUT a traceback.
+- The CLI does NOT touch the live stream, the schedule, or the persona store; it is a pure
+  render path.
+- Exit code is 0 on a produced clip and non-zero on failure, so it is scriptable by the
+  A/B harness (REQ-V-I-001).
+
+### REQ-V-H-003 — `./scripts/run.sh tts-test` action (Event-driven)
+
+When run.sh is invoked as `./scripts/run.sh tts-test`, the system shall synthesize a
+sample line with the selected provider (or a named one) and play it back for the operator,
+WITHOUT performing the normal full station bring-up (`compose_up`).
+
+**Acceptance criteria:**
+- `./scripts/run.sh tts-test` renders a sample via the REQ-V-H-002 CLI (in the brain
+  image/container) and plays or writes the resulting clip for the operator to hear.
+- The action SHORT-CIRCUITS `main()`'s straight-line startup (it does not run
+  `compose_up` / `verify_station`); `parse_args`/`main` recognize the `tts-test` action
+  rather than rejecting it as an unknown flag, and `usage` documents it.
+- A `tts-test` against an unavailable provider degrades per REQ-V-G-004 with a clear
+  message and a non-zero exit, never a stack trace, and never touches the live stream.
+
+### REQ-V-H-004 — GPU + Docker-GPU capability detection (Event-driven)
+
+When the run.sh TTS wizard (or `tts-test`) probes hardware, the system shall detect (a)
+whether a CUDA-capable GPU is present on the host and its total VRAM — parsing
+`nvidia-smi --query-gpu=name,memory.total --format=csv,noheader` when available — AND (b)
+whether that GPU is actually plumbed into Docker (nvidia-container-toolkit / `docker run
+--gpus` reachability), reporting BOTH facts, and degrading gracefully to "no GPU /
+CPU-only" when `nvidia-smi` is absent.
+
+**Acceptance criteria:**
+- With `nvidia-smi` present, the probe reports the GPU name + total VRAM (e.g. "NVIDIA RTX
+  2000 Ada, 8192 MiB").
+- The probe SEPARATELY reports whether the GPU is reachable from a container, because
+  host-GPU-present != container-usable; [HARD] KNOWN ENVIRONMENT FACT — this host HAS an
+  RTX 2000 Ada (8 GB) that is NOT yet plumbed into Docker, so the two reports MUST be able
+  to disagree (host: "GPU present"; container: "CPU-only"), and the probe must not conflate
+  them.
+- With no `nvidia-smi` / no GPU, the probe reports "CPU-only" WITHOUT error and the wizard
+  still proceeds.
+- When a chosen model needs CUDA the container cannot reach, the probe points the operator
+  to the GPU-in-Docker enablement (nvidia-container-toolkit) rather than silently
+  proceeding.
+
+### REQ-V-H-005 — Per-model VRAM/compute requirements table (Ubiquitous)
+
+The system shall maintain an EXTENSIBLE per-provider VRAM/compute requirements table (rough
+VRAM footprint + CPU-viability) against which a detected VRAM figure is compared, covering
+at least: Piper (CPU, tiny), Kokoro (small, CPU-viable, current default), Qwen3-TTS 0.6B
+(small GPU), Qwen3-TTS 1.7B (larger GPU), Chatterbox-turbo (moderate GPU), Voxtral-TTS
+(~8 GB weights, large GPU), and OmniVoice (~2.5 GB).
+
+**Acceptance criteria:**
+- A table maps each known provider to (approx VRAM need, CPU-viable yes/no); at minimum the
+  seven engines above are present, and the table is EXTENSIBLE (adding a row does not
+  require changing the probe or menu logic).
+- Piper and Kokoro are marked CPU-viable (no GPU required); the neural GPU engines carry
+  their approximate VRAM figures (Qwen 0.6B < Qwen 1.7B < Chatterbox < Voxtral).
+- The detected, container-usable VRAM (REQ-V-H-004) is compared against each row to classify
+  fit (feeds REQ-V-H-006); the figures are rough guidance, not a hard load guarantee.
+
+### REQ-V-H-006 — Hardware-fit recommendation + marked selection menu (Event-driven)
+
+When the operator cannot decide (or requests a recommendation), the system shall recommend
+the best engine that FITS the detected hardware — the highest-quality engine that runs
+comfortably within the container-usable VRAM headroom, else a CPU-viable engine
+(Kokoro/Piper) — and shall MARK each provider in the selection menu as "fits" / "too heavy
+for your GPU" / "CPU-only", defaulting the cursor to the recommended one.
+
+**Acceptance criteria:**
+- The recommendation picks the best-quality engine whose VRAM need fits the detected,
+  container-usable VRAM headroom (REQ-V-H-004/005); when no GPU is usable BY THE CONTAINER,
+  it recommends a CPU-viable engine (Kokoro default, Piper lean).
+- The selection menu marks EVERY provider fits / too-heavy / CPU-only from the probe, and
+  the default cursor is the recommended provider.
+- On this host today (RTX 2000 Ada present on the host but NOT reachable by the container):
+  the recommendation is a CPU-viable engine, and the heavy GPU engines are marked as GPU
+  present-but-not-container-reachable (pointing to the GPU-in-Docker gap), NOT simply
+  "fits".
+
+### REQ-V-H-007 — Never silently accept an over-capacity pick (Unwanted) [HARD]
+
+If the operator selects a model that the detected hardware cannot load (VRAM too small, or a
+CUDA engine with no container-reachable GPU), then the system shall WARN and require an
+explicit override rather than silently persisting an unloadable choice — mirroring the
+existing Kokoro→Piper runtime fallback so that even an overridden bad choice degrades to an
+available engine at runtime instead of breaking talk.
+
+**Acceptance criteria:**
+- [HARD] Selecting an over-capacity / unreachable-GPU model triggers a clear warning naming
+  the shortfall (e.g. "Voxtral needs ~8 GB GPU; this container has no GPU") and does NOT
+  persist the choice until the operator EXPLICITLY overrides.
+- An explicit override IS possible (the operator may still force the choice) — the SPEC does
+  not hard-block selection; it forbids only SILENT acceptance.
+- [HARD] Even if an unloadable choice is persisted, at runtime `make_provider` degrades per
+  REQ-V-G-004 (down to Piper, else music) so on-air talk never breaks — the warning is
+  advisory, the runtime fallback is the safety net.
+
+---
+
+## 14. Requirement Group V-I — Naturalness A/B Evaluation
+
+Priority: Medium. This group realizes the deferred "VOICE-002 A/B" — comparing Kokoro vs
+Qwen-TTS vs Chatterbox (and Piper) naturalness on identical content. Naturalness is a
+HUMAN judgment: the system PREPARES the comparison; the operator DECIDES. The whole group
+runs on the render/test path (REQ-V-H-002) and never touches the live stream.
+
+### REQ-V-I-001 — Render one script across providers into labeled clips (Event-driven)
+
+When the operator requests an A/B render, the system shall synthesize the SAME script
+text through each selected/available provider into separate, clearly LABELED clips (label
+= provider name + voice), reusing the REQ-V-H-002 render path, so the operator can compare
+naturalness on identical content.
+
+**Acceptance criteria:**
+- Given one input script and a set of providers (default: the available subset of
+  kokoro/piper/qwen/chatterbox per REQ-V-G-001), the system produces one clip per
+  provider, each named/tagged with its provider + voice, from the SAME text.
+- A provider that is unavailable or fails to render is skipped with a logged reason and
+  does NOT abort the rest of the A/B batch (a partial comparison is still useful).
+- Every clip is produced through `produce_talk_clip`, so loudness/format is identical
+  across engines (NFR-V-9) and the only perceived difference is voice naturalness.
+
+### REQ-V-I-002 — Human-in-the-loop selection is recorded (Event-driven) [HARD human-decides]
+
+When the operator picks a preferred provider after listening, the system shall record that
+selection durably (as the configured `BRAIN_TTS_PROVIDER` via `_set_env_var` and/or a
+recorded A/B result), and shall NOT auto-select a "winner" by any automated naturalness
+metric.
+
+**Acceptance criteria:**
+- The operator's pick is persisted as `BRAIN_TTS_PROVIDER` (+voice) via the REQ-V-H-001
+  mechanism, and/or written to an A/B result record listing the compared providers and the
+  chosen one.
+- [HARD] No requirement or code path chooses the primary voice automatically from an
+  audio/ML "naturalness" score; the human decision is authoritative (naturalness is not the
+  AI's judgment to make).
+- The recorded selection takes effect on the next station start via the normal
+  `make_provider` path (no bespoke selection channel).
+
+### REQ-V-I-003 — A/B honours model + GPU availability (State-driven)
+
+While preparing an A/B render, the system shall offer only providers whose models AND
+runtime are actually reachable (REQ-V-G-001/004); a heavy neural engine that requires the
+host GPU shall be offered only when the GPU is plumbed into the brain container, otherwise
+the A/B shall fall back to the CPU-tractable engines (Kokoro/Piper) and record why a heavy
+engine was unavailable.
+
+**Acceptance criteria:**
+- The A/B set is intersected with the on-disk-present providers (REQ-V-G-001); an engine
+  whose weights are absent is not rendered.
+- When the RTX 2000 Ada is not exposed to the brain container, a GPU-dependent provider is
+  skipped with a logged "gpu-unavailable" reason and the A/B still runs across the
+  reachable (CPU) engines; when the GPU is plumbed in, the heavy engines are included
+  (NFR-V-8).
+- [HARD] The A/B never blocks or touches the live stream (it runs on the render/test path,
+  REQ-V-H-002), consistent with REQ-V-C-005.
+
+---
+
+## 15. Non-Functional Requirements
 
 ### NFR-V-1 — Talk-timing latency budget (Ubiquitous) — Priority High
 The voice layer shall synthesize and buffer speech ahead of air so that a talk
@@ -1214,9 +1682,27 @@ The system shall emit structured logs for script generation, synthesis (provider
 language, outcome), injection/ducking events, and skips, sufficient to diagnose a
 missed or broken talk segment after the fact (feeds REQ-V-C-007).
 
+### NFR-V-8 — GPU-in-Docker & heavy-model resource constraint (Ubiquitous) — Priority Medium
+The heavy neural providers (Qwen3-TTS, Chatterbox, and future OmniVoice/Voxtral) are
+large and best run on the host RTX 2000 Ada (8 GB), which is NOT yet plumbed into the
+brain container; until it is, only the CPU-tractable engines (Kokoro/Piper for English,
+teldutala.fo for Faroese) are guaranteed operable. Provider availability MUST be gated on
+BOTH model presence (REQ-V-G-001) AND runtime reachability (incl. GPU where required,
+REQ-V-I-003), and the absence of the GPU MUST degrade to the CPU engines, never crash.
+The model weights live under `BRAIN_TTS_MODELS_DIR` (default `/mnt/f/gsr-models`, a WSL
+mount of Windows F:) — a heavy, possibly-slow, possibly-detached NTFS mount (HF symlinks
+disabled) whose absence is treated as "provider not present," not an error.
+
+### NFR-V-9 — Uniform render contract across providers (Ubiquitous) — Priority High
+Every provider — Kokoro, Piper, teldutala.fo, and every new engine (Chatterbox, Qwen3-TTS,
+future OmniVoice/Voxtral) — MUST produce its on-air audio through the single
+`produce_talk_clip` loudnorm→MP3 pipeline (brain/voice.py:334, target -16 LUFS /
+-1.5 dBTP), so that switching or A/B-comparing providers changes ONLY voice naturalness,
+never loudness or container format. No provider may add a parallel encode/normalize path.
+
 ---
 
-## 13. Exclusions (What NOT to Build)
+## 16. Exclusions (What NOT to Build)
 
 [HARD] This SPEC explicitly excludes the following from the voice layer:
 
@@ -1234,10 +1720,24 @@ missed or broken talk segment after the fact (feeds REQ-V-C-007).
   persona model, not a separate store.
 - **Music-stream zero-gap re-engineering** — voice never adds a hard availability
   SLA; it only adds "skip talk, keep music" behavior.
+- **Automated naturalness scoring / auto-selection of the primary voice** (v0.5.0) —
+  the A/B winner is a HUMAN decision (REQ-V-I-002); no ML/audio metric picks the primary.
+- **Building OmniVoice/Voxtral in this pass** (v0.5.0) — specified as future-optional
+  only (REQ-V-G-006); no partial/stub OmniVoice/Voxtral code is written now.
+- **Downloading or managing model weights** (v0.5.0) — the operator supplies the ~33 GB
+  of neural weights under `BRAIN_TTS_MODELS_DIR`; this SPEC DETECTS presence and SELECTS,
+  it does not fetch, mirror, or manage the models.
+- **Re-engineering the render/loudnorm pipeline** (v0.5.0) — new providers plug into the
+  existing `produce_talk_clip`; no parallel encode/normalize path (NFR-V-9).
+- **Changing the on-air talk cadence, ducking, script generation, or callers** (v0.5.0) —
+  Groups V-B/V-C and all `produce_talk_clip` callers are UNCHANGED; multi-provider is a
+  provider-layer change only.
+- **An `/api/tts` HTTP endpoint** (v0.5.0) — the test surface is a CLI + a run.sh action
+  (Group V-H); no new HTTP route is added to the brain.
 
 ---
 
-## 14. Open Questions / Risks
+## 17. Open Questions / Risks
 
 - **R-V-1 — teldutala.fo / Acapela (RESOLVED, residual Low).** RESOLVED: the
   earlier "JWT-gated / login / ToS-blocked / API-unconfirmed" finding was WRONG (it
@@ -1300,10 +1800,33 @@ missed or broken talk segment after the fact (feeds REQ-V-C-007).
   multi-speaker Piper models (e.g. `en_US-libritts_r-medium`, 904 speakers) require
   pinning a specific `--speaker` id (REQ-V-A-003 / constraints). Kokoro (Apache-2.0)
   has no such per-voice license ambiguity.
+- **R-V-10 — GPU-in-Docker not yet wired (Medium).** The heavy engines (Qwen/Chatterbox/
+  OmniVoice/Voxtral) want the host RTX 2000 Ada 8 GB inside the brain container; it is not
+  plumbed in yet. Until then the A/B and heavy providers are limited to what runs on CPU
+  (slow) or are skipped (NFR-V-8, REQ-V-I-003). Capped by the CPU-engine (Kokoro/Piper)
+  fallback — the station is never left without a voice.
+- **R-V-11 — /mnt/f (WSL → Windows F:) mount reliability + capacity (Medium).** The model
+  weights (~33 GB) live on an NTFS WSL mount that can be slow, detached, or nearly full,
+  with HF symlinks disabled on NTFS. Presence detection MUST treat an absent/detached mount
+  as "provider not present," not an error (REQ-V-G-001, NFR-V-8). `/mnt/f/gsr-models/hf`
+  is empty and is not a model source. Open: whether to also support a Linux-native model
+  root (e.g. copy the winning engine into the image / a Docker volume) once the A/B picks a
+  primary — a deployment-footprint decision.
+- **R-V-12 — Voxtral / OmniVoice loading format (Low/Medium, deferred).** Voxtral uses the
+  Mistral/tekken `consolidated.safetensors` (~8 GB) + a `voice_embedding/` speaker dir and
+  needs mistral-inference-style loading (NOT plain HF `from_pretrained`); OmniVoice is
+  HF-transformers (~2.45 GB). Deferred to REQ-V-G-006; the format caveats are recorded so a
+  future pass does not rediscover them.
+- **R-V-13 — Naturalness is subjective + operator-in-the-loop (Low, by design).** The A/B
+  outcome depends on the operator's ear (operator lean: Qwen-TTS is the frontrunner
+  hypothesis, to be confirmed by ear AND a GPU-speed test, NOT asserted pre-test). This is
+  intentional (REQ-V-I-002), not a defect; the harness prepares identical-content clips and
+  records the human pick. Open: how many providers to compare per round before listener
+  fatigue skews the judgment.
 
 ---
 
-## 15. Out-of-Scope / Future SPEC Roadmap
+## 18. Out-of-Scope / Future SPEC Roadmap
 
 - **SPEC-RADIO-CALLIN-003 — Live listener call-in (NEXT SPEC).** The full
   subsystem: telephony/VoIP, realtime speech-to-text of callers, two-way host↔
@@ -1323,7 +1846,7 @@ missed or broken talk segment after the fact (feeds REQ-V-C-007).
 
 ---
 
-## 16. Traceability Index
+## 19. Traceability Index
 
 1:1 REQ ↔ AC mapping (each requirement has exactly one acceptance entry in
 acceptance.md; detailed Given-When-Then scenarios for the key requirements are in
@@ -1370,7 +1893,24 @@ acceptance.md).
 | REQ-V-E-003 | Per-Persona Voice Assignment | High | Event | AC-V-E-003 |
 | REQ-V-E-004 | Per-Persona Voice Assignment | Medium | State | AC-V-E-004 |
 | REQ-V-E-005 | Per-Persona Voice Assignment | Medium | Optional | AC-V-E-005 |
+| REQ-V-E-006 | Per-Persona Voice Assignment | Medium | Ubiquitous | AC-V-E-006 |
 | REQ-V-F-001 | Call-In Integration Seam | Medium | Ubiquitous | AC-V-F-001 |
+| REQ-V-G-001 | Local Neural-Model Discovery & New Providers | High | State | AC-V-G-001 |
+| REQ-V-G-002 | Local Neural-Model Discovery & New Providers | Medium | Optional | AC-V-G-002 |
+| REQ-V-G-003 | Local Neural-Model Discovery & New Providers | Medium | Optional | AC-V-G-003 |
+| REQ-V-G-004 | Local Neural-Model Discovery & New Providers | High | Unwanted | AC-V-G-004 |
+| REQ-V-G-005 | Local Neural-Model Discovery & New Providers | High | Event | AC-V-G-005 |
+| REQ-V-G-006 | Local Neural-Model Discovery & New Providers | Low | Optional | AC-V-G-006 |
+| REQ-V-H-001 | Operator Selection & Test Surface | Medium | Event | AC-V-H-001 |
+| REQ-V-H-002 | Operator Selection & Test Surface | High | Ubiquitous | AC-V-H-002 |
+| REQ-V-H-003 | Operator Selection & Test Surface | Medium | Event | AC-V-H-003 |
+| REQ-V-H-004 | Operator Selection & Test Surface | Medium | Event | AC-V-H-004 |
+| REQ-V-H-005 | Operator Selection & Test Surface | Medium | Ubiquitous | AC-V-H-005 |
+| REQ-V-H-006 | Operator Selection & Test Surface | Medium | Event | AC-V-H-006 |
+| REQ-V-H-007 | Operator Selection & Test Surface | High | Unwanted | AC-V-H-007 |
+| REQ-V-I-001 | Naturalness A/B Evaluation | Medium | Event | AC-V-I-001 |
+| REQ-V-I-002 | Naturalness A/B Evaluation | Medium | Event | AC-V-I-002 |
+| REQ-V-I-003 | Naturalness A/B Evaluation | Medium | State | AC-V-I-003 |
 | NFR-V-1 | Non-Functional | High | Ubiquitous | AC-NFR-V-1 |
 | NFR-V-2 | Non-Functional | High | Ubiquitous | AC-NFR-V-2 |
 | NFR-V-3 | Non-Functional | High | Ubiquitous | AC-NFR-V-3 |
@@ -1378,3 +1918,5 @@ acceptance.md).
 | NFR-V-5 | Non-Functional | Medium | Ubiquitous | AC-NFR-V-5 |
 | NFR-V-6 | Non-Functional | Medium | Ubiquitous | AC-NFR-V-6 |
 | NFR-V-7 | Non-Functional | Medium | Ubiquitous | AC-NFR-V-7 |
+| NFR-V-8 | Non-Functional | Medium | Ubiquitous | AC-NFR-V-8 |
+| NFR-V-9 | Non-Functional | High | Ubiquitous | AC-NFR-V-9 |

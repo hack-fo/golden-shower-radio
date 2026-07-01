@@ -1,10 +1,10 @@
 ---
 id: SPEC-RADIO-VOICE-002
 type: plan
-version: 0.1.0
+version: 0.5.0
 status: draft
 created: 2026-06-22
-updated: 2026-06-22
+updated: 2026-07-01
 author: charlie
 ---
 
@@ -299,3 +299,107 @@ Covers REQ-V-C-007, REQ-V-F-001, NFR-V-6.
 Full call-in subsystem (SPEC-RADIO-CALLIN-003), any STT, languages beyond
 English/Faroese, re-specifying core subsystems, monetized talk, canned scripts, a
 parallel persona store, and music-stream zero-gap re-engineering.
+
+## 7. v0.5.0 — Multi-Provider TTS Extension (as-built plan for Groups V-G/V-H/V-I)
+
+### 7.0 As-built correction (supersedes Section 1.1's "Go daemon" wording)
+
+Sections 1–5 above were written pre-implementation and describe a "Go daemon." The
+voice layer is IMPLEMENTED in the Python "brain." The v0.5.0 groups therefore bind to the
+real Python seams (spec.md Section 2.2), NOT to a Go interface:
+
+- `TTSProvider` protocol — `brain/voice.py:64` (`synthesize_wav(text, out_wav_path) ->
+  bool`, `.name`, `.language`).
+- `KokoroProvider` `brain/voice.py:155` (built by `_build_kokoro` :254); `PiperProvider`
+  `brain/voice.py:75` (built by `_build_piper` :260).
+- `make_provider(cfg)` factory — `brain/voice.py:275` (`@MX:ANCHOR` at :268); Kokoro→Piper
+  auto-fallback at :292-300; unknown name → `voice.provider_unknown` → Kokoro chain.
+- `produce_talk_clip(cfg, provider, text)` — `brain/voice.py:334` (shared render +
+  loudnorm -16 LUFS / -1.5 dBTP → MP3), reused by talk.py:194/216, news.py:658,
+  imaging.py:258, main.py.
+- `Config.tts_provider` from `BRAIN_TTS_PROVIDER` (default `kokoro`) — `brain/config.py:98`;
+  voice knobs `BRAIN_KOKORO_VOICE`/`BRAIN_KOKORO_LANG`/`BRAIN_PIPER_VOICE`/
+  `BRAIN_PIPER_DATA_DIR`.
+- run.sh wizard `_first_time_setup` (~line 340) → `wizard_vpn_prompt` (:403) → `_set_env_var`
+  (:709); `main()` (:1408) is flag-only, so `tts-test` adds a new `parse_args`/`main`
+  dispatch that short-circuits before `compose_up`.
+
+### 7.1 Milestone M8 — Model discovery + graceful degradation (Priority High)
+Covers REQ-V-G-001/004/005, NFR-V-8/9.
+- Add `BRAIN_TTS_MODELS_DIR` (default `/mnt/f/gsr-models`) to `Config` (config.py:98);
+  add a filesystem-only presence check per provider (no model load).
+- Extend `make_provider` (voice.py:275) to recognize `chatterbox`/`qwen` while preserving
+  unknown→house-default and the Kokoro→Piper startup fallback chain; keep the single
+  `voice.provider_active` log line.
+- Exit: naming an absent/mount-detached provider degrades to an available engine at startup
+  without a crash; unknown values still fall through to Kokoro→Piper; no caller changes.
+
+### 7.2 Milestone M9 — ChatterboxProvider + Qwen3-TTS provider (Priority Medium)
+Covers REQ-V-G-002/003, REQ-V-A-009 (descriptor fields), NFR-V-9.
+- Implement `ChatterboxProvider` (name "chatterbox", 22050 Hz; zero-shot clone `conds`
+  configured) and `QwenTTSProvider` (name "qwen", 24000 Hz; standard safetensors + shared
+  12 Hz tokenizer), each behind voice.py:64, returning False (never raising) on failure and
+  writing a WAV consumed by produce_talk_clip. Set up Qwen FIRST (operator lean).
+- Declare each engine's REQ-V-A-009 capability descriptor (chunk tokens, native sample rate,
+  silence capability, seed, optional ASR hook).
+- Exit: `python -m brain.voice --provider chatterbox|qwen` renders a loudness-matched MP3
+  through the shared pipeline; missing deps/models degrade gracefully.
+
+### 7.3 Milestone M10 — Operator surface: CLI + run.sh wizard + tts-test + hardware-fit (Priority High for CLI)
+Covers REQ-V-H-001/002/003/004/005/006/007, REQ-V-E-006, NFR-V-8.
+- Add a `python -m brain.voice` `__main__` (argparse: `--provider`, `--text`, `--out`)
+  reusing make_provider + produce_talk_clip; exit 0 on a clip, non-zero on failure, no
+  traceback, no live-stream/schedule/persona touch.
+- Add a run.sh hardware probe: parse `nvidia-smi --query-gpu=name,memory.total
+  --format=csv,noheader` for GPU + VRAM, AND separately detect whether the GPU is reachable
+  from Docker (nvidia-container-toolkit / `docker run --gpus`); report BOTH, degrade to
+  "CPU-only" when nvidia-smi is absent. KNOWN FACT: this host has an RTX 2000 Ada (8 GB) NOT
+  yet plumbed into Docker → host-present but container-CPU-only must be reported distinctly.
+- Add an extensible per-model VRAM/compute table (Piper CPU-tiny, Kokoro small/CPU-viable,
+  Qwen 0.6B small-GPU, Qwen 1.7B larger-GPU, Chatterbox moderate-GPU, Voxtral ~8 GB large-GPU,
+  OmniVoice ~2.5 GB) compared against the detected container-usable VRAM.
+- Add a run.sh TTS wizard function mirroring `wizard_vpn_prompt`, called from
+  `_first_time_setup`: list detected providers, MARK each fits/too-heavy/CPU-only, default the
+  cursor to the fit-based recommendation (best engine within VRAM headroom, else Kokoro/Piper),
+  and persist `BRAIN_TTS_PROVIDER` (+voice) via `_set_env_var`; no weight download in the
+  wizard; [HARD] warn + require explicit override before persisting an unloadable pick, with
+  the runtime Kokoro→Piper fallback (M8) as the safety net.
+- Add a `tts-test` action to `parse_args`/`main` (+ `usage`) that renders + plays a sample
+  and short-circuits before `compose_up`.
+- REQ-V-E-006: document the palette→cast relationship; new-provider voices become selectable
+  via the per-persona voice profile config with no persona-model code change (the 1:1
+  firewall is owned by PROGRAMMING-007 / the host roster, not touched here).
+- Exit: operator can probe hardware, get a fit-based recommendation, choose, hear, and persist
+  a provider without editing files; an over-capacity pick is warned (not silently accepted).
+
+### 7.4 Milestone M11 — Naturalness A/B harness (Priority Medium)
+Covers REQ-V-I-001/002/003, NFR-V-8/9.
+- Render one script across the available providers into labeled clips (all via
+  produce_talk_clip); skip unavailable/failing providers with a logged reason without
+  aborting the batch; intersect the set with on-disk presence + GPU reachability.
+- Record the operator's pick as `BRAIN_TTS_PROVIDER` (+voice) / an A/B result record; NO
+  automated naturalness scoring selects the winner.
+- Exit: operator compares identical-content clips and locks a primary; with the GPU not yet
+  in Docker, the A/B runs on CPU engines and records why heavy engines were skipped.
+
+### 7.5 Sequencing (v0.5.0)
+- M8 → M9 → M10 → M11 is the critical path (discovery+factory → engines → operator surface →
+  A/B). M8 is the safety spine; M9's engines plug into it; M10's CLI is the prerequisite for
+  M11's A/B.
+- Hard dependency (external, not blocking the CPU path): the RTX 2000 Ada plumbed into the
+  brain container unlocks heavy-engine speed; until then M9/M11 run CPU-limited or skip heavy
+  engines (spec.md R-V-10, NFR-V-8). OmniVoice/Voxtral (REQ-V-G-006) are deferred, not built.
+
+### 7.6 v0.5.0 Assumptions (surfaced for confirmation)
+1. The operator supplies + maintains the model weights under `BRAIN_TTS_MODELS_DIR`; the
+   SPEC detects and selects, it does not download/manage the ~33 GB (spec.md R-V-11).
+2. Chatterbox (chatterbox-tts/torch) and Qwen3-TTS (transformers/torch) runtimes can be
+   installed into the brain image without breaking the Piper-only import path (voice.py must
+   still import with neither torch nor the neural deps present — mirrors Kokoro's deferred
+   imports).
+3. Naturalness is decided by the operator by ear (+ a GPU-speed check); Qwen is the
+   frontrunner hypothesis, not asserted pre-test (spec.md R-V-13).
+4. Adding a Linux-native model root / baking the A/B winner into the image is a later
+   deployment-footprint decision, out of scope for this pass (spec.md R-V-11).
+
+→ Correct these now or implementation will proceed on them.
