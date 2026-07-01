@@ -148,6 +148,7 @@ def run() -> int:
     od_ledger = None
     od_diary = None
     od_show_store = None
+    playbook = None
     if cfg.ledger_enabled:
         try:
             from .sqlite_store import LedgerStore
@@ -166,7 +167,7 @@ def run() -> int:
             log_event(log, "main.ledger_ready", events=od_ledger.count())
         except Exception as exc:  # noqa: BLE001 - the ledger is best-effort, never fatal to boot
             log_event(log, "main.ledger_init_failed", error=str(exc))
-            od_ledger = od_diary = od_show_store = None
+            od_ledger = od_diary = od_show_store = playbook = None
     # OPS-004 Group OX (REQ-OX-001/005): the topic-bank inventory — a VIEW over the ONE OD-007
     # ledger. [HARD] OFF by default + best-effort: built ONLY when topic_bank_enabled AND a live
     # ledger exist; otherwise None and the director consults nothing (byte-identical). It never
