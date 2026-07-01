@@ -58,13 +58,13 @@ let _ = harbor.http.register(
   port=7138,
   method="POST",
   "/api/skip_cmd",
-  fun(_request) ->
+  fun(_request, response) ->
     begin
-      source.skip(source)
+      source.skip()
       log("skip: forceful skip command received — advancing gsr source")
-      {status_code=200,
-       headers=[("Content-Type", "text/plain")],
-       data="ok"}
+      response.status_code(200)
+      response.content_type("text/plain")
+      response.data("ok")
     end
 )
 
@@ -160,28 +160,66 @@ end
 radio.on_metadata(report_airing)
 radio = mksafe(radio)
 
-# Fold the album (from id3 tags) into the player-facing ICY StreamTitle when present, so
-# listeners' players show "Artist - Title — Album". This runs AFTER report_airing, which
-# already captured the CLEAN artist/title/album separately for the brain/website — so this
-# rewrite is player-only and never pollutes the website's discrete fields. Empty-safe:
-# an untagged track (or a talk break, album="") leaves the title untouched.
+# --- Two output mounts from ONE source: compatibility vs. rich metadata ----------
+#   /radio      MP3 320  — universal compatibility (Safari/iOS, hardware, cars).
+#                          ICY metadata carries ONLY StreamTitle + StreamUrl (there is
+#                          NO album field in the ICY protocol), and Liquidsoap 2.2.5
+#                          escapes non-ASCII in ICY to HTML entities — so this mount
+#                          folds the album INTO an ASCII StreamTitle (see fold_album).
+#   /radio.ogg  Vorbis    — Ogg carries DISCRETE Vorbis comments (artist/title/ALBUM/…)
+#                          in native UTF-8, so capable players (foobar2000, VLC, mpv,
+#                          Chrome, Firefox) get a real Album column plus correct "—"
+#                          and accented characters. No title fold on this mount.
+# `radio` (above) is the shared base with DISCRETE metadata. The Ogg mount consumes it
+# as-is; only the MP3 branch (radio_mp3) folds album into the title.
+
+# Fold the album into the MP3 mount's ICY StreamTitle when present, so MP3 listeners still
+# see the album as "Artist - Title (Album)". Runs AFTER report_airing (which already
+# captured CLEAN artist/title/album for the brain/website) and is applied ONLY to the MP3
+# branch. Empty-safe: an untagged track (or a talk break, album="") leaves title untouched.
+#
+# [HARD] ASCII-ONLY separator. Liquidsoap 2.2.x escapes every non-ASCII codepoint in the
+# ICY StreamTitle to an HTML numeric entity (e.g. an em dash "—" reaches foobar2000 as the
+# literal text "&#8212;"). Proven on the wire: encoding="UTF-8" does NOT change this — the
+# ICY metadata-update path is charset-fixed in 2.2.5. So the separator WE inject must stay
+# pure ASCII. Parentheses read cleanly and stay unambiguous vs the "artist - title" hyphen.
+# (The Ogg mount has NO such limit — Vorbis comments are UTF-8, so it carries the album in
+# its own field with the real characters intact.)
 def fold_album(m) =
   album = m["album"]
   title = m["title"]
   if album != "" and title != "" then
-    [("title", "#{title} — #{album}")]
+    [("title", "#{title} (#{album})")]
   else
     []
   end
 end
-radio = metadata.map(fold_album, radio)
+radio_mp3 = metadata.map(fold_album, radio)
 
+# MP3 mount — universal compatibility. Album folded into the ASCII StreamTitle.
 output.icecast(
   %mp3(bitrate=320),
   host="icecast",
   port=8000,
   password=environment.get("ICECAST_SOURCE_PASSWORD"),
   mount="/radio",
+  name=environment.get("STATION_NAME"),
+  description="Autonomous AI radio that finds, downloads and spins its own music 24/7",
+  genre="Eclectic",
+  radio_mp3
+)
+
+# Ogg Vorbis mount — discrete UTF-8 metadata (native Album column, real "—"/accents) for
+# capable players. VBR quality=0.6 ≈ ~192 kbps: more bandwidth-efficient than the 320 MP3
+# at comparable perceived quality (tunable). Uses the base `radio` source (album NOT folded
+# into title — it rides in its own Vorbis comment). Not played by Safari/iOS; the website
+# feature-detects and only serves this mount to Ogg-capable clients.
+output.icecast(
+  %vorbis(quality=0.6),
+  host="icecast",
+  port=8000,
+  password=environment.get("ICECAST_SOURCE_PASSWORD"),
+  mount="/radio.ogg",
   name=environment.get("STATION_NAME"),
   description="Autonomous AI radio that finds, downloads and spins its own music 24/7",
   genre="Eclectic",

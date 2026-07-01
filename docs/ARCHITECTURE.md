@@ -200,7 +200,7 @@ Every expensive operation runs on its own daemon thread:
 - **talk director** → LLM script + TTS + ffmpeg loudnorm, pre-rendering into a one-slot buffer
 - **research worker** → fills the knowledge base (bounded batch, pauses during downloads)
 
-**Deep dives:** [Runtime / Config](components/runtime-config.md) · [Playout](components/playout.md) · [Curation Director](components/curation-director.md) · [Acquisition](components/acquisition.md) · [Library + Ingestion](components/library-ingestion.md) · [Analysis](components/analysis.md) · [Enrichment](components/enrichment.md) · [Voice + Talk](components/voice-talk.md) · [Knowledge + Research](components/knowledge-research.md) · [Website](components/website.md) · [Persistence](components/persistence.md)
+**Deep dives:** [Runtime / Config](components/runtime-config.md) · [Playout](components/playout.md) · [Curation Director](components/curation-director.md) · [Acquisition](components/acquisition.md) · [Library + Ingestion](components/library-ingestion.md) · [Analysis](components/analysis.md) · [Enrichment](components/enrichment.md) · [Voice + Talk](components/voice-talk.md) · [Knowledge + Research](components/knowledge-research.md) · [Weekly Lineup](components/lineup.md) · [Website](components/website.md) · [Persistence](components/persistence.md)
 
 ---
 
@@ -216,7 +216,7 @@ designed but not yet implemented are listed in the Roadmap section below.
 | SPEC | One-line summary | Status |
 |------|------------------|--------|
 | **CORE-001** | The v1 engine: library + autonomous acquisition (slskd/yt-dlp) + 24/7 pull-based playout (Liquidsoap + Icecast) + LLM program-director curation loop + self-controlled website. Establishes the Creative Autonomy Principle. | **Built** |
-| **VOICE-002** | The on-air host voice layer: pluggable TTS (Kokoro/Piper English; Faroese planned), LLM-authored talk links, loudness-matched clips, clean live transitions. Per-persona voice assignment planned. | **Built** (English; Faroese: planned) |
+| **VOICE-002** | The on-air host voice layer: pluggable TTS (Kokoro/Piper English; Faroese planned), LLM-authored talk links, loudness-matched clips, clean live transitions. Per-persona voice assignment planned. A v0.5.0 extension (multi-provider local TTS discovery, GPU probe, naturalness A/B) is designed (see Roadmap) but not yet implemented. | **Built** (English; Faroese: planned; v0.5.0 extension: designed) |
 | **ANALYSIS-006** | Track-intelligence substrate: offline CPU audio engine + per-track data model (BPM/key/energy/cue/beat-grid), metadata enrichment with consensus, library auto-ingest scan, per-item `annotate:` transition metadata. | **Built** |
 | **KNOWLEDGE-008** | Editorial-knowledge layer: dated, sourced artist/band knowledge in a relational SQLite store (knowledge.db), continuous research jobs, knowledge graph, grounding feed for the host voice. | **Built** |
 | **ENRICH-012** | Core-identity tag enrichment: AcoustID fingerprint (fpcalc) → AcoustID API → MusicBrainz identification; text-match fallback; filename-corroboration cross-check; mutagen tag write-back (artist/title/album/year/genre, cover-art-preserving); `enrich_version` idempotency gate; background `EnrichmentWorker` backfill; on-download hook. | **Built** |
@@ -255,6 +255,10 @@ source for each is `.moai/specs/SPEC-RADIO-<ID>/spec.md`.
 | **ALBUMART-021** | Embed Cover Art Archive front covers. | Designed |
 | **LOOKUPLOG-023** | Identification-lookup ledger. | Designed |
 | **FILENAME-024** | Filename ↔ ID3 consistency (detect + flag; opt-in rename). | Designed |
+| **YTREPLACE-057** | YouTube-sourced title cleanup (strip "Official Audio"/"HD"/etc. noise) with provenance tracking and an occasional slskd quality-replacement worker for `source=ytdlp` tracks. | Designed |
+| **VOICEAPI-058** | Hosted/API TTS survey (cloud voice-cloning providers) behind the existing VOICE-002 seam. Local Kokoro/Piper remains the default; nothing configured/enabled. | Designed |
+| **AUTOBRAND-059** | LLM-generated website color palette and wordmark logo from the station name, with a WCAG-AA contrast gate and deterministic fallback. | Designed |
+| **LIVEMIX-060** | Soft density cap on live-version tracks in the playout re-rank (not the acquisition re-rank), relaxed when the show theme is explicitly live-music. | Designed |
 
 ---
 

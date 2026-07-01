@@ -241,11 +241,16 @@ class TestAcSc004_LiquidSoapCheck:
 
 class TestAcSc005_GraphInjectionPoint:
     def test_radio_liq_uses_pre_cross_source_skip(self):
-        """Decision D-1 result: harbor skip uses source.skip(source) on the PRE-cross gsr source."""
+        """Decision D-1 result: harbor skip calls source.skip() on the PRE-cross gsr source.
+
+        Liquidsoap 2.2.x: skip is a METHOD on the source object (`s.skip()`), taking no
+        unlabeled argument. The variable is named `source`, so the call is `source.skip()`.
+        The old `source.skip(source)` form crashes with "no unlabeled argument".
+        """
         with open(RADIO_LIQ) as f:
             content = f.read()
-        # The harbor handler calls source.skip(source) where source is the pre-cross dynamic list
-        assert "source.skip(source)" in content
+        # The harbor handler calls source.skip() where `source` is the pre-cross dynamic list
+        assert "source.skip()" in content
 
     def test_radio_liq_harbor_registered_before_cross(self):
         """harbor.http.register block must appear after request.dynamic.list but before cross()."""

@@ -198,8 +198,8 @@ ENVFILE
     printf '  slskd API key: '
     read -rs slskd_key || slskd_key=""
     printf '\n'
-    [[ -n "$slskd_user" ]] && _set_env_var "SLSKD_USERNAME" "$slskd_user"
-    [[ -n "$slskd_pw"   ]] && { _set_env_var "SLSKD_PASSWORD" "$slskd_pw"; unset slskd_pw; }
+    [[ -n "$slskd_user" ]] && _set_env_var "SLSKD_SLSK_USERNAME" "$slskd_user"
+    [[ -n "$slskd_pw"   ]] && { _set_env_var "SLSKD_SLSK_PASSWORD" "$slskd_pw"; unset slskd_pw; }
     [[ -n "$slskd_key"  ]] && { _set_env_var "SLSKD_API_KEY"  "$slskd_key"; unset slskd_key; }
   fi
 

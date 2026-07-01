@@ -128,8 +128,8 @@ THEN  secrets/.env exists
 AND   STATION_NAME=My Station
 AND   ICECAST_SOURCE_PASSWORD is set (value not in stdout log)
 AND   BRAIN_LLM_AUTH=oauth
-AND   SLSKD_USERNAME=myuser
-AND   SLSKD_PASSWORD is set (value not in stdout log)
+AND   SLSKD_SLSK_USERNAME=myuser
+AND   SLSKD_SLSK_PASSWORD is set (value not in stdout log)
 AND   SLSKD_API_KEY is set (value not in stdout log)
 AND   ACOUSTID_API_KEY is set
 AND   LASTFM_API_KEY absent (empty Enter was supplied)

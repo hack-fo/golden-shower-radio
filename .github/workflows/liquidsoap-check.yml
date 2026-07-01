@@ -1,0 +1,78 @@
+# CI: static-check every Liquidsoap config with `liquidsoap --check`.
+#
+# Why this exists: SKIP-028 shipped a radio.liq that crash-looped on boot
+# (two Liquidsoap 2.2.5 API mismatches), taking the whole stream down —
+# Icecast served "Object not found" to every listener. It escaped because
+# the in-repo pytest guard (test_radio_liq_passes_liquidsoap_check) is
+# skipif-gated on the `liquidsoap` binary being on PATH, and the host/CI
+# has none (it only lives in the Docker image). This job closes that gap:
+# it runs the real `--check` inside the SAME pinned image the stack deploys,
+# so a .liq syntax/type error can never reach a listener again.
+#
+# The check is proven bidirectional: it exits 0 on the corrected radio.liq
+# and exits 1 on the original `source.skip(source)` / record-return handler.
+name: liquidsoap-check
+
+on:
+  push:
+  pull_request:
+
+# Least privilege: this job only needs to read the repo.
+permissions:
+  contents: read
+
+# A newer push to the same ref supersedes an in-flight run.
+concurrency:
+  group: liquidsoap-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Single source of truth for the version: read the pinned tag straight
+      # from the compose file the stack actually deploys, so CI can never
+      # drift onto a different Liquidsoap than production.
+      - name: Resolve pinned Liquidsoap image from docker-compose
+        id: img
+        run: |
+          set -euo pipefail
+          image="$(grep -oE 'savonet/liquidsoap:[^"[:space:]]+' deploy/docker-compose.yml | head -1)"
+          if [ -z "$image" ]; then
+            echo "::error::Could not find a savonet/liquidsoap:<tag> image in deploy/docker-compose.yml"
+            exit 1
+          fi
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "Using pinned image: $image"
+
+      - name: liquidsoap --check every deploy/config/*.liq
+        env:
+          IMAGE: ${{ steps.img.outputs.image }}
+        run: |
+          set -uo pipefail
+          shopt -s nullglob
+          files=(deploy/config/*.liq)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::No .liq configs found under deploy/config/ — nothing to check"
+            exit 1
+          fi
+          rc=0
+          for f in "${files[@]}"; do
+            echo "::group::liquidsoap --check $f"
+            # Mount the config read-only and run the image's own `liquidsoap`
+            # binary with --check (parse + type-check only; no streaming, no
+            # network, no env needed — the script reads config via
+            # environment.get(), which returns "" when unset).
+            if docker run --rm --entrypoint liquidsoap \
+                 -v "$PWD/$f:/check.liq:ro" \
+                 "$IMAGE" --check /check.liq; then
+              echo "OK: $f"
+            else
+              echo "::error file=$f::liquidsoap --check failed for $f"
+              rc=1
+            fi
+            echo "::endgroup::"
+          done
+          exit "$rc"

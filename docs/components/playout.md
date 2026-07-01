@@ -74,7 +74,39 @@ end
 fires in lockstep with what the listener hears.
 
 The ICY `StreamTitle` includes album when present:
-`Artist - Title (Album)` if album is non-empty, `Artist - Title` otherwise.
+`Artist - Title (Album)` if album is non-empty, `Artist - Title` otherwise. The
+separator is a plain ASCII `(...)`, not an em dash — see **Two output mounts**
+below for why.
+
+### Two output mounts from one source (`/radio` MP3 + `/radio.ogg` Vorbis)
+
+`radio.liq` feeds the same `radio` source into two `output.icecast` mounts:
+
+| Mount | Codec | Metadata | Audience |
+|---|---|---|---|
+| `/radio` | MP3 320 kbps | Folded ASCII `StreamTitle`: `Artist - Title (Album)` | Universal — Safari/iOS, hardware players, cars |
+| `/radio.ogg` | Vorbis, `quality=0.6` (~192 kbps VBR) | Discrete Vorbis comments (`artist=`/`title=`/`album=`/…) in native UTF-8 | Codec-capable players — foobar2000, VLC, mpv, Chrome, Firefox |
+
+Both mounts share `password`, `host`, `port`, `name`, `description`, and `genre`
+from the same env vars; only the encoder and the metadata shape differ. The Ogg
+mount carries `radio` (discrete metadata) unmodified — `fold_album` is applied
+**only** to the branch feeding `/radio` (`radio_mp3 = metadata.map(fold_album,
+radio)`).
+
+Why two mounts: ICY (the MP3 protocol) has no album field — only `StreamTitle` +
+`StreamUrl` — so the MP3 mount folds album into the title. Ogg Vorbis carries
+discrete comments, so a capable player shows a real Album column with correct
+non-ASCII characters. The website (`brain/website.py`) feature-detects
+(`canPlayType('audio/ogg; codecs="vorbis"')`) and serves `/radio.ogg` to capable
+browsers, falling back to `/radio` for Safari/iOS — see
+[Website](website.md#stream-selection-ogg-vs-mp3).
+
+**`ci/liquidsoap-check`** (`.github/workflows/liquidsoap-check.yml`) runs
+`liquidsoap --check` against every `deploy/config/*.liq` file inside the same
+pinned `savonet/liquidsoap` image the stack deploys (the tag is read straight
+from `deploy/docker-compose.yml`, so CI can never drift off production). It
+runs on every push and PR and closes the gap where a `.liq` syntax/type error
+could previously only be caught by a human watching the container crash-loop.
 
 ### First-run welcome
 
@@ -138,6 +170,8 @@ The split is essential: with `prefetch=2`, the committed item is up to two track
 | `ICECAST_SOURCE_PASSWORD` | env | required | Icecast source password |
 | `STATION_NAME` | env | required | ICY stream name |
 | `recent_window=20` | `StationState.__init__` | 20 | Size of aired history ring for no-repeat |
+| `mount="/radio"` | `radio.liq` | hard-coded | MP3 320 kbps mount, folded ASCII `StreamTitle` |
+| `mount="/radio.ogg"` | `radio.liq` | hard-coded | Vorbis `quality=0.6` mount, discrete UTF-8 comments |
 
 ---
 
@@ -151,12 +185,14 @@ The split is essential: with `prefetch=2`, the committed item is up to two track
 - **Welcome clip is first-in-queue.** When `BRAIN_WELCOME_ENABLED=1` the very first `/api/next` response is the welcome clip, not a song. Subsequent `/api/next` calls operate normally.
 - **Album in ICY StreamTitle.** `_annotate_uri` includes `album` in the annotate string; the Liquidsoap `StreamTitle` format string renders `Artist - Title (Album)` when album is non-empty.
 - **Empty 200 from `/api/next` means "nothing ready, try again".** Liquidsoap's `retry_delay=2.0` handles this; the brain never crashes the streaming thread by returning a non-200 error.
+- **KNOWN ISSUE — the MP3 mount entity-escapes non-ASCII characters.** Liquidsoap 2.2.5's ICY `StreamTitle` update path is charset-fixed: `output.icecast(encoding="UTF-8")` does **not** change the wire bytes, and every non-ASCII codepoint is HTML-entity-escaped (verified on the wire — an em dash `—` arrived at foobar2000 as the literal text `&#8212;`). This is why the album fold uses ASCII parentheses (`(Album)`) instead of an em dash, and it is also why an accented artist or title (e.g. `Björk`, `Sigur Rós`) still shows up entity-escaped in MP3 players — that part is not fixed here. **Use the `/radio.ogg` mount for correct UTF-8** (Vorbis comments have no such limitation). The real cure for the MP3/ICY path is a Liquidsoap upgrade to 2.3+ (ICY metadata is UTF-8 there); `ci/liquidsoap-check` now guards `radio.liq` against API breaks, making that upgrade safer to attempt, but it has not been done yet.
 
 ---
 
 ## See Also
 
 - **SPEC-RADIO-CORE-001** (`.moai/specs/SPEC-RADIO-CORE-001/spec.md`) — Groups C (continuous playout) and E (annotate URI / ICY metadata). The SPEC is the authoritative requirements source; this document describes what is actually implemented today.
+- `.github/workflows/liquidsoap-check.yml` — CI job that runs `liquidsoap --check` on every `deploy/config/*.liq` file, in the same pinned image the stack deploys, on every push/PR.
 - **SPEC-RADIO-OPS-004** (`.moai/specs/SPEC-RADIO-OPS-004/spec.md`) — transition requirements and the per-kind crossfade design.
 - `brain/library.py` — `pick_next()` and `mark_played()` (rotation logic lives here).
 - `brain/voice.py` — `TalkDirector` that pre-renders clips and calls `StationState.set_pending_talk()`.

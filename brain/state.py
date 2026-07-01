@@ -155,7 +155,12 @@ class StationState:
             if cur is not None and cur.get("artist", "") == artist and cur.get("title", "") == title \
                     and cur.get("kind", "music") == kind:
                 return False  # same item already on air - no-op
-            if cur is not None:
+            # Only MUSIC enters the Recently Played history. Talk breaks report the STATION
+            # NAME as their title (icy_title = station_name for a host break), so letting them
+            # into _recent pollutes the music history the website shows (e.g. "What-What Radio?
+            # 30m ago"). now_playing still updates for talk (the live break is shown); it just
+            # never becomes a history row.
+            if cur is not None and cur.get("kind", "music") == "music":
                 self._recent.appendleft(
                     {
                         "artist": cur.get("artist", ""),
@@ -268,6 +273,23 @@ class StationState:
             if clip is not None:
                 self._songs_since_talk = 0
             return clip
+
+    def clear_pending_talk(self) -> bool:
+        """Drop a parked (non-welcome) talk clip so it is never served (SKIP-028 × talk).
+
+        A talk clip is written + rendered AHEAD of time and parked; its back-announce
+        names the track that had just played AT PREP TIME. A force-skip changes the
+        sequence, so airing that parked clip would name the wrong song. Dropping it makes
+        the host "talk less rather than ship a wrong fact" (talk.py) — the TalkDirector
+        re-prepares a correct clip on its next tick, because has_pending_talk() is now
+        False while the cadence counter (_songs_since_talk) is deliberately UNTOUCHED so
+        the break stays due. The one-shot first-run welcome is PRESERVED: a skip must not
+        eat it. Returns True iff a clip was actually dropped."""
+        with self._lock:
+            if self._pending_talk is None or self._pending_is_welcome:
+                return False
+            self._pending_talk = None
+            return True
 
     # -- first-run welcome (one-shot opening) ------------------------------------
 

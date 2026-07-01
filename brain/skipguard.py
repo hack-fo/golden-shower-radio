@@ -259,6 +259,20 @@ class SkipGovernor:
         # ACCEPTED: deliver to the control channel (only reachable path — REQ-SG-001).
         self._send_skip_command(airing)
 
+        # SKIP-028 × talk staleness: a skip changes the sequence any PARKED talk clip was
+        # written against, so its baked back-announce would name a track that did NOT just
+        # play. Drop it here (the governor is the single unbypassable chokepoint, so every
+        # skip — operator, vetting, health, director — invalidates it). The TalkDirector
+        # re-generates a correct clip on its next tick. Best-effort and exception-isolated:
+        # invalidation must NEVER break a skip (NFR-S-1 fails safe to keep playing). The
+        # one-shot welcome is preserved by clear_pending_talk() itself.
+        if self._state is not None:
+            try:
+                if self._state.clear_pending_talk():
+                    log_event(log, "skipguard.pending_talk_invalidated", airing=airing)
+            except Exception as exc:  # noqa: BLE001 - talk invalidation never breaks a skip
+                log_event(log, "skipguard.pending_talk_invalidate_error", error=str(exc))
+
         decision = SkipDecision(accepted=True, reason=reason,
                                 airing_path=airing, expect_path=expect_path,
                                 skip_count=skip_count)

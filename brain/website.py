@@ -94,13 +94,16 @@ def render_website(cfg: Config) -> str:
   audio {{ width: 100%; max-width: 660px; border-radius: 12px; }}
   .streamhint {{ color: var(--muted); font-size: 12px; word-break: break-all; text-align: center; }}
 
-  /* ---- decorative waveform ---- */
-  .wave {{ display: flex; gap: 5px; align-items: flex-end; height: 30px; }}
-  .wave span {{
-    width: 4px; height: 30%; border-radius: 3px;
-    background: linear-gradient(180deg, var(--gold), var(--gold-soft));
-    opacity: .85;
+  /* ---- album cover (real art; replaces the old decorative waveform) ---- */
+  .cover {{
+    width: 148px; height: 148px; margin: 4px auto 2px; border-radius: 16px;
+    overflow: hidden; background: var(--glass); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,.38);
   }}
+  .cover img {{ width: 100%; height: 100%; object-fit: cover; display: block; }}
+  .cover.empty img {{ display: none; }}
+  .cover.empty::after {{ content: "\\266A"; font-size: 46px; color: var(--gold-soft); opacity: .45; }}
 
   /* ---- now playing ---- */
   .now {{ transition: opacity .4s ease, transform .4s ease; }}
@@ -127,7 +130,7 @@ def render_website(cfg: Config) -> str:
   li:last-child {{ border-bottom: none; }}
   li:hover {{ background: rgba(245,197,66,.05); }}
   li .a {{ color: var(--ink); font-weight: 500; }}
-  li .b {{ color: var(--muted); font-size: 14px; text-align: right; flex-shrink: 0; }}
+  li .b {{ color: var(--muted); font-size: 13px; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; opacity: .7; }}
 
   .stats-row {{ display: flex; gap: 32px; flex-wrap: wrap; }}
   .stat {{ font-size: 38px; font-weight: 800; color: var(--gold); line-height: 1; }}
@@ -141,12 +144,6 @@ def render_website(cfg: Config) -> str:
   @media (prefers-reduced-motion: no-preference) {{
     .dot {{ animation: pulse 1.8s ease-out infinite; }}
     .dot::after {{ animation: ring 1.8s ease-out infinite; }}
-    .wave span {{ animation: bounce 1.1s ease-in-out infinite; }}
-    .wave span:nth-child(1) {{ animation-delay: 0s; }}
-    .wave span:nth-child(2) {{ animation-delay: .15s; }}
-    .wave span:nth-child(3) {{ animation-delay: .3s; }}
-    .wave span:nth-child(4) {{ animation-delay: .45s; }}
-    .wave span:nth-child(5) {{ animation-delay: .6s; }}
   }}
   @keyframes pulse {{
     0% {{ box-shadow: 0 0 0 0 rgba(245,197,66,.55); }}
@@ -176,7 +173,7 @@ def render_website(cfg: Config) -> str:
     <main>
       <section class="card player" aria-label="Live audio stream">
         <span class="live"><span class="dot"></span> Live</span>
-        <div class="wave" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+        <div class="cover empty" id="coverwrap" aria-hidden="true"><img id="cover" alt="" onerror="this.parentNode.classList.add('empty');this.removeAttribute('src')"/></div>
         <audio id="player" controls preload="none" aria-label="{name} live radio stream"></audio>
         <div class="streamhint" id="streamhint"></div>
       </section>
@@ -213,12 +210,31 @@ def render_website(cfg: Config) -> str:
 
 <script>
   // Stream from the same host the page is served from, on the icecast port.
-  var STREAM = "http://" + location.hostname + ":{port}{mount}";
+  // Feature-detect Ogg Vorbis (NOT iOS/Android UA sniffing, which is brittle and lies):
+  // capable browsers (Chrome/Firefox/Android) get the efficient /radio.ogg mount with
+  // discrete UTF-8 metadata; Safari/iOS and anything without Vorbis fall back to the
+  // universal MP3 mount. The .ogg mount mirrors radio.liq's second output.icecast.
+  var MP3_STREAM = "http://" + location.hostname + ":{port}{mount}";
+  var OGG_STREAM = MP3_STREAM + ".ogg";
   var player = document.getElementById("player");
+  var canOgg = !!(player.canPlayType && player.canPlayType('audio/ogg; codecs="vorbis"'));
+  var STREAM = canOgg ? OGG_STREAM : MP3_STREAM;
   player.src = STREAM;
-  document.getElementById("streamhint").textContent = STREAM;
+  document.getElementById("streamhint").textContent = STREAM + (canOgg ? "  (Ogg Vorbis)" : "  (MP3)");
 
   function esc(s) {{ var d = document.createElement("div"); d.textContent = s == null ? "" : s; return d.innerHTML; }}
+
+  // Relative "when did this play" for the Recently Played list, from the server-side
+  // played_at unix timestamp (seconds). Lets a listener pinpoint "the one ~2 songs ago".
+  function ago(ts) {{
+    var s = Math.floor(Date.now() / 1000 - Number(ts));
+    if (!isFinite(s) || s < 0) return "";
+    if (s < 45) return "just now";
+    var m = Math.round(s / 60);
+    if (m < 60) return m + "m ago";
+    var h = Math.floor(m / 60), mm = m % 60;
+    return h + "h" + (mm ? " " + mm + "m" : "") + " ago";
+  }}
 
   var lastNowKey = null;
   function nowKey(np) {{ return np ? ((np.artist || "") + "\\u0000" + (np.title || "")) : ""; }}
@@ -246,6 +262,11 @@ def render_website(cfg: Config) -> str:
         document.getElementById("np-artist").innerHTML = np ? esc(np.artist || "") : "";
         document.getElementById("np-album").innerHTML = (np && np.album) ? esc(np.album) : "";
         document.getElementById("np-badges").innerHTML = renderBadges(np);
+        // Album cover: the brain adds now_playing.cover_url ONLY once art is resolved+cached
+        // (embedded → Cover Art Archive). Absent = show the placeholder note.
+        var cover = document.getElementById("cover"), wrap = document.getElementById("coverwrap");
+        if (np && np.cover_url) {{ if (cover.getAttribute("src") !== np.cover_url) cover.src = np.cover_url; wrap.classList.remove("empty"); }}
+        else {{ cover.removeAttribute("src"); wrap.classList.add("empty"); }}
       }}
       if (key !== lastNowKey) {{
         lastNowKey = key;
@@ -264,7 +285,10 @@ def render_website(cfg: Config) -> str:
       if (!rec.length) {{ ul.innerHTML = '<li class="muted">Nothing yet&hellip;</li>'; }}
       else {{
         ul.innerHTML = rec.slice(0, 12).map(function(t) {{
-          return '<li><span class="a">' + esc(t.title || "") + '</span><span class="b">' + esc(t.artist || "") + '</span></li>';
+          var artist = esc(t.artist || ""), title = esc(t.title || "");
+          var label = artist ? (artist + " - " + title) : title;   // conventional Artist - Title
+          var when = t.played_at ? ago(t.played_at) : "";
+          return '<li><span class="a">' + label + '</span><span class="b">' + when + '</span></li>';
         }}).join("");
       }}
     }} catch (e) {{ /* keep polling; the radio never stops */ }}

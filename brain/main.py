@@ -22,6 +22,7 @@ from . import llm
 from .acquire import Acquirer
 from .analyzer import Analyzer
 from .config import load_config
+from .cover import CoverResolver
 from .director import Director
 from .enrich import EnrichmentWorker
 from .filename import FilenameWorker
@@ -147,6 +148,7 @@ def run() -> int:
     od_ledger = None
     od_diary = None
     od_show_store = None
+    playbook = None
     if cfg.ledger_enabled:
         try:
             from .sqlite_store import LedgerStore
@@ -165,7 +167,7 @@ def run() -> int:
             log_event(log, "main.ledger_ready", events=od_ledger.count())
         except Exception as exc:  # noqa: BLE001 - the ledger is best-effort, never fatal to boot
             log_event(log, "main.ledger_init_failed", error=str(exc))
-            od_ledger = od_diary = od_show_store = None
+            od_ledger = od_diary = od_show_store = playbook = None
     # OPS-004 Group OX (REQ-OX-001/005): the topic-bank inventory — a VIEW over the ONE OD-007
     # ledger. [HARD] OFF by default + best-effort: built ONLY when topic_bank_enabled AND a live
     # ledger exist; otherwise None and the director consults nothing (byte-identical). It never
@@ -350,6 +352,12 @@ def run() -> int:
     # UNCHANGED (the <1s playout pull is byte-identical). The schedule is a VIEW over the OD-007
     # ledger (no new store) so it persists only when ledger_enabled too; absent a ledger it is an
     # in-memory grid (still correct + never-silent via the no-orphan degrade-to-house-voice+music).
+    # LINEUP-050 / ORCH-005: cross-block locals produced INSIDE the scheduling block below but
+    # CONSUMED by the later LINEUP + ORCH wiring blocks. Pre-init to the sibling ``X = None`` pattern
+    # (identical to selection_refiner/no_orphan/lifecycle_engine) so they are always defined even
+    # when scheduling is off or its init faults — the LINEUP/ORCH blocks then see None (inert).
+    schedule_view = None
+    local_clock = None
     selection_refiner = None
     no_orphan = None
     if cfg.scheduling_enabled:
@@ -413,6 +421,89 @@ def run() -> int:
         except Exception as exc:  # noqa: BLE001 - the lifecycle FSM is best-effort, never fatal to boot
             log_event(log, "main.lifecycle_init_failed", error=str(exc))
             lifecycle_engine = None
+    # SPEC-RADIO-LINEUP-050: the weekly recurring-show lineup layer (Groups SH/SN/SQ). [HARD] OFF by
+    # default (cfg.lineup_enabled) + best-effort: built ONLY when lineup_enabled; otherwise every
+    # local below stays None and the world-model show-identity feed + the director's matrix/hiatus
+    # decisions are absent (byte-identical to before this SPEC, AC-NFR-LU-5). The ShowRegistry is a
+    # CREATE-IF-NOT-EXISTS table in the SAME events.db (idempotent on a populated db); the controller
+    # COMPOSES the schedule grid (assign/reassign), the OB lifecycle FSM (hiatus staffing), the
+    # persona Roster + the OD-006 change budget — no fork. The planner proposes the 7-day matrix. Per
+    # the spec the hiatus transitions + matrix proposals are DIRECTOR-driven event decisions, not a
+    # boot-time action — this block only makes the objects EXIST and be reachable (the ORCH feed +
+    # wire below consume the registry). A build fault leaves them None, never failing boot (NFR-LU-5).
+    # @MX:NOTE: [AUTO] LINEUP-050 activation point — the ShowRegistry/LineupController/
+    # WeeklyMatrixPlanner are instantiated ONLY here; grep this tag to find where the
+    # dormant lineup layer becomes live. OFF (cfg.lineup_enabled default) => all None,
+    # byte-identical boot (AC-NFR-LU-5).
+    show_registry = None
+    lineup_controller = None
+    lineup_planner = None
+    if cfg.lineup_enabled:
+        try:
+            from .lineup import ShowRegistry, LineupController, WeeklyMatrixPlanner
+            from .sqlite_store import PersonaStore
+            from .persona import Roster
+            from .ledger import MeasuredChangeBudget
+            show_registry = ShowRegistry(cfg.events_db_path)
+            lineup_roster = Roster(store=PersonaStore(cfg.brain_db_path))
+            lineup_controller = LineupController(
+                show_registry, schedule=schedule_view, lifecycle=lifecycle_engine,
+                roster=lineup_roster, ledger=od_ledger, cfg=cfg)
+            lineup_budget = (MeasuredChangeBudget(store=ledger_store)
+                             if od_ledger is not None else None)
+            lineup_planner = WeeklyMatrixPlanner(
+                lineup_controller, budget=lineup_budget, ledger=od_ledger, cfg=cfg)
+            # controller_ready/planner_ready report the staged layer. The director->planner/
+            # controller handoff (matrix apply, hiatus transitions) is director-driven future
+            # work; for now they are instantiated + reachable and the registry feeds the world
+            # model. The readiness flags also keep both locals genuinely consumed.
+            log_event(log, "main.lineup_ready", shows=show_registry.count(),
+                      controller_ready=lineup_controller is not None,
+                      planner_ready=lineup_planner is not None)
+        except Exception as exc:  # noqa: BLE001 - the lineup layer is best-effort, never fatal to boot
+            log_event(log, "main.lineup_init_failed", error=str(exc))
+            show_registry = lineup_controller = lineup_planner = None
+    # SPEC-RADIO-ORCH-005 feed: instantiate the WorldModelBuilder (+ ActionSurface) and wire_orch
+    # them into the ALREADY-CONSTRUCTED director so the perception/action nervous system reaches the
+    # running tick. [HARD] OFF by default (cfg.world_model_enabled) + best-effort: built ONLY when
+    # world_model_enabled; otherwise the director keeps its None seams and the tick is BYTE-IDENTICAL
+    # (AC-NFR-LU-5 / REQ-RW-001). build() returns an all-stale O(1) snapshot when the flag is off, and
+    # the show-identity slice is additionally gated on cfg.lineup_enabled AND a wired show_registry —
+    # so passing the LINEUP local (None when lineup is off) is inert unless BOTH flags are on. The
+    # ActionSurface rides the ONE OD-007 ledger (built only when od_ledger exists). A build fault
+    # leaves the seams unwired (director byte-identical), never failing boot.
+    # @MX:NOTE: [AUTO] ORCH-005 activation point — the WorldModelBuilder + ActionSurface
+    # are built and director.wire_orch(...) is called ONLY here; this is the connective
+    # tissue that reaches the director tick. The show-identity feed is live only when
+    # cfg.world_model_enabled AND cfg.lineup_enabled (a wired show_registry). OFF =>
+    # director keeps its None seams, byte-identical tick.
+    world_model_builder = None
+    action_surface = None
+    if cfg.world_model_enabled:
+        try:
+            from .world_model import WorldModelBuilder
+            from .action_surface import ActionSurface
+            world_model_builder = WorldModelBuilder(
+                cfg, state=state, library=library, acquirer=acquirer, listener_memory=None,
+                topic_bank=topic_bank, segment_registry=segment_registry, news_player=news_player,
+                schedule=schedule_view, od_diary=od_diary,
+                playbook=(playbook if od_ledger is not None else None),
+                show_registry=show_registry)
+            # NOTE: WorldModelBuilder/ActionSurface ``clock`` is a ``Callable[[], float]`` (epoch
+            # seconds; both default to time.time). It is NOT the schedule ``LocalClock`` — that lives
+            # on ``schedule_view`` already — so ``local_clock`` is intentionally not passed here.
+            action_surface = (ActionSurface(
+                od_ledger, cfg=cfg, acquirer=acquirer, imaging_system=imaging_system,
+                news_player=news_player, news_producer=news_producer, schedule=schedule_view,
+                lifecycle=lifecycle_engine, website=None)
+                if od_ledger is not None else None)
+            director.wire_orch(world_model_builder=world_model_builder,
+                               action_surface=action_surface)
+            log_event(log, "main.orch_ready", world_model=cfg.world_model_enabled,
+                      lineup_fed=show_registry is not None)
+        except Exception as exc:  # noqa: BLE001 - the orch feed is best-effort, never fatal to boot
+            log_event(log, "main.orch_init_failed", error=str(exc))
+            world_model_builder = action_surface = None
     # KNOWLEDGE-008: the dated, sourced, relational editorial-knowledge store (SQLite in
     # /db). Best-effort - if disabled or the store can't open, the host simply talks from
     # genre/feel only. NEVER on the <1s /api/next pull path. Built before TalkDirector +
@@ -544,12 +635,17 @@ def run() -> int:
         analytics = PlayEventsStore(cfg.events_db_path)
         analytics.close_stale_open_events()
         log_event(log, "main.stats_enabled")
+    # Website album art: an album-keyed, disk-cached cover for the on-air track (brain/cover.py).
+    # No-op when cover_art_enabled is off (the /api/cover endpoint then 404s). Resolution runs OFF
+    # the request path in a background worker started below; the airing hook only enqueues.
+    cover_resolver = CoverResolver(cfg)
     httpd = make_server(cfg, library, state, knowledge=knowledge,
                         refiner=selection_refiner, no_orphan=no_orphan,
                         skip_governor=skip_governor,
                         offensive_verdict=offensive_verdict,
                         like_gate=like_gate, like_tokener=like_tokener,
-                        drop_off_engine=drop_off_engine, analytics=analytics)
+                        drop_off_engine=drop_off_engine, analytics=analytics,
+                        cover_resolver=cover_resolver)
     http_thread = threading.Thread(target=httpd.serve_forever, name="http", daemon=True)
 
     def _shutdown(signum, _frame):
@@ -564,6 +660,7 @@ def run() -> int:
     signal.signal(signal.SIGTERM, _shutdown)
 
     http_thread.start()
+    cover_resolver.start(stop_event)  # no-op when cover_art_enabled=False
     if disk_guard is not None:
         disk_guard.start()  # no-op when disk_guard_enabled=False
     acquirer.start()

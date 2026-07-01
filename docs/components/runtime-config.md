@@ -249,6 +249,47 @@ at song/talk transitions.
 | `BRAIN_KNOWLEDGE_REFRESH_TS_DAYS` | `3` | Re-research interval for time-sensitive facts |
 | `BRAIN_KNOWLEDGE_REFRESH_TL_DAYS` | `180` | Re-research interval for timeless facts |
 
+#### Website Album Art (`brain/cover.py`)
+
+Distinct from `BRAIN_ALBUMART_ENABLED` (ALBUMART-021, which embeds a cover
+*into* the audio file and never surfaces it on the site). These knobs control
+the album-keyed, disk-cached cover the **website** shows next to now-playing —
+see [Website — Album art](website.md#album-art).
+
+| Env Var | Default | Notes |
+|---|---|---|
+| `BRAIN_COVER_ART_ENABLED` | `1` | Master switch for the website cover-art feature. `0` disables resolution entirely; `/api/cover` returns 404 for everything. |
+| `BRAIN_COVER_ONLINE_LOOKUP` | `1` | Whether the online fallback (Cover Art Archive via MusicBrainz, then Discogs) runs at all. `0` = embedded-cover-only; a track with no embedded cover is a confirmed (negatively cached) miss. |
+| `BRAIN_COVER_LOOKUP_TIMEOUT_SEC` | `6` | Per-call network timeout (seconds) bounding the MusicBrainz search + Cover Art Archive fetch. The MusicBrainz 1 req/s policy is honoured via the shared throttle in `brain.metadata`. |
+| `BRAIN_COVER_MIN_PX` | `250` | Minimum shorter-side pixel dimension for an accepted cover. A candidate (embedded or online) below this, or outside the near-square aspect band (module constant, not configurable), is rejected as a thumbnail/junk/banner and the chain falls through to the next source. |
+| `BRAIN_COVERS_DIR` | `{DB_DIR}/covers` | Disk-cache location for `<key>.jpg` cover files and `<key>.miss` negative-cache sentinels. Defaults under the already-mounted `/db` volume, so no new Docker mount is needed and the cache survives restarts. |
+| `BRAIN_COVER_MB_USER_AGENT` | `{STATION_NAME} (album-art)/1.0 ( +https://github.com/hack-fo/golden-shower-radio )` | Descriptive User-Agent for the MusicBrainz release search (required by MusicBrainz policy). |
+| `BRAIN_DISCOGS_USER_AGENT` | same pattern as above | Descriptive User-Agent for the Discogs cover fallback (Discogs rejects the default HTTP client UA). |
+
+The Discogs cover fallback reuses the **existing** `BRAIN_DISCOGS_TOKEN`
+(declared under Metadata Enrichment above) — there is no separate cover-art
+token. An empty token skips the Discogs leg entirely (Cover Art Archive only,
+byte-identical to not having a token). See
+[External Services — Discogs](external-services.md#discogs--optional) for how
+to obtain a token, and
+[External Services — Cover Art Archive](external-services.md#cover-art-archive)
+for a known network-reachability caveat in this deployment.
+
+Pillow (`requirements.txt`, `pillow>=10.0,<12.0`) upgrades cover validation
+from header-only dimension sniffing to a real image decode + verify; when
+Pillow is absent the code falls back to the built-in header parser.
+
+#### Weekly Lineup (LINEUP-050)
+
+The weekly lineup grid, hiatus state, flagship pin, and cross-persona show firewall. See [lineup](lineup.md) for the `show_registry` table and the full subsystem. The cross-persona similarity firewall deliberately **reuses** `BRAIN_SHOWS_NOVELTY_THRESHOLD` (0.6) and `BRAIN_SHOWS_MAX_REGEN` (3) — there is no second similarity scale.
+
+| Env Var | Default | Notes |
+|---|---|---|
+| `BRAIN_LINEUP_ENABLED` | `0` | [HARD] Master toggle for the whole LINEUP surface (the `show_registry` programming + the world-model show-identity feed). OFF = the `schedule_context` slice omits the show keys and the director tick + playout pull are byte-identical to before this SPEC. |
+| `BRAIN_LINEUP_MAX_HIATUS_SEC` | `7776000` (90d) | A hiatus exceeding this auto-transitions `hiatus→discontinued` through the existing `lifecycle.discontinue_show`. |
+| `BRAIN_LINEUP_LONG_HIATUS_SEC` | `2592000` (30d) | A reactivation from a hiatus longer than this re-runs the cross-persona firewall against shows registered meanwhile. Ordered bound: clamped to ≤ `BRAIN_LINEUP_MAX_HIATUS_SEC`. |
+| `BRAIN_LINEUP_MATRIX_CADENCE_SEC` | `86400` (1d) | The weekly-matrix programming cadence; aligns with the OPS-004 program-cycle cadence. |
+
 ---
 
 ## Logging (`brain/logging_setup.py`)
@@ -320,6 +361,18 @@ logs greppable by subsystem (e.g., `grep '"logger":"brain.director"'`).
 - **Timezone note.** The brain itself is TZ-agnostic (timestamps logged in UTC via
   `time.gmtime`). Atlantic/Faroe TZ is not set in the Python process; it is
   relevant only to scheduling logic in the director layer.
+
+- **Enrichment keys must be explicitly mapped in `deploy/docker-compose.yml`.**
+  The `run.sh` Phase-3 wizard writes `ACOUSTID_API_KEY` / `LASTFM_API_KEY` /
+  `DISCOGS_TOKEN` / `GUARDIAN_API_KEY` **unprefixed** into `secrets/.env`, but
+  the brain only reads the `BRAIN_`-prefixed names (`BRAIN_ACOUSTID_API_KEY`,
+  etc.). Fixed in `deploy/docker-compose.yml` by mapping
+  `BRAIN_ACOUSTID_API_KEY: ${ACOUSTID_API_KEY:-}` (and the other three) in the
+  `brain` service's environment block — this was a pre-existing wiring gap
+  that silently discarded every wizard-entered enrichment key. If you add a
+  new wizard-collected secret in the future, add both the unprefixed write in
+  `run.sh` *and* the `BRAIN_*: ${*:-}` mapping in `docker-compose.yml`, or the
+  brain will never see it.
 
 ---
 

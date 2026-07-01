@@ -231,6 +231,42 @@ class Config:
     # preserve-everything-else discipline; it overrides ONLY the skip, never the safety.
     albumart_force_refresh: bool = field(default_factory=lambda: _env("BRAIN_ALBUMART_FORCE_REFRESH", "0") not in ("0", "false", "no"))
 
+    # --- WEBSITE album art (brain/cover.py) — DISTINCT from ALBUMART-021 embed ------------
+    # ALBUMART-021 embeds a cover INTO the file and never surfaces it on the site. THIS is the
+    # operator-approved WEBSITE surface: an album-keyed, disk-cached cover for the on-air track
+    # served at GET /api/cover?k=<key>. Conservative + precision-over-coverage: embedded cover
+    # first (mutagen), online fallback (Cover Art Archive via a MusicBrainz release search) only
+    # when both artist and album are sane. Nothing cached is ever re-fetched (a confirmed miss is
+    # negatively cached). Default ON. The cache dir lives under the mounted /db volume by default
+    # (see covers_dir) so it needs NO new Docker mount and persists across restarts.
+    cover_art_enabled: bool = field(default_factory=lambda: _env("BRAIN_COVER_ART_ENABLED", "1") not in ("0", "false", "no"))
+    # Whether the ONLINE (MusicBrainz + CAA) fallback runs at all. OFF -> embedded-only; a track
+    # with no embedded cover is a confirmed (negatively-cached) miss. Default ON.
+    cover_online_lookup: bool = field(default_factory=lambda: _env("BRAIN_COVER_ONLINE_LOOKUP", "1") not in ("0", "false", "no"))
+    # Small per-call network timeout (seconds) bounding the MusicBrainz search + CAA fetch. The
+    # MusicBrainz 1-req/s policy is honoured via the shared brain.metadata throttle. Default 6s.
+    cover_lookup_timeout_seconds: int = field(default_factory=lambda: int(_env("BRAIN_COVER_LOOKUP_TIMEOUT_SEC", "6")))
+    # MusicBrainz REQUIRES a descriptive User-Agent identifying the app + a contact. Built from the
+    # station name + a project contact URL placeholder (override BRAIN_COVER_MB_USER_AGENT per deploy).
+    cover_musicbrainz_user_agent: str = field(default_factory=lambda: _env(
+        "BRAIN_COVER_MB_USER_AGENT",
+        f"{_env('STATION_NAME', 'Golden Shower Radio')} (album-art)/1.0 "
+        "( +https://github.com/hack-fo/golden-shower-radio )"))
+    # Discogs is the THIRD online cover fallback (after Cover Art Archive) — reached only when
+    # CAA returned nothing. The token is the EXISTING ``discogs_token`` (BRAIN_DISCOGS_TOKEN,
+    # declared above for ENRICH-012); EMPTY (default) -> the Discogs fallback is SKIPPED entirely
+    # (CAA-only, byte-identical). Discogs REQUIRES a descriptive User-Agent (it rejects the default
+    # http-client UA); built from the station name like the MusicBrainz UA above.
+    cover_discogs_user_agent: str = field(default_factory=lambda: _env(
+        "BRAIN_DISCOGS_USER_AGENT",
+        f"{_env('STATION_NAME', 'Golden Shower Radio')} (album-art)/1.0 "
+        "( +https://github.com/hack-fo/golden-shower-radio )"))
+    # Minimum shorter-side pixel dimension for an accepted cover (brain/cover.py
+    # validate_cover_image). A candidate (embedded OR online) whose smaller side is below this is
+    # rejected as a thumbnail/junk and the chain falls through. The near-square aspect band is a
+    # module constant (not a knob). Default 250px. Uses Pillow when present, else a header parser.
+    cover_min_px: int = field(default_factory=lambda: int(_env("BRAIN_COVER_MIN_PX", "250")))
+
     # --- TAGSTREAM-009 Group TW: write ANALYSIS-006 audio FEATURES as file TAGS ---
     # Whether the feature-tag write step (TBPM/TKEY/TXXX:EnergyLevel/TXXX:CAMELOT for mp3;
     # BPM/INITIALKEY/ENERGYLEVEL/CAMELOT for flac) runs at the end of enrich_one. The ACTUAL
@@ -692,6 +728,26 @@ class Config:
     # [HARD] OFF by default — the ListenerMemory VIEW is only constructed when on.
     listener_memory_enabled: bool = field(default_factory=lambda: _env("BRAIN_LISTENER_MEMORY_ENABLED", "0") not in ("0", "false", "no"))
 
+    # --- SPEC-RADIO-LINEUP-050: weekly lineup grid, hiatus state & cross-persona firewall ---
+    # [HARD] OFF by default — the master toggle for the WHOLE LINEUP surface (the world-model
+    # show-identity feed + the recurring-slot programming). With it off the director tick + the
+    # playout pull are BYTE-IDENTICAL to before this SPEC (the schedule_context slice omits the
+    # show keys, NFR-LU-5). Additive + opt-in. NOTE: the cross-persona similarity firewall REUSES
+    # the SHOWS-020 ``shows_novelty_threshold`` (0.6) + ``shows_max_regenerate`` (3) knobs above —
+    # there is deliberately NO second similarity scale (NFR-LU-5), so no lineup-specific threshold
+    # knob is declared here.
+    lineup_enabled: bool = field(default_factory=lambda: _env("BRAIN_LINEUP_ENABLED", "0") not in ("0", "false", "no"))
+    # REQ-SY-002 max-hiatus auto-discontinue bound (seconds): a hiatus exceeding this auto-
+    # transitions hiatus->discontinued THROUGH the existing lifecycle.discontinue_show. Default 90d.
+    lineup_max_hiatus_seconds: float = field(default_factory=lambda: float(_env("BRAIN_LINEUP_MAX_HIATUS_SEC", str(90 * 24 * 3600))))
+    # REQ-SQ-003 long-hiatus re-vet bound (seconds): a reactivation from a hiatus longer than this
+    # re-runs the cross-persona firewall against shows registered meanwhile. [HARD] ordered bounds
+    # — MUST be <= lineup_max_hiatus_seconds (clamped in lineup.clamp_hiatus_bounds). Default 30d.
+    lineup_long_hiatus_seconds: float = field(default_factory=lambda: float(_env("BRAIN_LINEUP_LONG_HIATUS_SEC", str(30 * 24 * 3600))))
+    # REQ-SN-001 weekly-matrix cadence (seconds): aligns with the OPS-004 program-cycle cadence
+    # (one programming cycle per day). Informational for the WeeklyMatrixPlanner scheduling tick.
+    lineup_matrix_cadence_seconds: float = field(default_factory=lambda: float(_env("BRAIN_LINEUP_MATRIX_CADENCE_SEC", str(24 * 3600))))
+
     # --- OPS-004 Group OH: Library Management & Acquisition Policy ---
     # REQ-OH-006 bounded download queue: the acquisition wishlist queue is bounded to this
     # maximum item count; new enqueue() calls return False (deferred) when the queue is at
@@ -918,6 +974,18 @@ class Config:
         if os.path.isabs(abs_or_rel):
             return abs_or_rel
         return os.path.join(self.music_dir, abs_or_rel)
+
+    @property
+    def covers_dir(self) -> str:
+        """WEBSITE album-art cache dir (brain/cover.py). Holds ``<key>.jpg`` cover files and
+        ``<key>.miss`` negative-cache sentinels. Defaults to ``db_dir/covers`` — a subdir under
+        the ALREADY-mounted /db volume (../data/db:/db in deploy/docker-compose.yml), so it
+        persists across restarts and needs NO new mount. BRAIN_COVERS_DIR overrides the location
+        for a deploy that mounts cover storage elsewhere."""
+        override = _env("BRAIN_COVERS_DIR", "")
+        if override:
+            return override
+        return os.path.join(self.db_dir, "covers")
 
     @property
     def talk_clips_dir(self) -> str:

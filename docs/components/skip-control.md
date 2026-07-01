@@ -35,6 +35,28 @@ The governor enforces several overlapping rate limits before issuing a skip:
 
 ---
 
+## Talk-clip invalidation on skip
+
+A talk clip is written and TTS-rendered **ahead of time** and parked in
+`StationState`'s one-slot buffer (see [Voice + Talk](voice-talk.md)); its
+back-announce names the track that had just played *at prep time*. A
+force-skip changes the sequence, so a stale parked clip would name a song that
+did not actually just play.
+
+On every **accepted** skip, the governor calls `State.clear_pending_talk()`,
+which drops the parked clip (unless it is the one-shot first-run welcome,
+which is preserved). The talk cadence counter (`_songs_since_talk`) is left
+untouched, so the `TalkDirector` still considers a break due and regenerates a
+*correct* clip on its next tick — the host "talks less rather than ships a
+wrong fact." This is best-effort and exception-isolated: invalidation can
+never fail a skip (NFR-S-1 still applies). A **refused** skip leaves the
+parked clip intact.
+
+Follow-up (approved, not yet built): a pre-rendered per-persona "skip bridge"
+clip pool, force-served during the gap while a fresh talk clip renders.
+
+---
+
 ## Skip reasons
 
 Valid reasons are a bounded enum (`SkipReason`): `operator`, `vetting`, `health`, `request_veto`, `manual_api`. An unknown reason is refused.

@@ -10,7 +10,11 @@ Endpoints:
   POST /api/skip        SKIP-028 forceful on-air skip, gated by SkipGovernor. Returns
                         JSON {accepted, reason, refusal_cause, airing_path, expect_path}.
   GET  /status          JSON station state.
-  GET  /api/nowplaying  JSON {now_playing, recent, library, downloading}.
+  GET  /api/nowplaying  JSON {now_playing, recent, library, downloading}. now_playing/recent
+                        carry an album-keyed ``cover_url`` ONLY when a cover is cached (else
+                        the frontend shows a placeholder).
+  GET  /api/cover       raw cover image bytes for ?k=<album-key> (browser-cacheable), or 404
+                        until the background resolver has one. See brain/cover.py.
   GET  /                the station website (swappable HTML from StationState).
   GET  /health          "ok".
 
@@ -156,32 +160,60 @@ def _feature_fields(track: Optional[Track]) -> dict:
     return out
 
 
-def _enrich_now_playing(obj: Optional[dict], library: Library) -> Optional[dict]:
+def _cover_url_for(obj: Optional[dict], cover_resolver) -> Optional[str]:
+    """The website cover URL for a now-playing/recent object, or None. Never raises.
+
+    Album-keyed (artist+album): returns ``/api/cover?k=<key>`` ONLY when the resolver has an
+    actually-cached cover for this album, so the frontend can choose art vs a placeholder.
+    Music-only; a talk/news/imaging break has no album cover. A None resolver (feature off /
+    not wired) yields None so the now-playing surface is byte-identical to before this feature."""
+    if cover_resolver is None or not obj:
+        return None
+    try:
+        if not getattr(cover_resolver, "enabled", False):
+            return None
+        if (obj.get("kind", "music") or "music") != "music":
+            return None
+        key = cover_resolver.key_for(obj.get("artist", "") or "", obj.get("album", "") or "")
+        if not key or not cover_resolver.has_cover(key):
+            return None
+        return f"/api/cover?k={key}"
+    except Exception:  # noqa: BLE001 - a cover lookup must never break the now-playing surface
+        return None
+
+
+def _enrich_now_playing(obj: Optional[dict], library: Library, cover_resolver=None) -> Optional[dict]:
     """ADDITIVELY enrich a now-playing/recent object with the on-air track's features (REQ-TX-003).
 
     Resolves the object's ``path`` (carried by set_on_air / now_playing) to the analyzed Track
-    via the by-path lookup and merges in bpm/musical_key/camelot/energy + has_cover. [HARD]
-    Additive only: the existing artist/title/album/path/kind keys are NEVER removed or renamed;
-    feature keys are only ADDED when the track resolves AND is analyzed. None / a missing path /
-    an unresolved or unanalyzed track yields the object UNCHANGED — never a crash, never a stale
-    enrichment. This wiring lives entirely in the brain; the Liquidsoap airing payload is
-    UNCHANGED (the audio path / _annotate_uri pull contract are untouched).
+    via the by-path lookup and merges in bpm/musical_key/camelot/energy + has_cover. When a
+    ``cover_resolver`` is supplied, an album-keyed ``cover_url`` is ALSO added — but only when a
+    cover is actually cached-and-available (independent of the analysis feature block above).
+    [HARD] Additive only: the existing artist/title/album/path/kind keys are NEVER removed or
+    renamed; feature/cover keys are only ADDED. None / a missing path / an unresolved or
+    unanalyzed track yields the object UNCHANGED except for a cover_url when one is cached —
+    never a crash, never a stale enrichment. This wiring lives entirely in the brain; the
+    Liquidsoap airing payload is UNCHANGED (the audio path / _annotate_uri pull are untouched).
     """
     if not obj:
         return obj
+    result = obj
     path = obj.get("path") or ""
-    if not path:
-        return obj
-    try:
-        track = library.track_for_path(path)
-    except Exception:  # noqa: BLE001 - a lookup error must never break the now-playing surface
-        return obj
-    feats = _feature_fields(track)
-    if not feats:
-        return obj
-    enriched = dict(obj)
-    enriched.update(feats)
-    return enriched
+    if path:
+        try:
+            track = library.track_for_path(path)
+        except Exception:  # noqa: BLE001 - a lookup error must never break the now-playing surface
+            track = None
+        feats = _feature_fields(track)
+        if feats:
+            result = dict(result)
+            result.update(feats)
+    cover_url = _cover_url_for(obj, cover_resolver)
+    if cover_url:
+        if result is obj:
+            result = dict(result)
+        result["cover_url"] = cover_url
+    return result
 
 
 @dataclass
@@ -344,6 +376,7 @@ class _Handler(BaseHTTPRequestHandler):
     like_tokener = None  # SPEC-RADIO-LIKE-015 LikeTokener (optional; None when like_enabled off)
     drop_off_engine = None  # SPEC-RADIO-LIKE-015 DropOffEngine (optional; None when off)
     analytics = None  # SPEC-RADIO-STATS-013 PlayEventsStore (optional; None when stats disabled)
+    cover_resolver = None  # website album-art resolver (brain/cover.py; None when cover_art disabled)
 
     # SPEC-RADIO-ADMIN-041: station-wide emergency flags. Class-level on purpose — they are
     # shared across every handler instance (one ThreadingHTTPServer spawns a handler per
@@ -371,6 +404,21 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _json(self, obj, code: int = 200) -> None:
         self._send(code, json.dumps(obj, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
+
+    def _send_cover(self, body: bytes, content_type: str) -> None:
+        """Serve a cached cover image with a BROWSER-cacheable header (unlike _send's no-store).
+
+        The URL is album-keyed (/api/cover?k=<key>), so its bytes are immutable for that key —
+        the browser can cache per-album, and the image updates on track change because the key
+        changes. This is the ONLY response path that opts out of no-store."""
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "public, max-age=86400")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def do_HEAD(self):  # noqa: N802
         self.do_GET()
@@ -440,6 +488,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self._handle_nowplaying()
             elif path == "/api/like-token":
                 self._handle_like_token()
+            elif path == "/api/cover":
+                self._handle_cover(split.query)
             elif path == "/api/personas":
                 self._handle_persona_list()
             elif path == "/health":
@@ -565,6 +615,14 @@ class _Handler(BaseHTTPRequestHandler):
                     self.drop_off_engine.note_track_start(normalize_key(artist, title))
                 except Exception:  # noqa: BLE001
                     pass
+            # Website album art: kick cover resolution when a MUSIC track goes on air. Fast +
+            # non-blocking (only enqueues; the worker does the slow embedded/online resolve OFF
+            # this path). Best-effort — never blocks/raises into the airing ack.
+            if self.cover_resolver is not None and (kind or "music") == "music":
+                try:
+                    self.cover_resolver.on_air(path, artist, title, album)
+                except Exception:  # noqa: BLE001
+                    pass
             # STATS-013 Group SE: close out the previous airing (stamp measured playtime)
             # and open a row for the one now on air. [HARD] OFF the pull path, best-effort:
             # any fault is logged-and-swallowed so a stats hiccup NEVER blocks the airing ack
@@ -619,8 +677,8 @@ class _Handler(BaseHTTPRequestHandler):
             {
                 "station": self.state.station_name,
                 "brain_mode": "phase2a-music+talk" if self.cfg.talk_enabled else "phase1-music",
-                "now_playing": _enrich_now_playing(self.state.now_playing(), self.library),
-                "recent": [_enrich_now_playing(r, self.library) for r in self.state.recent()],
+                "now_playing": _enrich_now_playing(self.state.now_playing(), self.library, self.cover_resolver),
+                "recent": [_enrich_now_playing(r, self.library, self.cover_resolver) for r in self.state.recent()],
                 "library": self.library.count(),
                 "downloading": self.state.downloading(),
                 "talk": {
@@ -648,8 +706,8 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _handle_nowplaying(self) -> None:
         payload = {
-            "now_playing": _enrich_now_playing(self.state.now_playing(), self.library),
-            "recent": [_enrich_now_playing(r, self.library) for r in self.state.recent()],
+            "now_playing": _enrich_now_playing(self.state.now_playing(), self.library, self.cover_resolver),
+            "recent": [_enrich_now_playing(r, self.library, self.cover_resolver) for r in self.state.recent()],
             "library": self.library.count(),
             "downloading": self.state.downloading(),
         }
@@ -658,6 +716,27 @@ class _Handler(BaseHTTPRequestHandler):
         if getattr(self.cfg, "like_enabled", False) and self.like_tokener is not None:
             payload["like_token_url"] = "/api/like-token"
         self._json(payload)
+
+    def _handle_cover(self, query: str) -> None:
+        """GET /api/cover?k=<key> — serve the cached album cover bytes, or 404.
+
+        FAST by design: a plain cached-file read. The potentially-slow resolution (embedded
+        extract / MusicBrainz + CAA) happens OFF this path — kicked when a track goes on air
+        (cover_resolver.on_air) and run by the background worker. Until a cover is cached this
+        returns 404, and the frontend shows a placeholder. 404 when the feature is disabled or
+        unwired (the endpoint never half-exists)."""
+        resolver = self.cover_resolver
+        if resolver is None or not getattr(self.cfg, "cover_art_enabled", False):
+            self._send(404, b"not found", "text/plain; charset=utf-8")
+            return
+        params = parse_qs(query or "", keep_blank_values=False)
+        key = (params.get("k") or [""])[0]
+        data = resolver.cover_bytes(key) if key else None
+        if not data:
+            self._send(404, b"not found", "text/plain; charset=utf-8")
+            return
+        from . import albumart  # noqa: PLC0415 - reuse the cover MIME sniff (image/jpeg default)
+        self._send_cover(data, albumart._mime_for(data))
 
     # -- like API (SPEC-RADIO-LIKE-015 Group LH/LA/LX) --------------------------- #
 
@@ -1197,7 +1276,7 @@ def make_server(cfg: Config, library: Library, state, knowledge=None,
                 roster=None, refiner=None, no_orphan=None,
                 skip_governor=None, offensive_verdict=None,
                 like_gate=None, like_tokener=None, drop_off_engine=None,
-                analytics=None) -> ThreadingHTTPServer:
+                analytics=None, cover_resolver=None) -> ThreadingHTTPServer:
     # VETTING-027 REQ-VG-003: offensive_verdict is the OffensiveRequestVerdict instance.
     # It is a no-op stub here until REQUEST-011 (listener request feature) ships and
     # calls self.offensive_verdict.check(text) before honoring a listener request.
@@ -1211,7 +1290,8 @@ def make_server(cfg: Config, library: Library, state, knowledge=None,
          "knowledge": knowledge, "roster": roster, "skip_governor": skip_governor,
          "offensive_verdict": offensive_verdict,
          "like_gate": like_gate, "like_tokener": like_tokener,
-         "drop_off_engine": drop_off_engine, "analytics": analytics},
+         "drop_off_engine": drop_off_engine, "analytics": analytics,
+         "cover_resolver": cover_resolver},
     )
     httpd = ThreadingHTTPServer((cfg.http_host, cfg.http_port), handler)
     httpd.daemon_threads = True
