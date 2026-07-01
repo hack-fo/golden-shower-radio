@@ -47,12 +47,23 @@ normalizer is unit-testable without the worker.
 
 ## 2. Milestones (priority-ordered, dependency-first)
 
-### M1 — Title normalization (Group YN) — Priority High
-- Pure `normalize_youtube_title()` in the new module: curated noise-pattern list (REQ-YN-003 fixture),
-  conservative source-scoped strip (REQ-YN-001), idempotent + edge/empty-safe (REQ-YN-002).
+### M1 — Title normalization + propagation + backfill (Group YN) — Priority High
+- Pure `normalize_youtube_title()` in the new module: curated noise-pattern list (REQ-YN-003 fixture —
+  incl. Official Audio/Video/Music Video/Lyric Video, Lyrics, Visualizer, Audio, (HD)/(4K), Full
+  Album/Full Video, Remastered, feat./ft.), conservative source-scoped strip (REQ-YN-001), idempotent +
+  edge/empty-safe (REQ-YN-002).
 - Hook it onto the yt-dlp arm (D-Y-1 option A) so it runs BEFORE the title becomes the clean
   artist/title. No behavior change for slskd/manual tracks.
-- Characterization tests over the fixture (including non-YouTube-untouched + idempotency + edge cases).
+- Propagation (REQ-YN-004): the cleaned title is the SINGLE stored `Track.title` — the picker reads
+  `item.title` to build the ICY StreamTitle (`server.py` `_annotate_uri`) and the `set_on_air` airing
+  report that drives `now_playing` + `_recent`, so cleaning `Track.title` propagates to all three;
+  ensure no parallel uncleaned-title path.
+- Backfill (REQ-YN-005): a bounded, identity-preserving, idempotent, repeatable pass that re-runs the
+  normalizer over EXISTING `source=ytdlp` `Track.title`s and persists via the ENRICH-012 `set_core_tags`
+  allowlist writer (corrects display artist/title, never touches frozen `key`/`path`/play-history —
+  same discipline as YS). Off the pull path; may ride the enrich/analysis backfill horizon.
+- Characterization tests over the fixture (non-YouTube-untouched + idempotency + edge cases) + the
+  propagation-to-three-surfaces + backfill-preserves-identity assertions (Section B5/B8).
 
 ### M2 — Provenance capture + upgrade-candidate set (Group YP) — Priority High
 - Confirm the recorded source string (`"yt-dlp"`, R-Y-2) and capture the original YouTube title + fetch

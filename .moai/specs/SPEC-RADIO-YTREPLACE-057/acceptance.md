@@ -19,7 +19,7 @@ criterion is marked [HARD] it is a must-pass gate (no compensation by other crit
 
 Group prefixes: YN (YouTube Title Normalization) / YP (Provenance & Upgrade-Candidate Set) / YR
 (Replacement Worker) / YQ (Quality Gate) / YS (Safe Swap) / YX (Exhaustion & Idempotency) / YC (Config)
-/ YI (Interactions / Integration). 25 AC + 8 AC-NFR = 33, matching spec.md 25 REQ + 8 NFR.
+/ YI (Interactions / Integration). 27 AC + 8 AC-NFR = 35, matching spec.md 27 REQ + 8 NFR.
 
 ---
 
@@ -45,12 +45,30 @@ Group prefixes: YN (YouTube Title Normalization) / YP (Provenance & Upgrade-Cand
 
 **AC-YN-003 (REQ-YN-003 — concrete extensible noise-pattern fixture incl. feat./ft.):**
 - GIVEN the shipped curated noise-pattern list, WHEN checked against the fixture (Section B), THEN it
-  removes at minimum `(Official Video)`, `(Official Music Video)`, `[Official Audio]`/`(Official Audio)`,
-  `(Lyric Video)`/`(Lyrics)`, `(Visualizer)`, `(HD)`/`(4K)`/`(1080p)`, `(Audio)`, `(Remastered)`/`(YYYY
-  Remaster)`, `(Explicit)`, and a trailing `| <handle>` / `- Topic` suffix, and normalizes
-  `feat.`/`ft.`/`featuring`.
+  removes at minimum `(Official Video)`, `(Official Music Video)`, `(Official Lyric Video)`, `[Official
+  Audio]`/`(Official Audio)`, `(Lyric Video)`/`(Lyrics)`, `(Visualizer)`, `(HD)`/`(4K)`/`(1080p)`,
+  `(Audio)`, `(Full Album)`/`(Full Video)`, `(Remastered)`/`(YYYY Remaster)`, `(Explicit)`, and a
+  trailing `| <handle>` / `- Topic` suffix, and normalizes `feat.`/`ft.`/`featuring`.
 - The list is structured so new patterns can be added without a code redesign; the ambiguous tokens
   (`(Live)`, `(Acoustic)`, `(Remix)`) are DELIBERATELY excluded from the default strip.
+
+**AC-YN-004 (REQ-YN-004 — cleaned title is the single Track.title; propagates to all three surfaces):**
+- [HARD] GIVEN a yt-dlp track whose raw title carried "Official Audio", WHEN the cleaned title is stored
+  as `Track.title` and the track airs, THEN the ICY `StreamTitle` (built by the picker from
+  `item.title`), the `/api/nowplaying` `now_playing` (from `state.set_on_air(artist, title, …)`), AND
+  the Recently Played history (`state.py` `_recent`) all show the CLEANED title.
+- [HARD] "Official Audio" (and every other stripped token) does NOT appear in now-playing or
+  recently-played; there is NO separate uncleaned title copy on any surface (asserted by the Section B
+  propagation scenario).
+
+**AC-YN-005 (REQ-YN-005 — backfill existing source=ytdlp titles; identity-preserving, idempotent, repeatable):**
+- [HARD] GIVEN existing library tracks with `provenance["source"] == "yt-dlp"` whose `Track.title` still
+  carries cruft, WHEN the backfill pass runs, THEN their titles are re-normalized and the cleaned result
+  is persisted via the ENRICH-012 `set_core_tags` allowlist writer.
+- [HARD] The backfill edits ONLY the display `Track.title`: the frozen `key`, `path`, `play_count`,
+  `last_played`, `added_at`, and all LIKE-015/STATS-013 records are UNCHANGED (no re-key, no orphan).
+- [HARD] IDEMPOTENT: an already-clean title is left byte-identical (no write); running the pass twice
+  produces no further change. Non-`source=ytdlp` tracks are never touched. Runs off the pull path.
 
 ### Group YP — Provenance & Upgrade-Candidate Set
 
@@ -332,11 +350,34 @@ THEN it is caught + logged via log_event, the yt-dlp file is left untouched, the
      replacement worker, nor the picker crashes; the stream never goes silent
 ```
 
+### B8 — Title propagation + backfill of existing yt-dlp titles (REQ-YN-004/005, NFR-Y-6) [HARD]
+
+```
+GIVEN a yt-dlp track whose raw title is "Artist - Song (Official Audio)"
+WHEN it is normalized and stored, and later airs
+THEN Track.title == "Artist - Song" (cleaned), and:
+ AND the ICY StreamTitle (picker reads item.title -> _annotate_uri) shows "Artist - Song"
+ AND /api/nowplaying now_playing (state.set_on_air(artist, title)) shows "Artist - Song"
+ AND the Recently Played history (state.py _recent, from the aired title) shows "Artist - Song"
+ AND "Official Audio" appears on NONE of the three surfaces (no uncleaned copy lingers)
+
+GIVEN an EXISTING library track T with provenance["source"] == "yt-dlp" and
+      Track.title == "Band - Track (Official Video) [HD]" (key=K, play_count=17, 2 likes)
+WHEN the backfill pass runs
+THEN T.title is re-normalized to "Band - Track" and persisted via set_core_tags (allowlist)
+ AND T.key == K, play_count == 17, added_at/last_played unchanged, both likes still resolve to K
+ AND a second backfill run leaves T.title byte-identical (idempotent, no write)
+
+GIVEN an slskd-sourced track U (source != "yt-dlp") with a parenthetical title
+WHEN the backfill pass runs
+THEN U.title is UNCHANGED (backfill scoped to source=ytdlp)
+```
+
 ---
 
 ## Section C — Definition of Done + Quality Gates
 
-- [ ] All 25 AC (Section A) + 8 AC-NFR satisfied; all 7 Section B scenarios pass as tests.
+- [ ] All 27 AC (Section A) + 8 AC-NFR satisfied; all 8 Section B scenarios pass as tests.
 - [ ] [HARD] Verified-before-delete: no test path deletes the yt-dlp file before a verified replacement
       exists (B1).
 - [ ] [HARD] Identity-preserving atomic swap: `Track.key` + play-history preserved; `scan` never
@@ -345,6 +386,10 @@ THEN it is caught + logged via log_event, the yt-dlp file is left untouched, the
 - [ ] [HARD] In-flight file never swapped (B4).
 - [ ] [HARD] Title normalization is curated, `source=ytdlp`-scoped, idempotent, edge-safe; non-YouTube
       tracks untouched (B5).
+- [ ] [HARD] Cleaned title is the single stored `Track.title`; it propagates to the ICY StreamTitle,
+      `/api/nowplaying` now_playing, and Recently Played with no uncleaned copy lingering (B8, YN-004).
+- [ ] [HARD] Backfill re-normalizes existing `source=ytdlp` titles identity-preservingly (display-title
+      only, never re-keys), idempotently, and repeatably (B8, YN-005).
 - [ ] [HARD] Idempotent + bounded (already-upgraded skip, exhausted marker) (B6).
 - [ ] [HARD] Resilience: every fault degrades to keep-the-ytdlp-file, never silences the stream (B7).
 - [ ] Replacement worker default OFF; with it off, behavior is byte-identical to pre-SPEC (behavior

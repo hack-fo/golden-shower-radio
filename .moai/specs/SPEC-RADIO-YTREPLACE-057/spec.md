@@ -38,7 +38,7 @@ issue_number: 57
   `acceptable` / `enqueue_download` (`brain/slskd.py`) with `Candidate.rank_key` = lossless >
   effective_bitrate > free_slot > size; and the ONLY sanctioned writer of the frozen `Track.path` is
   `Library.rename_track_file` (FILENAME-024, atomic under `self._lock` with rollback, `@MX:ANCHOR`) —
-  the swap must extend this exact pattern. Totals: 25 REQ + 8 NFR = 33, 1:1 REQ↔AC (YN=3, YP=3, YR=4,
+  the swap must extend this exact pattern. Totals: 27 REQ + 8 NFR = 35, 1:1 REQ↔AC (YN=5, YP=3, YR=4,
   YQ=3, YS=4, YX=3, YC=1, YI=4). NOTE: `issue_number: 57` is a same-as-number PLACEHOLDER; the real
   GitHub issue link is TBD (to be linked in a follow-up, as LINEUP-050 was linked to #52 post-hoc).
 
@@ -97,10 +97,14 @@ quality-upgrade is a nicety, never worth a risk to the stream or to a track's hi
 
 - A YOUTUBE TITLE NORMALIZATION (Group YN): a conservative, curated noise-strip applied to a
   yt-dlp-derived title BEFORE it becomes the clean `artist`/`title` — removing bracketed/parenthetical
-  marketing tokens (`(Official Video)`, `[Official Audio]`, `(Lyric Video)`, `(HD)`, `(4K)`, …),
-  trailing `| Label` / `| Topic` handle junk, and normalizing `feat.`/`ft.` — scoped to `source=ytdlp`,
-  idempotent, and empty/edge-safe. Ships a concrete, extensible noise-pattern list (an acceptance
-  fixture).
+  marketing tokens (`(Official Video)`, `(Official Music Video)`, `(Official Lyric Video)`,
+  `[Official Audio]`, `(Lyric Video)`, `(Lyrics)`, `(Visualizer)`, `(Audio)`, `(HD)`, `(4K)`,
+  `(Full Album)` / `(Full Video)`, `(Remastered)`, …), trailing `| Label` / `- Topic` handle junk, and
+  normalizing `feat.`/`ft.` — scoped to `source=ytdlp`, idempotent, and empty/edge-safe. The cleaned
+  title is the SINGLE stored `Track.title`, so it propagates to the ICY StreamTitle, `/api/nowplaying`
+  now_playing, and the Recently Played history (no uncleaned copy lingers). Ships a concrete, extensible
+  noise-pattern list (an acceptance fixture), and BACKFILLS existing yt-dlp-sourced titles that already
+  carry cruft — identity-preservingly (display-title only, never re-keys) and idempotently.
 - A PROVENANCE RECORD + UPGRADE-CANDIDATE SET (Group YP): every YouTube-fetched track is durably
   tagged with its acquisition source (`provenance["source"] == "yt-dlp"`, LEVERAGING the existing
   `Library.note_source` seam — not a new field) plus enough metadata to find a replacement later (the
@@ -411,8 +415,9 @@ never produces a worse-than-input or crashing result is the rail.
 ### REQ-YN-003 — Ship a concrete, extensible noise-pattern list (fixture) incl. feat./ft. normalization (Ubiquitous)
 
 The system SHALL ship a CONCRETE, EXTENSIBLE noise-pattern list covering at minimum: `(Official
-Video)`, `(Official Music Video)`, `[Official Audio]` / `(Official Audio)`, `(Lyric Video)` /
-`(Lyrics)`, `(Visualizer)`, `(HD)` / `(4K)` / `(1080p)`, `(Audio)`, `(Full Album)` (deferred to the
+Video)`, `(Official Music Video)`, `(Official Lyric Video)`, `[Official Audio]` / `(Official Audio)`,
+`(Lyric Video)` / `(Lyrics)`, `(Visualizer)`, `(HD)` / `(4K)` / `(1080p)`, `(Audio)`, `(Full Album)` /
+`(Full Video)` (the token is stripped from a single-track title; the album-SPLIT is deferred to the
 long-form path — see Section 16), `(Remastered)` / `(Remaster)` / `(YYYY Remaster)`, `(Explicit)`, a
 trailing `| <handle>` / `- Topic` YouTube-channel suffix, and the `feat.`/`ft.`/`featuring` spelling
 normalization — and this list SHALL be structured so new patterns can be added without a code redesign.
@@ -422,6 +427,41 @@ curated-not-blanket rail; that a concrete, extensible, curated list (the accepta
 the rail.
 
 **Acceptance criteria:** see acceptance.md AC-YN-003.
+
+### REQ-YN-004 — The cleaned title is the single stored Track.title and propagates to the ICY StreamTitle, now_playing, and Recently Played (Ubiquitous) [HARD]
+
+The system SHALL store the normalized/cleaned title as the track's `Track.title` — the SINGLE source of
+truth for the clean title — so that every surface that displays the clean title shows the CLEANED value:
+the in-stream ICY `StreamTitle` (built by the picker from `item.title` in `brain/server.py`), the
+`/api/nowplaying` `now_playing` (driven by the `state.set_on_air(artist, title, …)` airing report — the
+`@MX:ANCHOR` sole writer of `now_playing`), AND the Recently Played history (`brain/state.py` `_recent`,
+populated from the aired title on rotation). [HARD] There SHALL be NO separate, uncleaned copy of the
+title lingering on any of these surfaces — cruft like "Official Audio" MUST NOT appear in now-playing or
+recently-played. Because the picker reads `Track.title` to build BOTH the ICY StreamTitle and the airing
+report, cleaning `Track.title` is sufficient AND required; the requirement forbids any parallel
+uncleaned-title path. That the cleaned title is the single stored `Track.title` and propagates to all
+three surfaces (StreamTitle, now_playing, Recently Played) is the rail.
+
+**Acceptance criteria:** see acceptance.md AC-YN-004.
+
+### REQ-YN-005 — Backfill: re-normalize EXISTING source=ytdlp titles — identity-preserving, idempotent, repeatable (State-driven) [HARD]
+
+While tracks ALREADY in the library that were fetched from YouTube (`provenance["source"] == "yt-dlp"`)
+still carry cruft in `Track.title`, the system SHALL run a BOUNDED backfill pass that re-runs the Group
+YN normalizer over those existing titles and PERSISTS the cleaned result — so the normalization applies
+not only to NEW yt-dlp downloads going forward but also to the already-landed YouTube-sourced catalog.
+[HARD] The backfill is IDENTITY-PRESERVING: it edits ONLY the DISPLAY `Track.title` (via the ENRICH-012
+`set_core_tags` allowlist writer, which corrects artist/title without EVER touching the frozen
+`key`/`path`/play-history — the same discipline as the YS swap group), so it NEVER changes the dedup key
+or orphans play-history / likes / stats. [HARD] It is IDEMPOTENT — an already-clean title is left
+BYTE-IDENTICAL (no write, no churn) — and SAFE TO RUN REPEATEDLY (a one-time pass and an incremental
+re-scan both converge to the clean title). The backfill is SCOPED to `source=ytdlp` tracks; a
+non-YouTube track's title is never touched (NFR-Y-6). It runs off the `<1s /api/next` pull path and
+never blocks playout (NFR-Y-1). The exact pass mechanism (a one-time marker vs. an incremental horizon
+on the existing analysis/enrich backfill) is implementation detail; that existing yt-dlp titles are
+re-normalized identity-preservingly, idempotently, and repeatably is the rail.
+
+**Acceptance criteria:** see acceptance.md AC-YN-005.
 
 ---
 
@@ -881,6 +921,8 @@ Given-When-Then scenarios for the load-bearing requirements are in acceptance.md
 | REQ-YN-001 | YouTube Title Normalization | High | Event | AC-YN-001 |
 | REQ-YN-002 | YouTube Title Normalization | High | Ubiquitous | AC-YN-002 |
 | REQ-YN-003 | YouTube Title Normalization | Medium | Ubiquitous | AC-YN-003 |
+| REQ-YN-004 | YouTube Title Normalization | High | Ubiquitous | AC-YN-004 |
+| REQ-YN-005 | YouTube Title Normalization | High | State | AC-YN-005 |
 | REQ-YP-001 | Provenance & Upgrade-Candidate Set | High | Event | AC-YP-001 |
 | REQ-YP-002 | Provenance & Upgrade-Candidate Set | High | Event | AC-YP-002 |
 | REQ-YP-003 | Provenance & Upgrade-Candidate Set | High | Ubiquitous | AC-YP-003 |
@@ -912,12 +954,12 @@ Given-When-Then scenarios for the load-bearing requirements are in acceptance.md
 | NFR-Y-7 | Non-Functional | High | Unwanted | AC-NFR-Y-7 |
 | NFR-Y-8 | Non-Functional | Medium | Ubiquitous | AC-NFR-Y-8 |
 
-Parity: 25 REQ + 8 NFR = 33 specified items; 33 acceptance entries (25 AC + 8 AC-NFR); 1:1 REQ↔AC.
+Parity: 27 REQ + 8 NFR = 35 specified items; 35 acceptance entries (27 AC + 8 AC-NFR); 1:1 REQ↔AC.
 
-REQ-group prefixes + counts: YN (YouTube Title Normalization) = 3, YP (Provenance & Upgrade-Candidate
+REQ-group prefixes + counts: YN (YouTube Title Normalization) = 5, YP (Provenance & Upgrade-Candidate
 Set) = 3, YR (Replacement Worker) = 4, YQ (Quality Gate) = 3, YS (Safe Swap) = 4, YX (Exhaustion &
-Idempotency) = 3, YC (Config) = 1, YI (Interactions / Integration) = 4 → 3+3+4+3+4+3+1+4 = 25 REQ across
-8 groups. NFR-Y-1…8 = 8 NFR. Total = 25 + 8 = 33 specified items, 33 acceptance entries, 1:1 REQ↔AC.
+Idempotency) = 3, YC (Config) = 1, YI (Interactions / Integration) = 4 → 5+3+4+3+4+3+1+4 = 27 REQ across
+8 groups. NFR-Y-1…8 = 8 NFR. Total = 27 + 8 = 35 specified items, 35 acceptance entries, 1:1 REQ↔AC.
 
 ---
 
@@ -939,7 +981,8 @@ Section 16 roadmap + the fixed rails, as the mandatory exclusions list):
   (REQ-YS-003).
 - **Blanket parenthetical stripping / normalizing non-YouTube titles** — the strip is curated + scoped
   to `source=ytdlp`; legitimate parentheticals and non-YouTube tracks are never touched (REQ-YN-001,
-  NFR-Y-6).
+  NFR-Y-6). The backfill of existing yt-dlp titles edits ONLY the display `Track.title` (never the
+  dedup key / path / play-history) and is idempotent + repeatable (REQ-YN-005).
 - **Searching an unfindable track forever** — bounded attempts → exhausted marker (REQ-YX-002).
 - **Re-processing an already-upgraded track** — idempotent; excluded from the candidate set
   (REQ-YX-001).
