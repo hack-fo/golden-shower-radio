@@ -6,7 +6,7 @@ created: 2026-06-26
 updated: 2026-06-26
 author: charlie
 priority: High
-issue_number: 0
+issue_number: 52
 ---
 
 # SPEC-RADIO-LINEUP-050 — Weekly Lineup Grid, Hiatus State, Flagship Pin & Cross-Persona Show Firewall (a thin extension over the existing ShowEngine + lifecycle)
