@@ -78,7 +78,11 @@ services:
       - path: ../secrets/brain.env
         required: false
     environment:
-      SLSKD_URL: http://slskd:5030
+      # SLSKD-VPN-056: overridable so run.sh can point the brain at gluetun:5030 when the
+      # optional Mullvad VPN routes slskd (network_mode: service:gluetun). run.sh exports
+      # SLSKD_URL=http://gluetun:5030 only when SLSKD_VPN_ENABLED=1 and actively `unset`s it
+      # otherwise, so this default keeps the VPN-off brain environment byte-identical to before.
+      SLSKD_URL: ${SLSKD_URL:-http://slskd:5030}
       SLSKD_API_KEY: ${SLSKD_API_KEY}
       STATION_NAME: ${STATION_NAME}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}

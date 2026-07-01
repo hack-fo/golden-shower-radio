@@ -289,5 +289,202 @@ out="$(_wsl_localhost_hint 2>&1)"
 check "SU-10 WSL hint mentions localhost"    'printf "%s" "$out" | grep -qi "localhost"'
 check "SU-10 WSL hint clarifies NAT/inbound" 'printf "%s" "$out" | grep -qi "inbound"'
 
+# === SLSKDVPN-056 — optional Mullvad VPN routing for slskd ================== #
+# All network-free. The Mullvad API and docker are mocked/short-circuited; the live
+# tunnel + egress leak check need a real daemon+account and are manual (`run.sh --check`).
+
+VPN_ACCT_FIXTURE='1234567890123456'      # sentinel Mullvad account — asserted never leaked
+
+# --- VK: openssl X25519 keygen + pubkey derivation (REQ-VK-002, NFR-V-5) ---- #
+_vpriv="$(_wg_genkey)"
+check "VK-002 keygen: private key is 44-char base64 (32-byte X25519)" '[[ "${#_vpriv}" -eq 44 && "$_vpriv" == *= ]]'
+_vpub1="$(_wg_derive_pub "$_vpriv")"
+_vpub2="$(_wg_derive_pub "$_vpriv")"
+check "VK-002 derive: public key is 44-char base64"          '[[ "${#_vpub1}" -eq 44 ]]'
+check "VK-002 derive: deterministic from the same private"   '[[ "$_vpub1" == "$_vpub2" ]]'
+check "VK-002 derive: public differs from private"           '[[ "$_vpub1" != "$_vpriv" ]]'
+
+# --- VK: IPv4 CIDR extraction (REQ-VK-005) ---------------------------------- #
+check "VK-005 pick IPv4 CIDR from single addr"   '[[ "$(_wg_pick_ipv4_cidr "10.64.1.2/32")" == "10.64.1.2/32" ]]'
+check "VK-005 pick IPv4 CIDR from dual-stack"    '[[ "$(_wg_pick_ipv4_cidr "10.64.1.2/32,fc00:bbbb::1/128")" == "10.64.1.2/32" ]]'
+check "VK-005 reject non-address body"           '! _wg_pick_ipv4_cidr "not-an-address"'
+
+# --- curl shim: records argv+stdin, returns a configurable body ------------- #
+_CURL_TRACE="$TMP/curl.trace"
+_MULLVAD_RESP='10.64.1.2/32'
+curl() {
+  { printf 'ARGV:'; local _a; for _a in "$@"; do printf ' [%s]' "$_a"; done; printf '\n'
+    printf 'STDIN:'; cat; printf '\n'; } >>"$_CURL_TRACE"
+  printf '%s' "$_MULLVAD_RESP"
+}
+
+# --- VK-004: registration curl shape (account on stdin, pubkey url-encoded) -- #
+: >"$_CURL_TRACE"
+_rresp="$(DRY_RUN=0 _mullvad_register "$VPN_ACCT_FIXTURE" 'AB+c/DEf==pubkeywith+slash/chars')"
+check "VK-004 register: returns the API body"                    '[[ "$_rresp" == "10.64.1.2/32" ]]'
+check "VK-004 register: uses curl --data-urlencode for pubkey"   'grep -q -- "--data-urlencode" "$_CURL_TRACE" && grep -q "pubkey=AB+c/DEf==pubkeywith+slash/chars" "$_CURL_TRACE"'
+check "VK-004 register: account delivered on STDIN (--data @-)"  'grep -q -- "\[@-\]" "$_CURL_TRACE" && grep "^STDIN:" "$_CURL_TRACE" | grep -q "account=$VPN_ACCT_FIXTURE"'
+check "VK-004 register: account NOT on argv (absent from ps)"    '! grep "^ARGV:" "$_CURL_TRACE" | grep -q "$VPN_ACCT_FIXTURE"'
+check "VK-004 register: no hand-built account&pubkey form"       '! grep "^ARGV:" "$_CURL_TRACE" | grep -q "&pubkey"'
+
+# --- VK-001/003/005 + NFR-V-4: first provision registers once, then reuses --- #
+_venv="$TMP/vpn1.env"
+printf 'SLSKD_VPN_ENABLED=1\nMULLVAD_ACCOUNT=%s\n' "$VPN_ACCT_FIXTURE" >"$_venv"
+: >"$_CURL_TRACE"; _MULLVAD_RESP='10.64.1.2/32'
+GSR_ENV_FILE="$_venv" DRY_RUN=0 provision_mullvad_wg >/dev/null 2>&1; _rc=$?
+check "VK provision: first run succeeds (rc 0)"          '[[ "$_rc" -eq 0 ]]'
+check "VK provision: VPN_READY=1 after success"          '[[ "$VPN_READY" == "1" ]]'
+check "VK-003 provision: private key stored"             'grep -q "^WIREGUARD_PRIVATE_KEY=" "$_venv"'
+check "VK-005 provision: assigned address stored"        'grep -q "^WIREGUARD_ADDRESSES=10.64.1.2/32$" "$_venv"'
+check "VK-004 provision: registration was called once"   '[[ "$(grep -c "^ARGV:" "$_CURL_TRACE")" -eq 1 ]]'
+_stored_priv="$(grep '^WIREGUARD_PRIVATE_KEY=' "$_venv" | cut -d= -f2-)"
+# NFR-V-4: nine more runs must make ZERO further registration calls (device-slot safe).
+for _i in 1 2 3 4 5 6 7 8 9; do GSR_ENV_FILE="$_venv" DRY_RUN=0 provision_mullvad_wg >/dev/null 2>&1; done
+check "NFR-V-4 idempotent: still exactly 1 registration over 10 runs" '[[ "$(grep -c "^ARGV:" "$_CURL_TRACE")" -eq 1 ]]'
+check "NFR-V-4 idempotent: stored private key unchanged" '[[ "$(grep "^WIREGUARD_PRIVATE_KEY=" "$_venv" | cut -d= -f2-)" == "$_stored_priv" ]]'
+check "VK-001 reuse: VPN_READY=1 on the short-circuit run" '[[ "$VPN_READY" == "1" ]]'
+
+# --- VK-007: resume-after-partial (priv stored, addr absent -> re-register) -- #
+_rpenv="$TMP/vpn-partial.env"
+_partial_priv="$(_wg_genkey)"
+printf 'SLSKD_VPN_ENABLED=1\nMULLVAD_ACCOUNT=%s\nWIREGUARD_PRIVATE_KEY=%s\n' "$VPN_ACCT_FIXTURE" "$_partial_priv" >"$_rpenv"
+: >"$_CURL_TRACE"; _MULLVAD_RESP='10.64.9.9/32'
+GSR_ENV_FILE="$_rpenv" DRY_RUN=0 provision_mullvad_wg >/dev/null 2>&1
+check "VK-007 resume: reuses the stored private key (not regenerated)" '[[ "$(grep "^WIREGUARD_PRIVATE_KEY=" "$_rpenv" | cut -d= -f2-)" == "$_partial_priv" ]]'
+check "VK-007 resume: re-registers and stores the address"            'grep -q "^WIREGUARD_ADDRESSES=10.64.9.9/32$" "$_rpenv"'
+check "VK-007 resume: exactly one registration call"                  '[[ "$(grep -c "^ARGV:" "$_CURL_TRACE")" -eq 1 ]]'
+
+# --- VK-006 / NFR-V-3: fail-closed on registration failure ------------------ #
+_fcenv="$TMP/vpn-fail.env"
+printf 'SLSKD_VPN_ENABLED=1\nMULLVAD_ACCOUNT=%s\n' "$VPN_ACCT_FIXTURE" >"$_fcenv"
+: >"$_CURL_TRACE"; _MULLVAD_RESP='<html>error</html>'   # non-address body => reject
+GSR_ENV_FILE="$_fcenv" DRY_RUN=0 provision_mullvad_wg >/dev/null 2>&1; _rc=$?
+check "VK-006 fail-closed: provision returns non-zero"       '[[ "$_rc" -ne 0 ]]'
+check "VK-006 fail-closed: VPN_READY=0"                      '[[ "$VPN_READY" == "0" ]]'
+check "VK-006 fail-closed: WIREGUARD_ADDRESSES NOT written"  '! grep -q "^WIREGUARD_ADDRESSES=" "$_fcenv"'
+# The launch path must keep slskd DOWN, never direct: resolve_slskd_vpn clears the profiles.
+SLSKD_CHOICE=1; PROFILE_ARGS="--profile slskd"; VPN_READY=0
+SLSKD_VPN_ENABLED=1 resolve_slskd_vpn >/dev/null 2>&1
+check "NFR-V-3 fail-closed: slskd profile cleared (stays DOWN, not direct)" '[[ -z "$PROFILE_ARGS" ]]'
+check "NFR-V-3 fail-closed: SLSKD_URL unset (no misroute)"                  '[[ -z "${SLSKD_URL:-}" ]]'
+
+# --- NFR-V-7 / VS-002: account + private key never reach the logfile -------- #
+_lkenv="$TMP/vpn-log.env"
+printf 'SLSKD_VPN_ENABLED=1\nMULLVAD_ACCOUNT=%s\n' "$VPN_ACCT_FIXTURE" >"$_lkenv"
+: >"$_CURL_TRACE"; _MULLVAD_RESP='10.64.1.2/32'; : >"$GSR_LOG"
+GSR_ENV_FILE="$_lkenv" DRY_RUN=0 provision_mullvad_wg >/dev/null 2>&1
+_leaked_priv="$(grep '^WIREGUARD_PRIVATE_KEY=' "$_lkenv" | cut -d= -f2-)"
+check "NFR-V-7 no-leak: account number absent from \$GSR_LOG" '! grep -qF "$VPN_ACCT_FIXTURE" "$GSR_LOG"'
+check "NFR-V-7 no-leak: private key absent from \$GSR_LOG"    '[[ -n "$_leaked_priv" ]] && ! grep -qF "$_leaked_priv" "$GSR_LOG"'
+
+unset -f curl   # restore the real curl for anything downstream
+
+# --- VS-003: VPN secrets never land in brain.env ---------------------------- #
+check "VS-003: provisioning never created secrets/brain.env" '[[ ! -e "$TMP/secrets/brain.env" ]]'
+
+# --- resolve_slskd_vpn: ON path exports SLSKD_URL + pairs profiles + file ---- #
+SLSKD_CHOICE=1; VPN_READY=1; PROFILE_ARGS="--profile slskd"; VPN_COMPOSE_FILE_ARGS=""
+SLSKD_VPN_ENABLED=1 VPN_SERVICE_PROVIDER=mullvad VPN_SERVER_COUNTRIES=se resolve_slskd_vpn >/dev/null 2>&1
+check "VP-004 ON: SLSKD_URL exported to gluetun:5030"        '[[ "${SLSKD_URL:-}" == "http://gluetun:5030" ]]'
+check "VP-012 ON: both profiles paired in one place"        '[[ "$PROFILE_ARGS" == "--profile slskd --profile slskd-vpn" ]]'
+check "VP ON: VPN override file added via -f"               'printf "%s" "$VPN_COMPOSE_FILE_ARGS" | grep -q -- "-f .*docker-compose.vpn.yml"'
+check "VP-009 ON: preflight ran (DRYRUN config line)"        '[[ "$SLSKD_VPN_CHOICE" == "1" ]]'
+
+# --- REQ-VP-011 / VW-001: default-OFF unsets SLSKD_URL, no override, no gluetun #
+export SLSKD_URL='http://gluetun:5030'   # simulate a stale export
+SLSKD_CHOICE=1; PROFILE_ARGS="--profile slskd"; VPN_COMPOSE_FILE_ARGS="-f stale"
+unset SLSKD_VPN_ENABLED
+resolve_slskd_vpn >/dev/null 2>&1
+check "VP-011 OFF: stale SLSKD_URL is unset (brain falls back to slskd:5030)" '[[ -z "${SLSKD_URL:-}" ]]'
+check "VW-001 OFF: no VPN override file"                                      '[[ -z "$VPN_COMPOSE_FILE_ARGS" ]]'
+check "VW-001 OFF: SLSKD_VPN_CHOICE=0"                                        '[[ "$SLSKD_VPN_CHOICE" == "0" ]]'
+# provision is a no-op when the flag is unset (VPN_READY stays 0, no keygen).
+_offenv="$TMP/vpn-off.env"; printf 'STATION_NAME=Test\n' >"$_offenv"
+VPN_READY=1   # prove the no-op resets it
+GSR_ENV_FILE="$_offenv" provision_mullvad_wg >/dev/null 2>&1
+check "VW-001 OFF: provision no-op leaves VPN_READY=0"     '[[ "$VPN_READY" == "0" ]]'
+check "VW-001 OFF: provision wrote no WIREGUARD_ keys"     '! grep -q "^WIREGUARD_" "$_offenv"'
+
+# --- wizard VPN toggle (REQ-VW-002/003/004/005) ----------------------------- #
+_wvenv="$TMP/wiz-vpn-no.env"; : >"$_wvenv"
+GSR_ENV_FILE="$_wvenv" wizard_vpn_prompt <<< "" >/dev/null 2>&1
+check "VW-002 toggle default (empty answer) => OFF" 'grep -q "^SLSKD_VPN_ENABLED=0$" "$_wvenv"'
+check "VW-002 default OFF: no MULLVAD_ACCOUNT stored" '! grep -q "^MULLVAD_ACCOUNT=" "$_wvenv"'
+
+_wyenv="$TMP/wiz-vpn-yes.env"; : >"$_wyenv"; : >"$GSR_LOG"
+out="$(GSR_ENV_FILE="$_wyenv" wizard_vpn_prompt <<EOF 2>&1
+y
+$VPN_ACCT_FIXTURE
+se
+Malmo
+EOF
+)"
+check "VW-002 toggle yes => SLSKD_VPN_ENABLED=1"     'grep -q "^SLSKD_VPN_ENABLED=1$" "$_wyenv"'
+check "VW-005 stores VPN_SERVICE_PROVIDER=mullvad"   'grep -q "^VPN_SERVICE_PROVIDER=mullvad$" "$_wyenv"'
+check "VW-004 stores VPN_SERVER_COUNTRIES=se"        'grep -q "^VPN_SERVER_COUNTRIES=se$" "$_wyenv"'
+check "VW-004 stores VPN_SERVER_CITIES=Malmo"        'grep -q "^VPN_SERVER_CITIES=Malmo$" "$_wyenv"'
+check "VW-005 stores MULLVAD_ACCOUNT"                'grep -q "^MULLVAD_ACCOUNT=$VPN_ACCT_FIXTURE$" "$_wyenv"'
+check "VW-003 account never echoed to the terminal"  '! printf "%s" "$out" | grep -qF "$VPN_ACCT_FIXTURE"'
+check "VW-003 account never written to \$GSR_LOG"    '! grep -qF "$VPN_ACCT_FIXTURE" "$GSR_LOG"'
+check "VS-003 wizard: nothing written to brain.env"  '[[ ! -e "$TMP/secrets/brain.env" ]]'
+
+# --- banner: VPN note when routed, no secrets ------------------------------- #
+out="$(SLSKD_CHOICE=1 SLSKD_VPN_CHOICE=1 VPN_SERVICE_PROVIDER=mullvad VPN_SERVER_COUNTRIES=se \
+       MULLVAD_ACCOUNT="$VPN_ACCT_FIXTURE" banner 2>&1)"
+check "banner: notes VPN routing when on"    'printf "%s" "$out" | grep -qi "routed via mullvad"'
+check "banner: never prints the account"     '! printf "%s" "$out" | grep -qF "$VPN_ACCT_FIXTURE"'
+
+# --- AC-VP-009/010/NFR-V-2: real docker-compose merge of the !reset topology  #
+# Daemon-free (config only). Needs the compose CLI + a readable ../secrets/.env (for the
+# service env_file). Skips cleanly if the CLI is absent.
+if docker compose version >/dev/null 2>&1; then
+  REAL_REPO="$HERE/.."
+  REAL_ENV="$REAL_REPO/secrets/.env"
+  _made_env=0
+  if [[ ! -f "$REAL_ENV" ]]; then
+    mkdir -p "$REAL_REPO/secrets" 2>/dev/null || true
+    if printf 'STATION_NAME=Test\nSLSKD_API_KEY=dummy\n' >"$REAL_ENV" 2>/dev/null; then _made_env=1; fi
+  fi
+  if [[ -f "$REAL_ENV" ]]; then
+    _mout="$TMP/vpn-config.yml"
+    if WIREGUARD_PRIVATE_KEY="$_vpriv" WIREGUARD_ADDRESSES='10.64.1.2/32' \
+       MULLVAD_ACCOUNT="$VPN_ACCT_FIXTURE" VPN_SERVER_COUNTRIES='se' SLSKD_API_KEY='dummy' \
+       docker compose -f "$REAL_REPO/deploy/docker-compose.yml" -f "$REAL_REPO/deploy/docker-compose.vpn.yml" \
+         --profile slskd --profile slskd-vpn config >"$_mout" 2>/dev/null; then
+      check "NFR-V-2 merge: docker compose config exits 0 (!reset topology valid)" 'true'
+      check "VP-002 merge: slskd network_mode service:gluetun"      'grep -q "network_mode: service:gluetun" "$_mout"'
+      check "VP-001 merge: gluetun service present"                 'grep -qE "^  gluetun:" "$_mout"'
+      check "VP-010 merge: VPN_SERVER_COUNTRIES remapped to SERVER_COUNTRIES: se" 'grep -q "SERVER_COUNTRIES: se" "$_mout"'
+      if python3 -c 'import yaml' 2>/dev/null; then
+        _mout="$_mout" python3 - <<'PY'
+import os, yaml, sys
+d = yaml.safe_load(open(os.environ["_mout"]).read())["services"]
+sl, gl = d["slskd"], d["gluetun"]
+oks = []
+oks.append(("VP-002 merge(py): slskd has no ports key", "ports" not in sl))
+oks.append(("VP-002 merge(py): slskd has no networks key", "networks" not in sl))
+oks.append(("VP-001 merge(py): gluetun on gsr network", "gsr" in (gl.get("networks") or {})))
+pub = [str(p.get("published")) for p in gl.get("ports", [])]
+oks.append(("VP-003 merge(py): gluetun publishes 5030", "5030" in pub))
+oks.append(("VP-003 merge(py): gluetun does NOT publish 8000", "8000" not in pub))
+for name, cond in oks:
+    print(("PASS: " if cond else "FAIL: ") + name)
+sys.exit(0 if all(c for _, c in oks) else 1)
+PY
+        if [[ $? -eq 0 ]]; then PASS=$((PASS+5)); else FAIL=$((FAIL+1)); fi
+      else
+        printf 'SKIP: VP-002/003 merge python assertions (pyyaml not installed)\n'
+      fi
+    else
+      printf 'SKIP: VPN merge (docker compose config failed — env/CLI limitation)\n'
+    fi
+    [[ "$_made_env" -eq 1 ]] && rm -f "$REAL_ENV"
+  else
+    printf 'SKIP: VPN merge (could not provide ../secrets/.env fixture)\n'
+  fi
+else
+  printf 'SKIP: VPN merge test (docker compose CLI unavailable)\n'
+fi
+
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]]

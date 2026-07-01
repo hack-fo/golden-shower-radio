@@ -1,0 +1,73 @@
+# Golden Shower Radio — OPTIONAL Mullvad VPN routing for slskd (SPEC-RADIO-SLSKDVPN-056).
+#
+# This override is applied by scripts/run.sh ONLY when SLSKD_VPN_ENABLED=1, via:
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.vpn.yml \
+#                  --profile slskd --profile slskd-vpn up -d
+#
+# It adds a `gluetun` WireGuard sidecar (kill-switch ON) and re-homes slskd into
+# gluetun's network namespace, so ALL of slskd's traffic egresses through the VPN
+# tunnel and is dropped by the kill-switch if the tunnel fails. The rest of the stack
+# (brain, icecast, liquidsoap) is untouched and stays on the direct `gsr` network.
+#
+# Default-OFF: when this file is NOT passed, the base compose is byte-identical to the
+# pre-056 stack. The brain reaches slskd via the base file's
+# `SLSKD_URL: ${SLSKD_URL:-http://slskd:5030}`; run.sh exports
+# SLSKD_URL=http://gluetun:5030 (per-invocation, never persisted) only when the VPN is on.
+#
+# Requires Docker Compose >= 2.24.4 for the `!reset` override-merge on slskd's
+# networks/ports. run.sh enforces this with a `docker compose config` preflight
+# (REQ-VP-009) that aborts fail-closed if the merge cannot be produced.
+
+services:
+  gluetun:
+    image: qmcgaw/gluetun
+    container_name: gsr-gluetun
+    restart: unless-stopped
+    # Only starts under the `slskd-vpn` profile (run.sh pairs it with `slskd`).
+    profiles: ["slskd-vpn"]
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - "/dev/net/tun:/dev/net/tun"
+    # LOAD-BEARING (REQ-VP-001): gluetun MUST join `gsr` so the brain reaches slskd —
+    # which shares gluetun's netns — at http://gluetun:5030 through the kill-switch.
+    # Do NOT move gluetun off `gsr`.
+    networks: [gsr]
+    # Publish ONLY slskd's web UI (5030) on gluetun so the operator's browser still
+    # reaches http://localhost:5030 exactly as before (REQ-VP-003). gluetun's own
+    # control-server port 8000 is deliberately NOT published — it would collide with
+    # icecast's host binding 8000:8000.
+    ports:
+      - "5030:5030"
+    environment:
+      # Provider is config-driven, Mullvad by default (REQ-VG-001), so a port-forwarding
+      # provider (AirVPN/ProtonVPN) can be swapped in without changing the topology.
+      VPN_SERVICE_PROVIDER: ${VPN_SERVICE_PROVIDER:-mullvad}
+      VPN_TYPE: wireguard
+      # Provider-neutral WireGuard credentials (REQ-VG-002), provisioned once by run.sh.
+      WIREGUARD_PRIVATE_KEY: ${WIREGUARD_PRIVATE_KEY}
+      WIREGUARD_ADDRESSES: ${WIREGUARD_ADDRESSES}
+      # REQ-VP-010 remap: the wizard stores VPN_SERVER_*, but gluetun reads SERVER_*.
+      # A blank value leaves gluetun to auto-select the exit.
+      SERVER_COUNTRIES: ${VPN_SERVER_COUNTRIES:-}
+      SERVER_CITIES: ${VPN_SERVER_CITIES:-}
+      # Kill-switch ON (gluetun default; explicit for auditability) + gluetun-managed
+      # DNS over TLS. gluetun's default firewall does not route IPv6, so there is no
+      # DNS or IPv6 leak (REQ-VP-005).
+      FIREWALL: "on"
+      DOT: "on"
+
+  slskd:
+    # Re-home slskd into gluetun's network namespace (REQ-VP-002): it loses its own
+    # network identity + ports and rides the VPN tunnel behind the kill-switch.
+    # `network_mode` is mutually exclusive with both `networks` and `ports`, so the base
+    # file's `networks: [gsr]` and `ports: ["5030:5030"]` are REMOVED here with the
+    # Compose `!reset` tag (requires Docker Compose >= 2.24.4).
+    network_mode: "service:gluetun"
+    networks: !reset null
+    ports: !reset null
+    # Wait for the tunnel to be healthy before slskd starts, so there is no leak window
+    # during startup (REQ-VP-008): before the tunnel is up the kill-switch drops egress.
+    depends_on:
+      gluetun:
+        condition: service_healthy

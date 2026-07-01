@@ -94,6 +94,20 @@ The slskd web interface at `http://localhost:5030` previously set only an `api_k
 
 If the port is unreachable under WSL, the probe prints a hint: `localhost:5030` forwards to Windows in WSL2's default NAT mode, so an unreachable port usually means the slskd container is down (check `docker compose ps`) rather than a NAT problem — NAT only blocks inbound connections from the LAN/internet, never localhost on the same host. The login probe feeds the password to curl on stdin, so it never appears in the process list.
 
+## Optional Mullvad VPN for slskd (SLSKDVPN-056)
+
+`run.sh` can optionally route **only** the slskd (Soulseek) acquisition container through a
+Mullvad VPN with a WireGuard kill-switch (opt-in, default OFF). The wizard adds a
+`Route slskd via Mullvad VPN? [y/N]` toggle; on yes it captures the Mullvad account number
+(silent, never logged) and generates + registers a WireGuard key once, reusing it thereafter.
+When enabled, run.sh applies `deploy/docker-compose.vpn.yml` (a `gluetun` sidecar +
+`network_mode: "service:gluetun"`), points the brain at `gluetun:5030`, and runs a non-fatal
+egress leak check. Provisioning is fail-closed: if it fails, slskd stays down (never direct).
+
+Full details — the account-number flow, the ~5-device cap and force re-provision, the
+port-forwarding caveat, kill-switch/fail-closed behavior, and how to verify — are in
+[slskd-vpn.md](slskd-vpn.md).
+
 ## Re-running setup
 
 The wizard is gated on the `SETUP_COMPLETE=1` line in `secrets/.env`. To force the wizard to run again, remove that line (or delete `secrets/.env` to start clean):

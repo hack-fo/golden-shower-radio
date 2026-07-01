@@ -81,6 +81,12 @@ GSR_HEALTH_TIMEOUT="${GSR_HEALTH_TIMEOUT:-4}"    # per-probe curl timeout (s)
 GSR_HEALTH_TRIES="${GSR_HEALTH_TRIES:-15}"       # post-up probe retries
 GSR_HEALTH_GAP="${GSR_HEALTH_GAP:-3}"            # seconds between probe retries
 
+# SLSKDVPN-056: optional Mullvad VPN routing for slskd (opt-in, default OFF). The VPN
+# topology lives in a dedicated compose override that is applied ONLY when SLSKD_VPN_ENABLED=1.
+GSR_VPN_COMPOSE_FILE="${GSR_VPN_COMPOSE_FILE:-$REPO/deploy/docker-compose.vpn.yml}"
+GSR_MULLVAD_WG_API="${GSR_MULLVAD_WG_API:-https://api.mullvad.net/wg}"   # WireGuard key registration endpoint
+GSR_VPN_IPECHO_URL="${GSR_VPN_IPECHO_URL:-https://ipinfo.io/ip}"        # egress-IP echo for the leak check
+
 DRY_RUN="${GSR_DRY_RUN:-0}"  # 1 => print heavy actions, don't execute
 
 # --------------------------------------------------------------------------- #
@@ -188,6 +194,12 @@ FLAGS:
 
 slskd precedence (unchanged): --with-slskd/--no-slskd flag > SLSKD_ENABLED env >
   interactive prompt (default Yes) > ON when non-interactive.
+
+OPTIONAL Mullvad VPN for slskd (SLSKDVPN-056, default OFF): enable via the first-run wizard
+  toggle or SLSKD_VPN_ENABLED=1 in secrets/.env (needs MULLVAD_ACCOUNT). run.sh then generates
+  a WireGuard key once, registers it with Mullvad, routes ONLY slskd through a gluetun sidecar
+  (kill-switch on), and points the brain at gluetun:5030. Fail-closed: if provisioning fails,
+  slskd stays DOWN (never falls back to the direct network). See docs/components/slskd-vpn.md.
 
 ENV OVERRIDES (defaults shown):
   GSR_REPO=$REPO
@@ -354,6 +366,9 @@ ENVFILE
     [[ -n "$slskd_key"  ]] && { _set_env_var "SLSKD_API_KEY"  "$slskd_key"; unset slskd_key; }
   fi
 
+  # ── Phase 2b: Optional Mullvad VPN routing for slskd (SLSKDVPN-056) ────────
+  wizard_vpn_prompt
+
   # ── Phase 3: Optional enrichment — Enter to skip any ──────────────────────
   printf '\n  %s\n\n' "$(_c_info '[Phase 3/3] Optional enrichment (press Enter to skip any)')"
   local _val _pair _label _envkey
@@ -373,6 +388,53 @@ ENVFILE
   unset _val _pair _pairs
 
   printf '\n  Setup complete. Run ./scripts/run.sh again to start the station.\n\n'
+}
+
+# --------------------------------------------------------------------------- #
+# Optional Mullvad VPN toggle (SLSKDVPN-056, REQ-VW-002..005). Default No. Only slskd
+# is tunneled; the rest of the station stays on the direct network. On "yes" it captures
+# the 16-digit Mullvad account number via SILENT input (never echoed or logged, trimmed by
+# _set_env_var) plus an optional exit country/city, and persists SLSKD_VPN_ENABLED,
+# VPN_SERVICE_PROVIDER, VPN_SERVER_COUNTRIES, VPN_SERVER_CITIES and MULLVAD_ACCOUNT into
+# secrets/.env (NEVER brain.env). The WireGuard keypair itself is generated + registered
+# later, once, by provision_mullvad_wg(). On "no" it records SLSKD_VPN_ENABLED=0 (explicit
+# default-OFF marker; behaviourally identical to the flag being unset).
+# --------------------------------------------------------------------------- #
+wizard_vpn_prompt() {
+  printf '\n  %s\n' "$(_c_info 'Optional: route slskd (Soulseek) through a Mullvad VPN with a kill-switch?')"
+  printf '  Only slskd is tunneled; brain / icecast / liquidsoap stay on the direct network.\n'
+  printf '  Route slskd via Mullvad VPN? [y/N] '
+  local _ans; read -r _ans || _ans=""
+  case "$(printf '%s' "$_ans" | tr '[:upper:]' '[:lower:]')" in
+    y | yes) : ;;
+    *) _set_env_var "SLSKD_VPN_ENABLED" "0"; return 0 ;;
+  esac
+
+  # 16-digit Mullvad account number — SILENT input (SU-1/REQ-VW-003), never echoed/logged.
+  local mull_acct
+  printf '  Mullvad account number (input hidden): '
+  read -rs mull_acct || mull_acct=""
+  printf '\n'
+
+  # Optional exit location. Blank => gluetun auto-selects (REQ-VW-004). Stored under the
+  # VPN_SERVER_* names; the compose override remaps them to gluetun's SERVER_* (REQ-VP-010).
+  local vpn_country vpn_city
+  printf '  Exit country code (optional, e.g. se; blank = auto): '
+  read -r vpn_country || vpn_country=""
+  printf '  Exit city (optional, e.g. Malmo; blank = auto): '
+  read -r vpn_city || vpn_city=""
+
+  _set_env_var "SLSKD_VPN_ENABLED"    "1"
+  _set_env_var "VPN_SERVICE_PROVIDER" "mullvad"
+  _set_env_var "VPN_SERVER_COUNTRIES" "$vpn_country"
+  _set_env_var "VPN_SERVER_CITIES"    "$vpn_city"
+  [[ -n "$mull_acct" ]] && { _set_env_var "MULLVAD_ACCOUNT" "$mull_acct"; unset mull_acct; }
+
+  printf '\n  %s\n' "$(_c_success 'Mullvad VPN enabled for slskd.')"
+  printf '  On the next start, run.sh generates a WireGuard key ONCE, registers it with\n'
+  printf '  Mullvad, and reuses it thereafter (Mullvad caps devices at ~5/account). To force a\n'
+  printf '  re-provision, remove the WIREGUARD_* lines from secrets/.env and revoke the old key\n'
+  printf '  in your Mullvad account panel.\n'
 }
 
 # --------------------------------------------------------------------------- #
@@ -430,6 +492,169 @@ PY
   printf '    password: %s\n\n' "$web_pw"
   unset web_pw
   log "slskd web login provisioned for user '$web_user' (password shown once on screen; stored in secrets/.env, kept out of the logfile)."
+}
+
+# --------------------------------------------------------------------------- #
+# WireGuard key helpers (SLSKDVPN-056). openssl X25519 is the DEFAULT generator so no
+# `wireguard-tools` install is required (NFR-V-5). The base64 raw 32-byte scalar/point is
+# exactly what WireGuard presents on the wire (clamping is applied at use-time by both
+# openssl and WireGuard), so an openssl-derived public key registers correctly with Mullvad.
+# --------------------------------------------------------------------------- #
+
+# _wg_genkey -> echoes a base64 raw X25519 private key (44 chars) via openssl.
+# private = last 32 bytes of the 48-byte PKCS#8 DER, base64-encoded.
+_wg_genkey() {
+  openssl genpkey -algorithm X25519 -outform DER 2>/dev/null | tail -c 32 | base64 | tr -d '\n'
+}
+
+# _wg_derive_pub <base64-raw-private> -> echoes the base64 raw X25519 public key (44 chars).
+# Reconstructs the 48-byte PKCS#8 DER (fixed 16-byte X25519 prefix + the 32 raw private bytes)
+# from the STORED private key, then derives the public key with openssl `pkey -pubout` — the
+# SAME tool that produced the private key (REQ-VK-002). python3 only assembles bytes; openssl
+# does the crypto. This is also the resume-after-partial path (REQ-VK-007): the pubkey is
+# always re-derivable from the stored private key, so registration can be retried idempotently.
+_wg_derive_pub() {
+  local b64priv="$1"
+  # The private key is passed as argv[1] (NOT stdin): stdin is consumed by the heredoc that
+  # delivers the python program, so a piped key would be lost. openssl then does the crypto.
+  # FOLLOW-UP (VS-002 hygiene, low severity): argv is briefly visible in `ps` during
+  # provisioning ONLY (first enable / resume-after-partial), and the key also lives in
+  # chmod-600 secrets/.env. Harden later via a `-c`+env-var form (an env-var+heredoc swap
+  # broke derivation — needs its own test). Not a blocker; no log/remote exposure.
+  python3 - "$b64priv" <<'PY' 2>/dev/null | openssl pkey -inform DER -pubout -outform DER 2>/dev/null | tail -c 32 | base64 | tr -d '\n'
+import sys, base64
+raw = base64.b64decode(sys.argv[1].strip())
+if len(raw) != 32:
+    sys.exit(1)
+# PKCS#8 DER prefix for an X25519 private key (RFC 8410): SEQUENCE/version/AlgId/OCTET STRING.
+prefix = bytes.fromhex("302e020100300506032b656e04220420")
+sys.stdout.buffer.write(prefix + raw)
+PY
+}
+
+# _wg_pick_ipv4_cidr <response> -> echoes the first IPv4 CIDR from a (possibly comma-separated)
+# address list, else non-zero. Mullvad returns e.g. "10.x.x.x/32" or "10.x.x.x/32,fc00:.../128".
+_wg_pick_ipv4_cidr() {
+  local resp="$1" tok
+  local IFS=','
+  for tok in $resp; do
+    tok="$(printf '%s' "$tok" | tr -d '[:space:]')"
+    if printf '%s' "$tok" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$'; then
+      printf '%s' "$tok"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# _mullvad_register <account> <base64-pubkey> -> echoes Mullvad's response body (the assigned
+# CIDR) on stdout. CRITICAL (REQ-VK-004): the account goes on STDIN (`--data @-`, so it never
+# reaches argv / `ps`), and the pubkey is url-encoded BY curl (`--data-urlencode`) — a manual
+# `printf 'account=%s&pubkey=%s'` would corrupt a `+`/`/` in the base64 key and silently
+# register a WRONG key (valid-looking CIDR back, tunnel never handshakes). No DRY_RUN gate here:
+# the caller (provision_mullvad_wg) short-circuits network in dry-run; tests shim `curl`.
+_mullvad_register() {
+  local acct="$1" pub="$2"
+  command -v curl >/dev/null 2>&1 || return 1
+  printf 'account=%s' "$acct" \
+    | curl -sS -m "$GSR_HEALTH_TIMEOUT" --data @- --data-urlencode "pubkey=$pub" "$GSR_MULLVAD_WG_API" 2>/dev/null
+}
+
+# --------------------------------------------------------------------------- #
+# provision_mullvad_wg (SLSKDVPN-056) — idempotent WireGuard key lifecycle, mirroring
+# provision_slskd_web_creds. Runs BEFORE load_secrets so the values are exported for the
+# compose interpolation. Sets VPN_READY (0/1), the fail-closed gate the launch path honours.
+#
+#   REQ-VK-001 short-circuit: both WIREGUARD_PRIVATE_KEY + WIREGUARD_ADDRESSES present => reuse,
+#     no registration (device-slot safe; Mullvad caps ~5 keys/account).
+#   REQ-VK-002 keygen: openssl X25519 (no wireguard-tools). REQ-VK-003 store priv BEFORE register.
+#   REQ-VK-004 register: account on stdin, pubkey via --data-urlencode. REQ-VK-005 validate body.
+#   REQ-VK-006 fail-closed: on ANY failure do NOT write the address, do NOT bring gluetun up,
+#     do NOT start slskd on the direct gsr network (VPN_READY stays 0) — acquisition pauses.
+#   REQ-VK-007 resume-after-partial: priv present, addr absent => re-derive pubkey + re-register.
+# --------------------------------------------------------------------------- #
+provision_mullvad_wg() {
+  VPN_READY=0
+  [[ -f "$GSR_ENV_FILE" ]] || return 0
+
+  # Only when the operator opted into the VPN (grep the file — runs pre-load_secrets).
+  local enabled
+  enabled="$(grep -E '^SLSKD_VPN_ENABLED=' "$GSR_ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')"
+  case "$(printf '%s' "$enabled" | tr '[:upper:]' '[:lower:]')" in
+    1 | true | yes | on) : ;;
+    *) return 0 ;;   # default OFF — nothing to provision, VPN_READY stays 0
+  esac
+
+  local have_priv have_addr
+  have_priv="$(grep -E '^WIREGUARD_PRIVATE_KEY=' "$GSR_ENV_FILE" 2>/dev/null | cut -d= -f2-)"
+  have_addr="$(grep -E '^WIREGUARD_ADDRESSES=' "$GSR_ENV_FILE" 2>/dev/null | cut -d= -f2-)"
+
+  # REQ-VK-001 idempotent short-circuit: reuse a fully provisioned key (no re-registration).
+  if [[ -n "$have_priv" && -n "$have_addr" ]]; then
+    VPN_READY=1
+    log "Mullvad WG: reusing the stored WireGuard key + address (no re-registration — device-slot safe)."
+    return 0
+  fi
+
+  # Dry-run: keygen + Mullvad registration are provisioning side effects (registration consumes
+  # a device slot), so do NOT perform them. Show intent; treat the VPN path as ready for the dry run.
+  if [[ "$DRY_RUN" == "1" ]]; then
+    printf 'DRYRUN: provision Mullvad WireGuard key (openssl X25519 keygen + register at %s)\n' "$GSR_MULLVAD_WG_API"
+    VPN_READY=1
+    return 0
+  fi
+
+  local acct
+  acct="$(grep -E '^MULLVAD_ACCOUNT=' "$GSR_ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')"
+  if [[ -z "$acct" ]]; then
+    log "ERROR: SLSKD_VPN_ENABLED=1 but MULLVAD_ACCOUNT is missing from secrets/.env — cannot provision the"
+    log "       WireGuard key. Acquisition is PAUSED (slskd stays DOWN, never direct). Add the account and re-run."
+    return 1
+  fi
+
+  # Generate the private key ONCE, unless one is already stored from a prior partial run (REQ-VK-007).
+  local priv="$have_priv"
+  if [[ -z "$priv" ]]; then
+    priv="$(_wg_genkey)"
+    if [[ -z "$priv" || "${#priv}" -ne 44 ]]; then
+      log "ERROR: WireGuard key generation via openssl failed (empty/short key). Acquisition PAUSED —"
+      log "       slskd stays DOWN (never direct). Ensure 'openssl' with X25519 support is installed."
+      return 1
+    fi
+    # REQ-VK-003: persist the private key BEFORE registering, so a generated key is never lost mid-flow.
+    _set_env_var "WIREGUARD_PRIVATE_KEY" "$priv"
+  fi
+
+  # Derive the public key from the (stored) private key with the same tool (openssl).
+  local pub
+  pub="$(_wg_derive_pub "$priv")"
+  if [[ -z "$pub" || "${#pub}" -ne 44 ]]; then
+    log "ERROR: could not derive the WireGuard public key from the private key (openssl). Acquisition PAUSED —"
+    log "       slskd stays DOWN (never direct)."
+    return 1
+  fi
+
+  # REQ-VK-004: register the PUBLIC key. Account on stdin, pubkey url-encoded by curl.
+  local resp
+  resp="$(_mullvad_register "$acct" "$pub")"
+
+  # REQ-VK-005: accept only an address-shaped body; else fail-closed (REQ-VK-006).
+  if [[ -z "$resp" ]] || ! printf '%s' "$resp" | grep -qE '^[0-9a-f:/.,]+$'; then
+    log "ERROR: Mullvad WireGuard registration failed (no or non-address response). Acquisition is PAUSED —"
+    log "       slskd stays DOWN (never started on the direct gsr network). Verify the account number and"
+    log "       network, then re-run; the stored private key is reused and re-registration is idempotent."
+    return 1   # WIREGUARD_ADDRESSES intentionally NOT written (REQ-VK-006)
+  fi
+
+  local addr
+  if ! addr="$(_wg_pick_ipv4_cidr "$resp")" || [[ -z "$addr" ]]; then
+    log "ERROR: Mullvad returned no usable IPv4 CIDR. Acquisition PAUSED — slskd stays DOWN (never direct)."
+    return 1
+  fi
+
+  _set_env_var "WIREGUARD_ADDRESSES" "$addr"
+  VPN_READY=1
+  log "Mullvad WG: registered a WireGuard key and stored the assigned tunnel address (reused on later runs)."
 }
 
 # --------------------------------------------------------------------------- #
@@ -653,6 +878,13 @@ PY
 # Sets PROFILE_ARGS. The brain tolerates slskd-absent (acquisition pauses).
 # --------------------------------------------------------------------------- #
 PROFILE_ARGS=""
+# SLSKDVPN-056 globals (default OFF): SLSKD_VPN_CHOICE — resolved VPN state this launch;
+# VPN_READY — WireGuard provisioning succeeded (fail-closed gate); VPN_COMPOSE_FILE_ARGS —
+# the extra `-f docker-compose.vpn.yml` (empty unless VPN is on). Initialised here so the
+# default-OFF launch path and the existing compose_up tests are unaffected under `set -u`.
+SLSKD_VPN_CHOICE=0
+VPN_READY=0
+VPN_COMPOSE_FILE_ARGS=""
 resolve_slskd() {
   if [[ -z "$SLSKD_CHOICE" ]] && [[ -n "${SLSKD_ENABLED:-}" ]]; then
     case "$(printf '%s' "$SLSKD_ENABLED" | tr '[:upper:]' '[:lower:]')" in
@@ -681,6 +913,90 @@ resolve_slskd() {
     log "slskd: DISABLED — Soulseek acquisition paused; the station plays its existing library and"
     log "       everything else runs normally. Re-enable with --with-slskd or SLSKD_ENABLED=1."
   fi
+}
+
+# --------------------------------------------------------------------------- #
+# _vpn_compose_preflight (REQ-VP-009 / NFR-V-2). Runs `docker compose config` on the MERGED
+# base+VPN files with BOTH profiles. A clean merge is the authoritative, version-independent
+# gate for the `!reset` topology (Compose >= 2.24.4); its non-zero exit is what aborts the VPN
+# launch, not a version-string check. Non-zero return => caller fails closed.
+# --------------------------------------------------------------------------- #
+_vpn_compose_preflight() {
+  if [[ "$DRY_RUN" == "1" ]]; then
+    printf 'DRYRUN: %s -f %s -f %s --profile slskd --profile slskd-vpn config -q\n' \
+      "$DC" "$GSR_COMPOSE_FILE" "$GSR_VPN_COMPOSE_FILE"
+    return 0
+  fi
+  $DC -p "$GSR_PROJECT" -f "$GSR_COMPOSE_FILE" -f "$GSR_VPN_COMPOSE_FILE" --env-file "$GSR_ENV_FILE" \
+    --profile slskd --profile slskd-vpn config -q >/dev/null 2>&1
+}
+
+# --------------------------------------------------------------------------- #
+# resolve_slskd_vpn (SLSKDVPN-056) — runs AFTER resolve_slskd + load_secrets. Decides the VPN
+# topology for this launch and sets PROFILE_ARGS / VPN_COMPOSE_FILE_ARGS / SLSKD_URL.
+#
+#   OFF (default): unset SLSKD_URL (REQ-VP-011 — never let a stale export misroute the brain);
+#     no override file, no slskd-vpn profile. Byte-identical to the pre-056 stack (NFR-V-1).
+#   ON + slskd off this launch: nothing to tunnel — skip VPN, unset SLSKD_URL.
+#   ON + provisioning failed (VPN_READY!=1): fail-closed (NFR-V-3) — slskd stays DOWN (never
+#     direct), profiles cleared, SLSKD_URL unset, ERROR logged.
+#   ON + preflight fails: fail-closed with a compose-merge/version ERROR (REQ-VP-009).
+#   ON + ready + preflight ok: activate BOTH profiles together (REQ-VP-012), add the override
+#     file, export SLSKD_URL=http://gluetun:5030 (per-invocation only, never persisted).
+# --------------------------------------------------------------------------- #
+resolve_slskd_vpn() {
+  VPN_COMPOSE_FILE_ARGS=""
+
+  local enabled
+  enabled="$(printf '%s' "${SLSKD_VPN_ENABLED:-}" | tr '[:upper:]' '[:lower:]')"
+  case "$enabled" in
+    1 | true | yes | on) SLSKD_VPN_CHOICE=1 ;;
+    *) SLSKD_VPN_CHOICE=0 ;;
+  esac
+
+  # Default / VPN-off: NEVER leave SLSKD_URL set (REQ-VP-011). No override file, no vpn profile.
+  if [[ "$SLSKD_VPN_CHOICE" != "1" ]]; then
+    unset SLSKD_URL
+    return 0
+  fi
+
+  # VPN requested but slskd is off this launch — nothing to tunnel; treat as VPN-off.
+  if [[ "$SLSKD_CHOICE" != "1" ]]; then
+    log "slskd VPN: requested, but slskd is disabled this launch — VPN routing skipped (nothing to tunnel)."
+    SLSKD_VPN_CHOICE=0
+    unset SLSKD_URL
+    return 0
+  fi
+
+  # Fail-closed: WireGuard provisioning must have completed (REQ-VK-006 / NFR-V-3).
+  if [[ "${VPN_READY:-0}" != "1" ]]; then
+    log "ERROR: Mullvad VPN provisioning did not complete — acquisition is PAUSED. slskd stays DOWN"
+    log "       (never started on the direct gsr network). Fix the WireGuard registration and re-run."
+    PROFILE_ARGS=""
+    SLSKD_CHOICE=0
+    SLSKD_VPN_CHOICE=0
+    unset SLSKD_URL
+    return 0
+  fi
+
+  # Authoritative merge/version gate (REQ-VP-009).
+  if ! _vpn_compose_preflight; then
+    log "ERROR: 'docker compose config' preflight failed on the merged VPN topology. This usually means"
+    log "       Docker Compose is older than 2.24.4 (needed for the '!reset' override merge). Upgrade"
+    log "       Docker Compose, then re-run. slskd stays DOWN (acquisition paused) — never direct."
+    PROFILE_ARGS=""
+    SLSKD_CHOICE=0
+    SLSKD_VPN_CHOICE=0
+    unset SLSKD_URL
+    return 0
+  fi
+
+  # All clear — activate BOTH profiles together (REQ-VP-012), add the override file, and point
+  # the brain at gluetun. SLSKD_URL is exported per-invocation only and NEVER persisted (REQ-VP-011).
+  PROFILE_ARGS="--profile slskd --profile slskd-vpn"
+  VPN_COMPOSE_FILE_ARGS="-f $GSR_VPN_COMPOSE_FILE"
+  export SLSKD_URL="http://gluetun:5030"
+  log "slskd VPN: ENABLED — routing slskd via ${VPN_SERVICE_PROVIDER:-mullvad} (exit: ${VPN_SERVER_COUNTRIES:-auto}). Brain -> gluetun:5030."
 }
 
 # --------------------------------------------------------------------------- #
@@ -830,9 +1146,9 @@ note_ports() {
 compose_up() {
   local build_arg="--build"
   [[ "$WANT_BUILD" -eq 1 ]] || build_arg=""
-  log "Bringing the stack up: $DC -p $GSR_PROJECT (slskd: ${PROFILE_ARGS:-off}, build: ${WANT_BUILD})."
-  # shellcheck disable=SC2086  # PROFILE_ARGS/build_arg must word-split into 0/N args
-  run_or_dry $DC -p "$GSR_PROJECT" -f "$GSR_COMPOSE_FILE" --env-file "$GSR_ENV_FILE" \
+  log "Bringing the stack up: $DC -p $GSR_PROJECT (slskd: ${PROFILE_ARGS:-off}, vpn: ${VPN_COMPOSE_FILE_ARGS:+on}, build: ${WANT_BUILD})."
+  # shellcheck disable=SC2086  # PROFILE_ARGS/VPN_COMPOSE_FILE_ARGS/build_arg must word-split into 0/N args
+  run_or_dry $DC -p "$GSR_PROJECT" -f "$GSR_COMPOSE_FILE" $VPN_COMPOSE_FILE_ARGS --env-file "$GSR_ENV_FILE" \
     $PROFILE_ARGS up -d $build_arg --remove-orphans
 }
 
@@ -901,6 +1217,8 @@ verify_station() {
     200\ *) log "Health OK: site responds at $SITE_URL ($res)." ;;
     *) log "Health WARN: site not confirmed at $SITE_URL (last: ${res:-no-response})." ;;
   esac
+
+  check_slskd_vpn                    # SLSKDVPN-056: non-fatal egress leak verify (only if VPN routed slskd)
 
   if [[ "$WANT_CHECK" -eq 1 ]]; then
     log "Deep check (--check): probing brain /status JSON..."
@@ -986,6 +1304,69 @@ check_slskd_web() {
 }
 
 # --------------------------------------------------------------------------- #
+# check_slskd_vpn (SLSKDVPN-056, REQ-VV-001..005) — non-fatal post-up VPN verify, run only
+# when slskd was routed via the VPN this launch. Proves slskd's egress actually leaves via the
+# tunnel by reading the exit IP from INSIDE gluetun's network namespace (`docker exec gsr-gluetun
+# wget`, busybox — slskd shares that netns) and comparing it to the host's own public IP fetched
+# with curl ON THE HOST (D1: deliberately different tools/contexts). Different => PASS; equal =>
+# WARN: LEAK. A blocked/timed-out probe means the kill-switch held (no leak) => soft note, not an
+# alarm (REQ-VV-005). Missing docker/curl/wget => skip note, never abort (NFR-V-6). The host's
+# own public IP is NEVER logged; only the verdict + the (shared, safe) Mullvad exit IP (REQ-VV-004).
+# --------------------------------------------------------------------------- #
+check_slskd_vpn() {
+  [[ "${SLSKD_VPN_CHOICE:-0}" == "1" ]] || return 0   # only when VPN routing was active this launch
+  [[ "$DRY_RUN" == "1" ]] && return 0
+
+  if ! command -v docker >/dev/null 2>&1; then
+    log "slskd VPN check: 'docker' unavailable — skipping egress leak check (blocked != leak)."
+    return 0
+  fi
+  if ! command -v curl >/dev/null 2>&1; then
+    log "slskd VPN check: 'curl' unavailable — skipping egress leak check (blocked != leak)."
+    return 0
+  fi
+
+  # gluetun healthy (REQ-VV-003).
+  local gh
+  gh="$(docker inspect -f '{{.State.Health.Status}}' gsr-gluetun 2>/dev/null || true)"
+  case "$gh" in
+    healthy) log "slskd VPN check OK: gluetun reports healthy (WireGuard handshake up)." ;;
+    "")      log "slskd VPN check: could not read gluetun health (container may still be starting)." ;;
+    *)       log "slskd VPN check WARN: gluetun health is '$gh' — the tunnel may not be established yet." ;;
+  esac
+
+  # slskd reachable THROUGH gluetun (REQ-VV-003).
+  local sc
+  sc="$(curl -s -o /dev/null -m "$GSR_HEALTH_TIMEOUT" -w '%{http_code}' "http://127.0.0.1:$SLSKD_PORT/" 2>/dev/null || true)"
+  if [[ -n "$sc" && "$sc" != "000" ]]; then
+    log "slskd VPN check OK: slskd answers through gluetun at :$SLSKD_PORT (HTTP $sc)."
+  else
+    log "slskd VPN check: slskd not answering at :$SLSKD_PORT yet (HTTP ${sc:-none})."
+  fi
+
+  # Egress-IP leak check (REQ-VV-001/002/004/005). wget INSIDE gluetun's netns vs curl on the host.
+  local vpn_ip host_ip
+  vpn_ip="$(docker exec gsr-gluetun wget -qO- "$GSR_VPN_IPECHO_URL" 2>/dev/null | tr -d '[:space:]' || true)"
+  host_ip="$(curl -s -m "$GSR_HEALTH_TIMEOUT" "$GSR_VPN_IPECHO_URL" 2>/dev/null | tr -d '[:space:]' || true)"
+
+  if [[ -z "$vpn_ip" ]]; then
+    # Blocked/timeout — the kill-switch held. NOT a leak (REQ-VV-005).
+    log "slskd VPN check NOTE: could not read the VPN exit IP from gluetun's namespace (blocked or still"
+    log "     negotiating). A blocked probe means the kill-switch held — no leak. Re-check shortly with --check."
+    return 0
+  fi
+
+  if [[ -n "$host_ip" && "$vpn_ip" == "$host_ip" ]]; then
+    # Comparison done in memory; the host's own IP is never written (REQ-VV-004).
+    log "WARN: LEAK — slskd's egress IP matches the host's own public IP: slskd traffic is NOT leaving via the"
+    log "      Mullvad tunnel. Inspect 'docker logs gsr-gluetun'; do not rely on the VPN until this clears."
+  else
+    log "slskd VPN check PASS: slskd egresses via the VPN (Mullvad exit IP $vpn_ip; the host's own public IP is not logged)."
+  fi
+  return 0
+}
+
+# --------------------------------------------------------------------------- #
 # Final banner.
 # --------------------------------------------------------------------------- #
 banner() {
@@ -999,6 +1380,10 @@ EOF
   if [[ "$SLSKD_CHOICE" == "1" ]]; then
     echo "    slskd  : http://localhost:$SLSKD_PORT"
     echo "             login → username & password are in secrets/.env (SLSKD_WEB_USERNAME / SLSKD_WEB_PASSWORD)"
+    if [[ "${SLSKD_VPN_CHOICE:-0}" == "1" ]]; then
+      echo "             VPN  → routed via ${VPN_SERVICE_PROVIDER:-mullvad} (exit: ${VPN_SERVER_COUNTRIES:-auto}); kill-switch on."
+      echo "                    re-provision the key: remove WIREGUARD_* from secrets/.env + revoke it in the Mullvad panel (~5-device cap)."
+    fi
   else
     echo "    slskd  : (disabled this launch)"
   fi
@@ -1023,6 +1408,7 @@ main() {
   require_core_prereqs || return 1   # FATAL guards (Docker, compose, compose file)
   first_run_wizard                   # create secrets/.env if missing (no-op if exists)
   provision_slskd_web_creds          # SU-8: generate slskd web login if absent (pre-load_secrets)
+  provision_mullvad_wg               # SLSKDVPN-056: idempotent WireGuard key provisioning (pre-load_secrets)
   load_secrets
   resolve_model                      # configure ANTHROPIC_MODEL if unset (prompts once)
   check_subscription_auth            # non-fatal skip-with-report (#1 lesson guard)
@@ -1031,6 +1417,7 @@ main() {
   check_image_build                  # first-run: warn about ~2.5 GB model download
   resolve_seed                       # SEEDING-029: first-run taste-seed setup (no-op if decided)
   resolve_slskd
+  resolve_slskd_vpn                  # SLSKDVPN-056: VPN topology + SLSKD_URL + preflight (fail-closed)
   note_ports
   compose_up || {
     log "FATAL: 'compose up' failed. See the output above and '$DC -p $GSR_PROJECT logs'."
