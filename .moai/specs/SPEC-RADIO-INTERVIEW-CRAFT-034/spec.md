@@ -6,7 +6,7 @@ created: 2026-06-23
 updated: 2026-06-23
 author: charlie
 priority: Medium
-issue_number: null
+issue_number: 36
 ---
 
 # SPEC-RADIO-INTERVIEW-CRAFT-034 — Learning Music-Journalist Talk & Interview CRAFT from Transcribed Human Interviews (Style Corpus, Never a Fact Source)

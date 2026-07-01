@@ -6,7 +6,7 @@ created: 2026-06-25
 updated: 2026-06-25
 author: charlie
 priority: High
-issue_number: 37
+issue_number: 39
 ---
 
 # SPEC-RADIO-AIDECISION-037 — AI Decision Contract: Cross-Cutting Autonomous Action Rationale

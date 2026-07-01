@@ -344,6 +344,74 @@ Task 1 (tests, RED)
 Tasks 2–6 are independent of each other once Task 1 is done; they can be written in any
 order (they all target different functions or sections of run.sh).
 
+---
+
+## v0.2.0 Amendment Tasks (SU-6 … SU-9)
+
+Same constraints: pure bash, `scripts/run.sh` + `scripts/test-run.sh` + docs only. TDD: add the assertions
+first, then implement. All new flags are DEFAULT OFF; with no new flag the bare run is byte-identical.
+
+### Task 10 — SU-6: relocate `run_header` to lead `main()`
+
+- Move the `run_header` call from line ~935 to the FIRST line of `main()`'s real work — before
+  `require_core_prereqs`, `first_run_wizard`, and `compose_up` — guarded so `--help` (usage + return) and
+  `--splash-test` (render + exit 0) keep their early handling. Remove the old line ~935 call (render once).
+- Ensure the FATAL prereq path still aborts AFTER the splash is already on screen.
+- RED tests: splash-precedes-FATAL (stub Docker guard to fail), splash-appears-once.
+- Files: `scripts/run.sh`, `scripts/test-run.sh`.
+
+### Task 11 — SU-7: `--reconfigure` flag + warning + backup + confirm
+
+- Extend `parse_args` to recognise `--reconfigure` / `--setup-again` → `WANT_RECONFIGURE=1` (default 0).
+- New `reconfigure_guard()`: print the destructive-action warning (env overwrite / seed reset / service
+  disruption); write `secrets/.env.bak.<UTC-stamp>` (mode 600) and report it; require a typed `y`/`N`
+  (default No) or the word `reconfigure`; on decline abort with zero changes; on a non-TTY without
+  `GSR_RECONFIGURE_FORCE=1` abort. On confirm: clear `SETUP_COMPLETE=1` (so the wizard re-runs) and remove the
+  SEEDING-029 `seed_decided` marker (so `resolve_seed` re-prompts). Call it in `main()` BEFORE
+  `first_run_wizard` when `WANT_RECONFIGURE=1`.
+- RED tests: warning+backup+clear on confirm; unchanged-on-decline; non-TTY-aborts.
+- Files: `scripts/run.sh`, `scripts/test-run.sh`.
+
+### Task 12 — SU-8: `usage()` documents every flag
+
+- Extend `usage()` FLAGS section to add `--reconfigure`, `--menu`, `--all` (each one-line description +
+  default), keep the existing flags + slskd-precedence + ENV OVERRIDES blocks.
+- Ensure `parse_args` recognises the new flags (no "unknown flag" error).
+- RED tests: help-output-contains-each-flag; `parse_args --reconfigure|--menu|--all` return 0.
+- Files: `scripts/run.sh`, `scripts/test-run.sh`.
+
+### Task 13 — SU-9: interactive flag menu + `--menu` / `--all`
+
+- Extend `parse_args` for `--menu` (→ `WANT_MENU=1`) and `--all` (→ enable every optional toggle).
+- New `flag_menu()`: on a TTY, render every toggleable option (slskd, build, `--check`, `--dry-run`,
+  `--reconfigure`) with current state + a one-line description; allow per-option toggle; offer "turn all on",
+  "proceed", "cancel". Each optional toggle starts OFF in the menu (opt-in). Skip entirely on non-TTY.
+- Wire: when `WANT_MENU=1` (and, per Assumption A3, optionally on a bare TTY run) call `flag_menu()` after
+  `parse_args`, before `resolve_slskd`/`compose_up`, so its selections feed the existing globals.
+- [OPEN DECISION D1] Implement reading (A) — bare-run turnkey defaults UNCHANGED; the menu's "default OFF" is
+  presentation-only. Do NOT flip `WANT_BUILD`/slskd defaults unless the user rules for (B).
+- RED tests: `--all` sets all toggles on; non-TTY `--menu` skips the menu; menu list includes a description
+  per option.
+- Files: `scripts/run.sh`, `scripts/test-run.sh`.
+
+### Task 14 — docs + open-decision confirmation
+
+- Update `docs/components/run-sh.md`: `--reconfigure` / `--menu` / `--all`, the splash-on-every-run guarantee,
+  the flag-menu UX, and the recovery via `secrets/.env.bak.<stamp>`.
+- [HARD] Before marking complete, confirm the §4.5 Open Decision D1 ruling (A vs B). If B, update
+  `parse_args`/`compose_up` defaults + SU-9 + the spec HISTORY/Scope.
+- Files: `docs/components/run-sh.md`, (conditionally) `scripts/run.sh` + `spec.md`.
+
+### v0.2.0 dependency map
+
+```
+Task 10 (SU-6 splash-leads)      ─┐
+Task 11 (SU-7 reconfigure)       ─┤ all independent once their RED tests exist
+Task 12 (SU-8 help)              ─┤ (different functions/sections of run.sh)
+Task 13 (SU-9 menu, needs Task 12 flag-parse) ─┘
+  → Task 14 (docs + D1 ruling)
+```
+
 ## Risk Notes
 
 - **Eye animation cursor math**: The `_repaint_eyes()` function depends on knowing the

@@ -6,7 +6,7 @@ created: 2026-06-23
 updated: 2026-06-23
 author: charlie
 priority: High
-issue_number: null
+issue_number: 33
 ---
 
 # SPEC-RADIO-MEMORY-031 — Four-Layer Hybrid Station Memory (Structured Facts + Narrative Documents + Optional Semantic Recall)

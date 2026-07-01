@@ -4,7 +4,7 @@
 per REQ, concrete and testable). Section B gives Given-When-Then scenarios for the load-bearing
 requirements. Section C is the Definition of Done and quality gates.
 
-Parity: 5 REQ = 5 AC entries.
+Parity: 9 REQ = 9 AC entries (v0.2.0: +SU-6…SU-9).
 
 ---
 
@@ -117,6 +117,91 @@ separate automated test beyond the SU-1 log-scrub gate; security reasoning is by
 
 ---
 
+### SU-6 — Animated Splash Leads EVERY Run (v0.2.0)
+
+**AC-SU-006:**
+- GIVEN any run type (first run, configured restart, `--no-build`, `--check`, `--dry-run`, `--reconfigure`,
+  bare run),
+- WHEN `run.sh` is invoked on a TTY,
+- THEN the RoboCop splash is the FIRST visible output, rendered BEFORE `require_core_prereqs`,
+  `first_run_wizard`, and `compose_up`;
+- AND it renders exactly once per invocation (no double-render from the old line ~935 call);
+- AND it still renders when a later FATAL guard aborts the run (e.g. Docker daemon down → the splash is
+  already on screen, then the FATAL message follows).
+- GIVEN `TERM=dumb` OR non-TTY stdout, WHEN `run.sh` is invoked, THEN the plain-ASCII art (no ANSI) leads the
+  run (SU-4 fallback unchanged).
+- GIVEN `--help`, WHEN invoked, THEN usage prints and the heavy run does not start (the splash need not
+  animate for `--help`); GIVEN `--splash-test`, THEN the splash renders and exits 0.
+
+**Automated gate:** A dry-run harness assertion that, with the Docker guard stubbed to FAIL, the splash output
+still precedes the FATAL line; and that the splash appears exactly once in a normal `GSR_DRY_RUN=1` run.
+
+---
+
+### SU-7 — `--reconfigure` Flag with Warning + Backup + Confirm (v0.2.0)
+
+**AC-SU-007:**
+- GIVEN a configured station (`secrets/.env` with `SETUP_COMPLETE=1`) and `--reconfigure` passed on a TTY,
+- WHEN `run.sh` starts,
+- THEN it prints an explicit destructive-action WARNING listing: (a) `secrets/.env` will be overwritten and
+  un-re-entered secrets lost, (b) the SEEDING-029 `seed_decided` marker will be reset, (c) a running station
+  may be disrupted;
+- AND it writes a timestamped backup `secrets/.env.bak.<UTC-stamp>` (mode 600) and reports its path BEFORE any
+  mutation;
+- AND it requires an explicit confirmation (typed `y`/`N` defaulting No, or the word `reconfigure`); on
+  decline it aborts with ZERO changes (no backup deletion needed, no `.env` mutation, no marker removal);
+- AND on confirm it clears `SETUP_COMPLETE=1` and removes the `seed_decided` marker, then proceeds, so
+  `first_run_wizard` + `resolve_seed` both re-run.
+- GIVEN a non-TTY run with `--reconfigure` and no `GSR_RECONFIGURE_FORCE=1`, WHEN invoked, THEN it ABORTS with
+  the warning and makes no changes.
+- GIVEN no `--reconfigure` flag, WHEN invoked, THEN behaviour is byte-identical to before this amendment
+  (default OFF).
+
+**Automated gate:** Dry-run assertions: `--reconfigure` on a fixture configured `.env` prints the warning +
+the backup path and (with confirmation piped) clears `SETUP_COMPLETE`; with decline piped it leaves the
+fixture `.env` unchanged; non-TTY without force aborts.
+
+---
+
+### SU-8 — `--help` Documents EVERY Flag (v0.2.0)
+
+**AC-SU-008:**
+- GIVEN `run.sh --help` (or `-h`),
+- WHEN invoked,
+- THEN `usage()` prints a FLAGS section enumerating EVERY flag — `--with-slskd`, `--no-slskd`, `--no-build`,
+  `--check`, `--dry-run`, `--reconfigure`, `--menu`, `--all`, `--splash-test`, `--help`/`-h` — each with a
+  one-line description and its default;
+- AND the slskd-precedence note + ENV OVERRIDES block are preserved;
+- AND an unknown flag prints the error + usage and exits non-zero, while the new flags are recognised (not
+  reported as unknown).
+
+**Automated gate:** Assert `bash scripts/run.sh --help` output contains each flag token + a description line;
+assert `parse_args --reconfigure`, `parse_args --menu`, `parse_args --all` all return 0 (recognised).
+
+---
+
+### SU-9 — Interactive Flag Menu (v0.2.0)
+
+**AC-SU-009:**
+- GIVEN `run.sh --menu` on a TTY,
+- WHEN invoked,
+- THEN an interactive menu lists every toggleable option (slskd, build/`--no-build`, `--check`, `--dry-run`,
+  `--reconfigure`) with its current on/off state and a one-line description;
+- AND every optional toggle is presented UNCHECKED / OFF by default (opt-in);
+- AND the user can toggle each option individually, choose "turn all on" (equivalently the `--all` flag), then
+  "proceed" (starts the run with exactly the selected set) or "cancel" (exits without starting);
+- AND the menu never captures or displays any secret (run flags only).
+- GIVEN a non-TTY run, WHEN `--menu` is set (or a bare run), THEN the menu is SKIPPED and flags/env decide
+  (never blocks unattended/CI).
+- [Open Decision D1] The bare-run turnkey defaults remain unchanged (build ON / slskd prompt) under the
+  non-breaking reading; the menu's "default OFF" applies to the menu presentation only (§4.5).
+
+**Automated gate:** Dry-run assertion that `--all` sets every optional toggle on; that a non-TTY `--menu` run
+skips the menu and proceeds with flag/env-resolved defaults; that the menu state-list includes a description
+string per option.
+
+---
+
 ## Section B — Load-Bearing Scenarios
 
 ### B-1: Fresh-clone first-run golden path
@@ -177,19 +262,72 @@ AND   output contains zero ESC [ sequences
 AND   exit code is 0
 ```
 
+### B-6: Splash leads a run even when prereqs fail (v0.2.0)
+
+```
+GIVEN the Docker daemon is down (require_core_prereqs will FATAL)
+WHEN  bash scripts/run.sh   (on a TTY)
+THEN  the RoboCop splash is printed FIRST
+AND   THEN the FATAL "docker daemon not reachable" line follows
+AND   the splash appeared exactly once
+```
+
+### B-7: Reconfigure warns, backs up, and only proceeds on confirm (v0.2.0)
+
+```
+GIVEN secrets/.env with SETUP_COMPLETE=1 and several secrets
+WHEN  bash scripts/run.sh --reconfigure   (TTY, decline at the confirm)
+THEN  a destructive-action warning is shown (env overwrite / seed reset / service disruption)
+AND   secrets/.env.bak.<stamp> is written (mode 600) and its path reported
+AND   on decline, secrets/.env is UNCHANGED and SETUP_COMPLETE=1 still present
+WHEN  re-run with confirmation supplied
+THEN  SETUP_COMPLETE is cleared and the seed_decided marker removed
+AND   first_run_wizard + resolve_seed both re-run on this invocation
+```
+
+### B-8: Non-TTY reconfigure aborts without destruction (v0.2.0)
+
+```
+GIVEN a non-TTY invocation with --reconfigure and no GSR_RECONFIGURE_FORCE=1
+WHEN  bash scripts/run.sh --reconfigure </dev/null
+THEN  the warning is printed
+AND   the run ABORTS with no changes to secrets/.env or the seed marker
+```
+
+### B-9: Help lists every flag; menu turn-all-on (v0.2.0)
+
+```
+GIVEN bash scripts/run.sh --help
+THEN  the FLAGS section lists --with-slskd --no-slskd --no-build --check --dry-run
+      --reconfigure --menu --all --splash-test --help, each with a one-line description
+WHEN  bash scripts/run.sh --menu   (TTY) and "turn all on" then "proceed" are chosen
+THEN  the run starts with every optional toggle ON (equivalent to --all)
+WHEN  bash scripts/run.sh --menu </dev/null   (non-TTY)
+THEN  the menu is skipped and the run proceeds on flag/env-resolved defaults
+```
+
 ---
 
 ## Section C — Definition of Done
 
 A build of SPEC-RADIO-SETUP-040 is COMPLETE when ALL of the following hold:
 
-1. **SU-1 through SU-5** — all Section A acceptance entries pass.
-2. **Section B scenarios** — all five golden-path / edge scenarios pass under `GSR_DRY_RUN=1`.
+1. **SU-1 through SU-9** — all Section A acceptance entries pass (v0.2.0: incl. SU-6…SU-9).
+2. **Section B scenarios** — all nine golden-path / edge scenarios pass under `GSR_DRY_RUN=1` (incl. B-6…B-9).
 3. **No secret leakage** — automated log-scrub in `scripts/test-run.sh` finds zero fixture secret
-   values in captured output.
+   values in captured output (incl. the SU-7 reconfigure path + the SU-9 menu, which touch no secrets).
 4. **ANSI degradation** — `TERM=dumb` and non-TTY paths produce zero `\033[` sequences.
 5. **`--splash-test` flag** — `bash scripts/run.sh --splash-test` exits 0 in both ANSI and dumb modes.
 6. **No regression** — existing `run.sh` behaviour on a configured system (with `SETUP_COMPLETE=1`)
-   is unchanged: Docker starts, health checks run, Liquidsoap connects.
-7. **docs/components/run-sh.md** updated with wizard phase documentation.
-8. **ruff / bash -n** — `bash -n scripts/run.sh` exits 0 (syntax check clean).
+   is unchanged: Docker starts, health checks run, Liquidsoap connects; with no new flag passed the bare-run
+   defaults are byte-identical (Open Decision D1 resolution A).
+7. **Splash leads every run (SU-6)** — the splash is the first visible output for every run type and renders
+   once, even when a FATAL guard later aborts.
+8. **Reconfigure safety (SU-7)** — `--reconfigure` warns + backs up + requires confirm; declines/non-TTY make
+   zero changes; default-OFF when the flag is absent.
+9. **Help + menu (SU-8/SU-9)** — `--help` lists every flag with a description; `--menu`/`--all` toggle the
+   optional flags; the menu touches no secrets and is skipped on non-TTY.
+10. **Open Decision D1 ruled** — the user has ruled A (non-breaking, implemented) vs B (flip all defaults
+    OFF); if B, the defaults + SU-9 + HISTORY are updated before completion.
+11. **docs/components/run-sh.md** updated with the wizard phases + the v0.2.0 flags/menu.
+12. **ruff / bash -n** — `bash -n scripts/run.sh` exits 0 (syntax check clean).

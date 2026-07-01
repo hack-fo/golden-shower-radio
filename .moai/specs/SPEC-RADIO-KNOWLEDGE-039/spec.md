@@ -6,7 +6,7 @@ created: 2026-06-25
 updated: 2026-06-25
 author: charlie
 priority: Medium
-issue_number: TBD
+issue_number: 41
 depends_on:
   - SPEC-RADIO-KNOWLEDGE-008
   - SPEC-RADIO-KNOWLEDGE-038

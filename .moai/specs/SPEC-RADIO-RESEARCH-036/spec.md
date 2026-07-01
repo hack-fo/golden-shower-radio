@@ -6,7 +6,7 @@ created: 2026-06-25
 updated: 2026-06-25
 author: charlie
 priority: High
-issue_number: 36
+issue_number: 38
 ---
 
 # SPEC-RADIO-RESEARCH-036 — Integrated Research Architecture: Multi-Source Data, LLM Decision Intelligence, Editorial Press Ingestion, and AI Workflow Map
