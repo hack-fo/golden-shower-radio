@@ -127,8 +127,7 @@ def render_website(cfg: Config) -> str:
   li:last-child {{ border-bottom: none; }}
   li:hover {{ background: rgba(245,197,66,.05); }}
   li .a {{ color: var(--ink); font-weight: 500; }}
-  li .b {{ color: var(--muted); font-size: 14px; text-align: right; flex-shrink: 0; }}
-  li .t {{ display: block; color: var(--muted); opacity: .55; font-size: 11px; font-variant-numeric: tabular-nums; margin-top: 2px; }}
+  li .b {{ color: var(--muted); font-size: 13px; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; opacity: .7; }}
 
   .stats-row {{ display: flex; gap: 32px; flex-wrap: wrap; }}
   .stat {{ font-size: 38px; font-weight: 800; color: var(--gold); line-height: 1; }}
@@ -284,8 +283,10 @@ def render_website(cfg: Config) -> str:
       if (!rec.length) {{ ul.innerHTML = '<li class="muted">Nothing yet&hellip;</li>'; }}
       else {{
         ul.innerHTML = rec.slice(0, 12).map(function(t) {{
-          var when = t.played_at ? '<span class="t">' + ago(t.played_at) + '</span>' : '';
-          return '<li><span class="a">' + esc(t.title || "") + '</span><span class="b">' + esc(t.artist || "") + when + '</span></li>';
+          var artist = esc(t.artist || ""), title = esc(t.title || "");
+          var label = artist ? (artist + " - " + title) : title;   // conventional Artist - Title
+          var when = t.played_at ? ago(t.played_at) : "";
+          return '<li><span class="a">' + label + '</span><span class="b">' + when + '</span></li>';
         }}).join("");
       }}
     }} catch (e) {{ /* keep polling; the radio never stops */ }}
