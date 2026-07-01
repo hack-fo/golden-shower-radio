@@ -269,6 +269,23 @@ class StationState:
                 self._songs_since_talk = 0
             return clip
 
+    def clear_pending_talk(self) -> bool:
+        """Drop a parked (non-welcome) talk clip so it is never served (SKIP-028 × talk).
+
+        A talk clip is written + rendered AHEAD of time and parked; its back-announce
+        names the track that had just played AT PREP TIME. A force-skip changes the
+        sequence, so airing that parked clip would name the wrong song. Dropping it makes
+        the host "talk less rather than ship a wrong fact" (talk.py) — the TalkDirector
+        re-prepares a correct clip on its next tick, because has_pending_talk() is now
+        False while the cadence counter (_songs_since_talk) is deliberately UNTOUCHED so
+        the break stays due. The one-shot first-run welcome is PRESERVED: a skip must not
+        eat it. Returns True iff a clip was actually dropped."""
+        with self._lock:
+            if self._pending_talk is None or self._pending_is_welcome:
+                return False
+            self._pending_talk = None
+            return True
+
     # -- first-run welcome (one-shot opening) ------------------------------------
 
     def arm_welcome(self) -> None:
