@@ -128,6 +128,7 @@ def render_website(cfg: Config) -> str:
   li:hover {{ background: rgba(245,197,66,.05); }}
   li .a {{ color: var(--ink); font-weight: 500; }}
   li .b {{ color: var(--muted); font-size: 14px; text-align: right; flex-shrink: 0; }}
+  li .t {{ display: block; color: var(--muted); opacity: .55; font-size: 11px; font-variant-numeric: tabular-nums; margin-top: 2px; }}
 
   .stats-row {{ display: flex; gap: 32px; flex-wrap: wrap; }}
   .stat {{ font-size: 38px; font-weight: 800; color: var(--gold); line-height: 1; }}
@@ -227,6 +228,18 @@ def render_website(cfg: Config) -> str:
 
   function esc(s) {{ var d = document.createElement("div"); d.textContent = s == null ? "" : s; return d.innerHTML; }}
 
+  // Relative "when did this play" for the Recently Played list, from the server-side
+  // played_at unix timestamp (seconds). Lets a listener pinpoint "the one ~2 songs ago".
+  function ago(ts) {{
+    var s = Math.floor(Date.now() / 1000 - Number(ts));
+    if (!isFinite(s) || s < 0) return "";
+    if (s < 45) return "just now";
+    var m = Math.round(s / 60);
+    if (m < 60) return m + "m ago";
+    var h = Math.floor(m / 60), mm = m % 60;
+    return h + "h" + (mm ? " " + mm + "m" : "") + " ago";
+  }}
+
   var lastNowKey = null;
   function nowKey(np) {{ return np ? ((np.artist || "") + "\\u0000" + (np.title || "")) : ""; }}
 
@@ -271,7 +284,8 @@ def render_website(cfg: Config) -> str:
       if (!rec.length) {{ ul.innerHTML = '<li class="muted">Nothing yet&hellip;</li>'; }}
       else {{
         ul.innerHTML = rec.slice(0, 12).map(function(t) {{
-          return '<li><span class="a">' + esc(t.title || "") + '</span><span class="b">' + esc(t.artist || "") + '</span></li>';
+          var when = t.played_at ? '<span class="t">' + ago(t.played_at) + '</span>' : '';
+          return '<li><span class="a">' + esc(t.title || "") + '</span><span class="b">' + esc(t.artist || "") + when + '</span></li>';
         }}).join("");
       }}
     }} catch (e) {{ /* keep polling; the radio never stops */ }}
