@@ -2,7 +2,7 @@
 
 `scripts/run.sh` is the single turnkey entry point that brings the whole Dockerized station up: it renders configs from secrets, runs preflight guards, brings the compose stack up, and verifies the live station before handing back. It is a launcher, not an installer — every tool (docker, compose) is assumed present.
 
-SPEC-RADIO-SETUP-040 added a three-phase first-run wizard, secret-input sanitization, and a RoboCop ASCII splash screen.
+SPEC-RADIO-SETUP-040 added a three-phase first-run wizard and secret-input sanitization. The v0.3 amendment retired the RoboCop ASCII splash in favour of lightly colourised startup output and auto-provisioned slskd web-UI credentials.
 
 ---
 
@@ -60,25 +60,27 @@ The wizard's Phase 1 auth-mode menu writes `BRAIN_LLM_AUTH`, which `check_subscr
 
 ## Secret handling
 
-All secret prompts use `read -rs` (silent — no echo, not captured by readline history). Each secret variable is `unset` immediately after `_set_env_var` writes it to `secrets/.env`, so it never leaks into a spawned subprocess environment or `ps aux`.
+Every secret prompt — including the Phase 3 enrichment keys (AcoustID / Last.fm / Discogs / Guardian) — uses `read -rs` (silent — no echo, not captured by readline history). Each secret variable is `unset` immediately after `_set_env_var` writes it to `secrets/.env`, so it never leaks into a spawned subprocess environment or `ps aux`.
 
-The `.env` template heredoc is single-quoted (`<<'ENVFILE'`) so no variable expansion occurs in the template body. Every value lands in the file via `_set_env_var()`, which passes the value as `sys.argv[3]` to an embedded `python3` call — never as a shell-interpolated argument.
+The `.env` template heredoc is single-quoted (`<<'ENVFILE'`) so no variable expansion occurs in the template body. Every value lands in the file via `_set_env_var()`, which passes the value as `sys.argv[3]` to an embedded `python3` call — never as a shell-interpolated argument. `_set_env_var()` also trims leading/trailing whitespace (including a stray carriage return from a value pasted from a Windows clipboard) before storing, so an accidental space never ends up inside a key or password; internal characters are preserved.
 
 ---
 
-## RoboCop splash (`run_header`)
+## Startup colour output (v0.3)
 
-On every normal startup (and via `--splash-test`), `run_header()` renders a BBS/demoscene RoboCop head in block characters (`█ ▓ ▒ ░ ▀ ▄ ▌ ▐`) with the station name beneath it. The two eye sockets animate through an 8-frame ANSI 24-bit red brightness gradient (dim → bright → dim), repainting only the eye cells in place via cursor repositioning — no full-frame redraw.
+The RoboCop ASCII splash was retired in v0.3 (it did not render as intended). Operator-facing output — wizard headings, prompts, warnings, and the final banner — is now lightly colourised via ANSI SGR helpers (`_c_info` / `_c_success` / `_c_warn` / `_c_prompt`, built on `_c`) as the "station is alive" signal.
 
-**Graceful degradation:** when `TERM=dumb` or stdout is not a TTY, the splash prints plain ASCII art with zero ANSI escape sequences.
+**Graceful degradation:** colour is emitted only when stdout is a TTY, `NO_COLOR` is unset, and `$TERM` is a real terminal (not `dumb` or empty). In every other case the helpers emit bare text — zero ANSI escapes. Colour is applied only at direct-to-terminal call sites, never on strings passed to `log()`, so the tee'd logfile (`$GSR_LOG`) and any piped/redirected output stay colour-free.
 
-### `--splash-test`
+## slskd web-UI login (v0.3)
 
-```bash
-bash scripts/run.sh --splash-test
-```
+The slskd web interface at `http://localhost:5030` previously set only an `api_key` (used by the brain's REST client), leaving the browser login reachable via slskd's undocumented default `slskd`/`slskd` account. v0.3 provisions real web credentials:
 
-Renders the splash and exits 0 immediately, before any secret loading or Docker work. CI-safe; used by the test harness.
+- `provision_slskd_web_creds()` runs on every startup (before `load_secrets`) and, when `SLSKD_WEB_PASSWORD` is absent, generates a human-sounding `SLSKD_WEB_USERNAME` (operator-overridable on a TTY) and a strong ≥24-char `SLSKD_WEB_PASSWORD` from a CSPRNG, restricted to a shell/YAML-safe charset.
+- Both land in `secrets/.env` (not `brain.env`). It is idempotent — existing values are preserved; remove the `SLSKD_WEB_PASSWORD` line to force regeneration on the next start.
+- Because it triggers on a missing `SLSKD_WEB_PASSWORD` independent of the Phase 2 skip, installs that already have `SLSKD_API_KEY` also receive web credentials.
+- `deploy/config/slskd.yml.tmpl` renders `web.authentication.username` / `.password` from these values while retaining the `api_keys` entry (`brain/slskd.py`'s `X-API-Key` path is unchanged).
+- The generated password is shown **once** on the terminal when it is first created (so you can copy it and sign in to the slskd web UI) and is also saved in `secrets/.env`. It is never written to the tee'd logfile (`$GSR_LOG`) and is not re-printed on later (idempotent) runs. On subsequent starts the final banner shows the slskd URL and points you at `SLSKD_WEB_USERNAME` / `SLSKD_WEB_PASSWORD` in `secrets/.env`.
 
 ---
 
@@ -94,7 +96,7 @@ sed -i '/^SETUP_COMPLETE=1$/d' secrets/.env
 
 ## Tests
 
-`scripts/test-run.sh` sources `run.sh` (the main-guard prevents any launch) and exercises the wizard, auth check, and splash under `GSR_DRY_RUN=1` with sandboxed env files. Coverage includes secret-leak scrubbing, per-phase key assertions, the Phase 2 skip path, second-run wizard skip, all three auth-mode branches, and ANSI-free dumb-terminal output.
+`scripts/test-run.sh` sources `run.sh` (the main-guard prevents any launch) and exercises the wizard, auth check, colour helpers, and slskd web-credential provisioning under `GSR_DRY_RUN=1` with sandboxed env files. Coverage includes secret-leak scrubbing, whitespace/CR trimming, per-phase key assertions, the Phase 2 skip path, second-run wizard skip, all three auth-mode branches, the splash-removal grep (AC-SU-004R), colour on/off degradation, the slskd `web.authentication` template render (plus YAML parse), and web-password length/charset/idempotency/no-leak checks.
 
 ```bash
 GSR_DRY_RUN=1 bash scripts/test-run.sh

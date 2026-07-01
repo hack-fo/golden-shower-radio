@@ -18,10 +18,13 @@
 #
 # First-run experience (SETUP-040):
 #   • first_run_wizard walks a 3-phase setup (Required / Acquisition / Optional),
-#     creating secrets/.env. Secrets use `read -rs` (no echo) + immediate unset.
-#   • On every normal startup, run_header renders a RoboCop ASCII splash with
-#     ANSI red-eye animation (plain ASCII fallback on TERM=dumb / non-TTY).
-#   • bash scripts/run.sh --splash-test renders the splash and exits 0 (CI-safe).
+#     creating secrets/.env. Secrets use `read -rs` (no echo) + immediate unset,
+#     and every stored value is whitespace-trimmed so a stray space / pasted CR
+#     never ends up inside a key or password.
+#   • Operator-facing output is lightly colourised (ANSI SGR) as the "alive" signal,
+#     degrading to plain text on non-TTY / NO_COLOR / TERM=dumb (never into the log).
+#   • slskd web-UI login is auto-provisioned: SLSKD_WEB_USERNAME / SLSKD_WEB_PASSWORD
+#     (>=24-char generated) land in secrets/.env — no undocumented default account.
 #   • Re-run setup by removing the SETUP_COMPLETE=1 line from secrets/.env.
 #   • Prompts once to choose a Claude model (sonnet / opus / haiku) if not configured
 #   • Warns about the ~2.5 GB first-time Docker build (Kokoro TTS + PyTorch) and asks
@@ -99,70 +102,35 @@ run_or_dry() {
 }
 
 # --------------------------------------------------------------------------- #
-# RoboCop splash (SETUP-040). BBS/demoscene block-char head with two eye sockets
-# marked by the {EYE} sentinel — run_header() substitutes either a plain 'O' (dumb
-# terminal) or an ANSI 24-bit red 'O' that animates through a brightness gradient.
-#
-# The eye cells live on a SINGLE art line. After {EYE} -> O substitution the two
-# eyes render at fixed 0-indexed columns 7 and 15 of that line (the 5-char sentinel
-# collapses to 1 char, shifting the right eye left by 4). These constants drive the
-# cursor math in run_header(); if you redraw the art, recompute them.
-# UTF-8 required: █ ▓ ▒ ░ ▀ ▄ ▌ ▐ are U+2580..U+2593.
+# ANSI colour helpers (SETUP-040 SU-6). Decide ONCE whether colour is supported:
+# stdout is a TTY, NO_COLOR is unset, and $TERM is a real terminal (not dumb/empty).
+# The _c* helpers wrap plain text in an SGR colour + reset when ON, else emit the
+# text bare. Built on `printf` (not `echo -e`) for portability across bash versions.
+# Colour is applied ONLY at direct-to-terminal call sites (prompts, banner) — NEVER
+# on strings passed to log(), whose tee to $GSR_LOG must stay ANSI-free, so the
+# on-disk log and any piped/redirected output are colour-free.
 # --------------------------------------------------------------------------- #
-_ROBO_ART=$'        ▄▄▄███████████▄▄▄\n      ▄█▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓█▄\n    ▄█▓▓▓░░░░░░░░░░░░░▓▓▓█▄\n   ▐█▓▓░░░░ P O L I C E ░░▓▓█▌\n   ▐█▓▓░░░░░░░░░░░░░░░▓▓█▌\n  ▄█████████████████████████▄\n ▐██▒▒▄▀▀▀▀▀▄▒▒▒▒▒▄▀▀▀▀▀▄▒▒█▌\n ▐██▒▒█{EYE}█▒▒▒▒▒█{EYE}█▒▒█▌\n ▐██▒▒▀▄▄▄▄▄▀▒▒▒▒▒▀▄▄▄▄▄▀▒▒█▌\n  ▀█████████████████████████▀\n   ▐█▓▓░░░░░░░░░░░░░░░▓▓█▌\n   ▐█▓▓░░▒▒▒▒▒▒▒▒▒▒▒░░▓▓█▌\n    ▀█▓▓▓░░░░░░░░░░░░░▓▓▓█▀\n      ▀█▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓█▀\n        ▀▀▀███████████▀▀▀'
+if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]] && [[ -n "${TERM:-}" ]] && [[ "${TERM:-}" != "dumb" ]]; then
+  _gsr_color_on=1
+else
+  _gsr_color_on=0
+fi
 
-_EYE_LINE=7      # 0-indexed line within _ROBO_ART carrying both {EYE} sentinels
-_EYE_COL_L=7     # 0-indexed column of left  eye 'O' after substitution
-_EYE_COL_R=15    # 0-indexed column of right eye 'O' after substitution
-
-# Red brightness gradient (ANSI 24-bit): dim -> bright -> dim, one 8-frame cycle.
-_EYE_FRAMES=(
-  $'\033[38;2;80;0;0m'
-  $'\033[38;2;120;0;0m'
-  $'\033[38;2;160;0;0m'
-  $'\033[38;2;200;10;0m'
-  $'\033[38;2;240;20;0m'
-  $'\033[38;2;200;10;0m'
-  $'\033[38;2;160;0;0m'
-  $'\033[38;2;80;0;0m'
-)
-_EYE_RESET=$'\033[0m'
-_EYE_DELAY=0.08
-
-# run_header: render the splash. On a dumb terminal or non-TTY stdout, print plain
-# ASCII art (no ANSI). Otherwise render dim-eyed art then animate the eye cells in
-# place using cursor-up + absolute-column repositioning (no full-frame repaint).
-run_header() {
-  local station
-  station="$(grep -E '^STATION_NAME=' "$GSR_ENV_FILE" 2>/dev/null | cut -d= -f2-)"
-  [[ -z "$station" ]] && station="Golden Shower Radio"
-
-  if [[ "${TERM:-}" == "dumb" ]] || [[ ! -t 1 ]]; then
-    printf '%s\n' "${_ROBO_ART//\{EYE\}/O}"
-    printf '\n  %s\n\n' "$station"
-    return 0
+# _c <sgr-params> <text...>: emit text wrapped in ESC[<params>m … ESC[0m when
+# colour is on, else the bare text. No trailing newline. Reads _gsr_color_on at
+# call time so the test harness can flip it to force ON/OFF.
+_c() {
+  local sgr="$1"; shift
+  if [[ "$_gsr_color_on" == "1" ]]; then
+    printf '\033[%sm%s\033[0m' "$sgr" "$*"
+  else
+    printf '%s' "$*"
   fi
-
-  local initial="${_ROBO_ART//\{EYE\}/${_EYE_FRAMES[0]}O${_EYE_RESET}}"
-  printf '%s\n' "$initial"
-  printf '\n  %s\n\n' "$station"
-
-  # Lines printed: art lines + 1 blank + station + 1 blank.
-  local art_lines total_printed lines_to_eye
-  art_lines=$(( $(printf '%s' "$_ROBO_ART" | grep -c '' ) ))
-  total_printed=$(( art_lines + 3 ))
-  lines_to_eye=$(( total_printed - _EYE_LINE - 1 ))
-
-  local i color
-  for i in 1 2 3 4 5 6 7; do
-    sleep "$_EYE_DELAY" 2>/dev/null || true
-    color="${_EYE_FRAMES[$i]}"
-    printf '\033[%dA' "$lines_to_eye"
-    printf '\033[%dG%sO%s' "$(( _EYE_COL_L + 1 ))" "$color" "$_EYE_RESET"
-    printf '\033[%dG%sO%s' "$(( _EYE_COL_R + 1 ))" "$color" "$_EYE_RESET"
-    printf '\033[%dB' "$lines_to_eye"
-  done
 }
+_c_info()    { _c '36' "$*"; }    # cyan          — informational
+_c_success() { _c '32' "$*"; }    # green         — success / station alive
+_c_warn()    { _c '33' "$*"; }    # yellow        — warning
+_c_prompt()  { _c '1;35' "$*"; }  # bold magenta  — headings / prompts
 
 # --------------------------------------------------------------------------- #
 # Flag parsing. Sets SLSKD_CHOICE / WANT_CHECK / WANT_BUILD / SHOW_HELP globals.
@@ -303,12 +271,12 @@ first_run_wizard() {
   prior_slskd_key="$(grep -E '^SLSKD_API_KEY=' "$GSR_ENV_FILE" 2>/dev/null | cut -d= -f2-)"
 
   printf '\n  ═══════════════════════════════════════\n'
-  printf '   GOLDEN SHOWER RADIO — First-Time Setup\n'
+  printf '   %s\n' "$(_c_prompt 'GOLDEN SHOWER RADIO — First-Time Setup')"
   printf '  ═══════════════════════════════════════\n'
   printf '  All values can be changed later by editing %s.\n\n' "$GSR_ENV_FILE"
 
   # ── Phase 1: Required ─────────────────────────────────────────────────────
-  printf '  [Phase 1/3] Required settings\n\n'
+  printf '  %s\n\n' "$(_c_info '[Phase 1/3] Required settings')"
 
   local station_name
   printf '  Station name [Golden Shower Radio]: '
@@ -339,8 +307,8 @@ first_run_wizard() {
       ;;
     3)
       brain_llm_auth="api_key"
-      printf '\n  *** WARNING: api_key mode charges pay-per-use credits from your Anthropic\n'
-      printf '  *** account. Do NOT use with a MAX subscription — it silently overrides it.\n\n'
+      printf '\n  %s\n' "$(_c_warn '*** WARNING: api_key mode charges pay-per-use credits from your Anthropic')"
+      printf '  %s\n\n' "$(_c_warn '*** account. Do NOT use with a MAX subscription — it silently overrides it.')"
       printf '  ANTHROPIC_API_KEY: '
       read -rs api_key || api_key=""
       printf '\n'
@@ -371,7 +339,7 @@ ENVFILE
 
   # ── Phase 2: Acquisition (slskd) — skip if already configured ─────────────
   if [[ -z "$prior_slskd_key" ]]; then
-    printf '\n  [Phase 2/3] Acquisition — Soulseek / slskd\n\n'
+    printf '\n  %s\n\n' "$(_c_info '[Phase 2/3] Acquisition — Soulseek / slskd')"
     local slskd_user="" slskd_pw="" slskd_key=""
     printf '  slskd username: '
     read -r slskd_user || slskd_user=""
@@ -387,7 +355,7 @@ ENVFILE
   fi
 
   # ── Phase 3: Optional enrichment — Enter to skip any ──────────────────────
-  printf '\n  [Phase 3/3] Optional enrichment (press Enter to skip any)\n\n'
+  printf '\n  %s\n\n' "$(_c_info '[Phase 3/3] Optional enrichment (press Enter to skip any)')"
   local _val _pair _label _envkey
   local -a _pairs=(
     "AcoustID API key:ACOUSTID_API_KEY"
@@ -398,12 +366,70 @@ ENVFILE
   for _pair in "${_pairs[@]}"; do
     _label="${_pair%%:*}"; _envkey="${_pair##*:}"
     printf '  %s: ' "$_label"
-    read -r _val || _val=""
+    read -rs _val || _val=""    # SU-1/SU-5: enrichment values are secrets — no echo
+    printf '\n'
     [[ -n "$_val" ]] && _set_env_var "$_envkey" "$_val"
   done
   unset _val _pair _pairs
 
   printf '\n  Setup complete. Run ./scripts/run.sh again to start the station.\n\n'
+}
+
+# --------------------------------------------------------------------------- #
+# slskd web-UI credential provisioning (SETUP-040 SU-8). The slskd web UI at :5030
+# otherwise falls back to slskd's undocumented default slskd/slskd account. This
+# generates a login username + a strong (>=24-char) password and stores them in
+# secrets/.env as SLSKD_WEB_USERNAME / SLSKD_WEB_PASSWORD (NOT brain.env). It runs
+# on ANY startup when SLSKD_WEB_PASSWORD is absent — so installs that already have
+# SLSKD_API_KEY (Phase 2 skipped) also get web creds — and is idempotent otherwise:
+# remove the SLSKD_WEB_PASSWORD line to force regeneration. Called BEFORE
+# load_secrets so the values are exported for prepare_filesystem's template render.
+# The password uses a shell/YAML/_set_env_var-safe charset (alnum plus '.' '_'). It is
+# shown ONCE on stdout at creation (so the operator can copy it and sign in to the slskd
+# web UI), is NEVER written to $GSR_LOG (the tee'd logfile), and is not re-printed on
+# idempotent re-runs — thereafter the banner points at secrets/.env.
+# --------------------------------------------------------------------------- #
+provision_slskd_web_creds() {
+  [[ -f "$GSR_ENV_FILE" ]] || return 0
+  # Idempotent: preserve existing web creds; only provision when the password is absent.
+  grep -q "^SLSKD_WEB_PASSWORD=" "$GSR_ENV_FILE" 2>/dev/null && return 0
+
+  # Username: human-sounding default; the operator may override it on a TTY.
+  local web_user
+  web_user="dj-$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom 2>/dev/null | head -c 6)"
+  [[ "$web_user" == "dj-" ]] && web_user="dj-station"
+  if [[ -t 0 ]]; then
+    printf '\n  %s [%s]: ' "$(_c_prompt 'slskd web-UI login username')" "$web_user"
+    local _u=""; read -r _u || _u=""
+    [[ -n "$_u" ]] && web_user="$_u"
+  fi
+
+  # Password: >=24 chars from a CSPRNG, restricted to a shell/YAML/_set_env_var-safe
+  # charset (alnum + '.' '_'; no '-', so there is no leading-dash hazard).
+  local web_pw
+  web_pw="$(LC_ALL=C tr -dc 'A-Za-z0-9._' </dev/urandom 2>/dev/null | head -c 32)"
+  if [[ "${#web_pw}" -lt 24 ]]; then
+    # /dev/urandom unavailable — fall back to python's secrets module.
+    web_pw="$(python3 - <<'PY'
+import secrets, string
+alphabet = string.ascii_letters + string.digits + "._"
+print("".join(secrets.choice(alphabet) for _ in range(32)))
+PY
+)"
+  fi
+
+  _set_env_var "SLSKD_WEB_USERNAME" "$web_user"
+  _set_env_var "SLSKD_WEB_PASSWORD" "$web_pw"
+
+  # Show the operator the freshly generated login ONCE, on stdout only — their chance to
+  # copy the password to sign in to the slskd web UI (it also lives in secrets/.env).
+  # Deliberately NOT routed through log(), so it never lands in the tee'd $GSR_LOG.
+  printf '\n  %s\n' "$(_c_success 'slskd web-UI login created — copy these now (also saved in secrets/.env):')"
+  printf '    URL:      http://localhost:%s\n' "$SLSKD_PORT"
+  printf '    username: %s\n'   "$web_user"
+  printf '    password: %s\n\n' "$web_pw"
+  unset web_pw
+  log "slskd web login provisioned for user '$web_user' (password shown once on screen; stored in secrets/.env, kept out of the logfile)."
 }
 
 # --------------------------------------------------------------------------- #
@@ -457,6 +483,11 @@ resolve_model() {
 # _set_env_var KEY VALUE: upserts KEY=VALUE in secrets/.env in-place.
 _set_env_var() {
   local key="$1" val="$2" envfile="$GSR_ENV_FILE"
+  # Trim leading/trailing whitespace (incl. a stray CR from a pasted value) before
+  # storing, so an accidental space never ends up inside an API key / password
+  # (SETUP-040 SU-1 sanitization). Internal characters are preserved.
+  val="${val#"${val%%[![:space:]]*}"}"
+  val="${val%"${val##*[![:space:]]}"}"
   if grep -qE "^${key}=" "$envfile" 2>/dev/null; then
     python3 - "$envfile" "$key" "$val" <<'PY'
 import sys, re
@@ -896,13 +927,14 @@ verify_station() {
 banner() {
   cat <<EOF
 
-  Golden Shower Radio is up:
+  $(_c_success "Golden Shower Radio is up:")
     Stream : $STREAM_URL   (tune in)
     Site   : $SITE_URL
     Status : $STATUS_URL
 EOF
   if [[ "$SLSKD_CHOICE" == "1" ]]; then
     echo "    slskd  : http://localhost:$SLSKD_PORT"
+    echo "             login → username & password are in secrets/.env (SLSKD_WEB_USERNAME / SLSKD_WEB_PASSWORD)"
   else
     echo "    slskd  : (disabled this launch)"
   fi
@@ -915,12 +947,6 @@ EOF
 # main — the straight-line orchestrator (the backbone).
 # --------------------------------------------------------------------------- #
 main() {
-  # SETUP-040: render the RoboCop splash and exit (CI-safe, before any heavy work).
-  if [[ "${1:-}" == "--splash-test" ]]; then
-    run_header
-    return 0
-  fi
-
   parse_args "$@" || {
     usage
     return 2
@@ -932,7 +958,7 @@ main() {
 
   require_core_prereqs || return 1   # FATAL guards (Docker, compose, compose file)
   first_run_wizard                   # create secrets/.env if missing (no-op if exists)
-  run_header                         # RoboCop splash on every normal startup
+  provision_slskd_web_creds          # SU-8: generate slskd web login if absent (pre-load_secrets)
   load_secrets
   resolve_model                      # configure ANTHROPIC_MODEL if unset (prompts once)
   check_subscription_auth            # non-fatal skip-with-report (#1 lesson guard)
