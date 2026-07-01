@@ -22,6 +22,7 @@ from . import llm
 from .acquire import Acquirer
 from .analyzer import Analyzer
 from .config import load_config
+from .cover import CoverResolver
 from .director import Director
 from .enrich import EnrichmentWorker
 from .filename import FilenameWorker
@@ -544,12 +545,17 @@ def run() -> int:
         analytics = PlayEventsStore(cfg.events_db_path)
         analytics.close_stale_open_events()
         log_event(log, "main.stats_enabled")
+    # Website album art: an album-keyed, disk-cached cover for the on-air track (brain/cover.py).
+    # No-op when cover_art_enabled is off (the /api/cover endpoint then 404s). Resolution runs OFF
+    # the request path in a background worker started below; the airing hook only enqueues.
+    cover_resolver = CoverResolver(cfg)
     httpd = make_server(cfg, library, state, knowledge=knowledge,
                         refiner=selection_refiner, no_orphan=no_orphan,
                         skip_governor=skip_governor,
                         offensive_verdict=offensive_verdict,
                         like_gate=like_gate, like_tokener=like_tokener,
-                        drop_off_engine=drop_off_engine, analytics=analytics)
+                        drop_off_engine=drop_off_engine, analytics=analytics,
+                        cover_resolver=cover_resolver)
     http_thread = threading.Thread(target=httpd.serve_forever, name="http", daemon=True)
 
     def _shutdown(signum, _frame):
@@ -564,6 +570,7 @@ def run() -> int:
     signal.signal(signal.SIGTERM, _shutdown)
 
     http_thread.start()
+    cover_resolver.start(stop_event)  # no-op when cover_art_enabled=False
     if disk_guard is not None:
         disk_guard.start()  # no-op when disk_guard_enabled=False
     acquirer.start()

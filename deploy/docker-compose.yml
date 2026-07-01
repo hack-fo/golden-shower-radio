@@ -82,6 +82,15 @@ services:
       SLSKD_API_KEY: ${SLSKD_API_KEY}
       STATION_NAME: ${STATION_NAME}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
+      # Optional enrichment API keys (ENRICH-012 + the album-art COVER Discogs fallback).
+      # The run.sh Phase-3 wizard writes these UNPREFIXED into secrets/.env, but the brain
+      # reads the BRAIN_-prefixed names. Compose interpolates from `--env-file secrets/.env`
+      # (run.sh:746), so mapping them here is what actually delivers a wizard-entered token
+      # to the brain. Empty default (:-) = the feature just stays off; never errors on unset.
+      BRAIN_ACOUSTID_API_KEY: ${ACOUSTID_API_KEY:-}
+      BRAIN_LASTFM_API_KEY: ${LASTFM_API_KEY:-}
+      BRAIN_DISCOGS_TOKEN: ${DISCOGS_TOKEN:-}
+      BRAIN_GUARDIAN_API_KEY: ${GUARDIAN_API_KEY:-}
       MUSIC_DIR: /music
       DB_DIR: /db
       HOME: /root

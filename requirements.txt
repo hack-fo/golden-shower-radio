@@ -33,6 +33,11 @@
 claude-agent-sdk>=0.2,<0.3
 httpx>=0.27,<1.0
 mutagen>=1.47,<2.0
+# Pillow: robust cover-art validation for the website album-art feature (brain/cover.py).
+# Upgrades validate_cover_image from header-only dimension sniffing to a real decode +
+# verify (catches truncated/corrupt images, broader formats); the code falls back to the
+# built-in header parser when Pillow is absent, so this is a robustness enhancement.
+pillow>=10.0,<12.0
 # musicbrainzngs: MusicBrainz web-service client for ANALYSIS-006 enrichment AND
 # ENRICH-012 core-tag correction. Pure-Python, stdlib-only deps (safe on the default
 # index — no numpy/torch resolver interaction). Lazy-imported + exception-isolated in

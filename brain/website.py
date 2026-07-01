@@ -94,13 +94,16 @@ def render_website(cfg: Config) -> str:
   audio {{ width: 100%; max-width: 660px; border-radius: 12px; }}
   .streamhint {{ color: var(--muted); font-size: 12px; word-break: break-all; text-align: center; }}
 
-  /* ---- decorative waveform ---- */
-  .wave {{ display: flex; gap: 5px; align-items: flex-end; height: 30px; }}
-  .wave span {{
-    width: 4px; height: 30%; border-radius: 3px;
-    background: linear-gradient(180deg, var(--gold), var(--gold-soft));
-    opacity: .85;
+  /* ---- album cover (real art; replaces the old decorative waveform) ---- */
+  .cover {{
+    width: 148px; height: 148px; margin: 4px auto 2px; border-radius: 16px;
+    overflow: hidden; background: var(--glass); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,.38);
   }}
+  .cover img {{ width: 100%; height: 100%; object-fit: cover; display: block; }}
+  .cover.empty img {{ display: none; }}
+  .cover.empty::after {{ content: "\\266A"; font-size: 46px; color: var(--gold-soft); opacity: .45; }}
 
   /* ---- now playing ---- */
   .now {{ transition: opacity .4s ease, transform .4s ease; }}
@@ -141,12 +144,6 @@ def render_website(cfg: Config) -> str:
   @media (prefers-reduced-motion: no-preference) {{
     .dot {{ animation: pulse 1.8s ease-out infinite; }}
     .dot::after {{ animation: ring 1.8s ease-out infinite; }}
-    .wave span {{ animation: bounce 1.1s ease-in-out infinite; }}
-    .wave span:nth-child(1) {{ animation-delay: 0s; }}
-    .wave span:nth-child(2) {{ animation-delay: .15s; }}
-    .wave span:nth-child(3) {{ animation-delay: .3s; }}
-    .wave span:nth-child(4) {{ animation-delay: .45s; }}
-    .wave span:nth-child(5) {{ animation-delay: .6s; }}
   }}
   @keyframes pulse {{
     0% {{ box-shadow: 0 0 0 0 rgba(245,197,66,.55); }}
@@ -176,7 +173,7 @@ def render_website(cfg: Config) -> str:
     <main>
       <section class="card player" aria-label="Live audio stream">
         <span class="live"><span class="dot"></span> Live</span>
-        <div class="wave" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+        <div class="cover empty" id="coverwrap" aria-hidden="true"><img id="cover" alt="" onerror="this.parentNode.classList.add('empty');this.removeAttribute('src')"/></div>
         <audio id="player" controls preload="none" aria-label="{name} live radio stream"></audio>
         <div class="streamhint" id="streamhint"></div>
       </section>
@@ -265,6 +262,11 @@ def render_website(cfg: Config) -> str:
         document.getElementById("np-artist").innerHTML = np ? esc(np.artist || "") : "";
         document.getElementById("np-album").innerHTML = (np && np.album) ? esc(np.album) : "";
         document.getElementById("np-badges").innerHTML = renderBadges(np);
+        // Album cover: the brain adds now_playing.cover_url ONLY once art is resolved+cached
+        // (embedded → Cover Art Archive). Absent = show the placeholder note.
+        var cover = document.getElementById("cover"), wrap = document.getElementById("coverwrap");
+        if (np && np.cover_url) {{ if (cover.getAttribute("src") !== np.cover_url) cover.src = np.cover_url; wrap.classList.remove("empty"); }}
+        else {{ cover.removeAttribute("src"); wrap.classList.add("empty"); }}
       }}
       if (key !== lastNowKey) {{
         lastNowKey = key;
