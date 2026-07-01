@@ -161,15 +161,23 @@ radio.on_metadata(report_airing)
 radio = mksafe(radio)
 
 # Fold the album (from id3 tags) into the player-facing ICY StreamTitle when present, so
-# listeners' players show "Artist - Title — Album". This runs AFTER report_airing, which
+# listeners' players show "Artist - Title (Album)". This runs AFTER report_airing, which
 # already captured the CLEAN artist/title/album separately for the brain/website — so this
 # rewrite is player-only and never pollutes the website's discrete fields. Empty-safe:
 # an untagged track (or a talk break, album="") leaves the title untouched.
+#
+# [HARD] ASCII-ONLY separator. Liquidsoap 2.2.x escapes every non-ASCII codepoint in the
+# ICY StreamTitle to an HTML numeric entity (e.g. an em dash "—" reaches foobar2000 as the
+# literal text "&#8212;"). Proven on the wire: encoding="UTF-8" does NOT change this — the
+# metadata-update path is charset-fixed in 2.2.5. So the separator WE inject must stay pure
+# ASCII. Parentheses read cleanly and stay unambiguous vs the "artist - title" hyphen.
+# (Accented artist/title from source tags still entity-escape; that needs a Liquidsoap
+# upgrade to 2.3+ where ICY metadata is UTF-8, tracked separately — the website is fine.)
 def fold_album(m) =
   album = m["album"]
   title = m["title"]
   if album != "" and title != "" then
-    [("title", "#{title} — #{album}")]
+    [("title", "#{title} (#{album})")]
   else
     []
   end
