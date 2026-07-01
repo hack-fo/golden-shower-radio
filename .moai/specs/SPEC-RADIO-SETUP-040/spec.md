@@ -87,8 +87,8 @@ it greets the operator with an ASCII art RoboCop head with animated glowing red 
 4. Write `BRAIN_LLM_AUTH` to `.env`
 
 **Phase 2 — Acquisition** (shown only if slskd is not already configured):
-1. slskd username (`SLSKD_USERNAME`)
-2. slskd password (`SLSKD_PASSWORD`, secret input)
+1. slskd username (`SLSKD_SLSK_USERNAME` — slskd's native Soulseek-network login var)
+2. slskd password (`SLSKD_SLSK_PASSWORD`, secret input)
 3. slskd API key (`SLSKD_API_KEY`, secret input)
 
 **Phase 3 — Optional Enrichment** (user may press Enter to skip each):

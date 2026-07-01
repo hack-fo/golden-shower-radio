@@ -24,8 +24,8 @@ Must complete; no skipping.
 
 Skipped entirely if `SLSKD_API_KEY` is already set in `secrets/.env`. Otherwise prompts for:
 
-- `SLSKD_USERNAME`
-- `SLSKD_PASSWORD` (silent input)
+- `SLSKD_SLSK_USERNAME` (slskd's native env-var name for the Soulseek-network login; auto-registers on first connect)
+- `SLSKD_SLSK_PASSWORD` (silent input)
 - `SLSKD_API_KEY` (silent input)
 
 ### Phase 3 — Optional enrichment
