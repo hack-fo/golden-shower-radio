@@ -28,6 +28,11 @@ from .logging_setup import log_event
 
 log = logging.getLogger("brain.slskd")
 
+# Throttle for the Soulseek login preflight: only re-probe GET /api/v0/server at
+# most once per this many seconds. A cached recent "logged in" short-circuits so a
+# healthy connection costs nothing on the search hot path.
+LOGIN_CHECK_INTERVAL_SEC = 30.0
+
 
 def _first(d: Dict[str, Any], *keys, default=None):
     """Return the first present, non-None key from a dict (version-tolerant)."""
@@ -85,6 +90,9 @@ class SlskdClient:
             headers={"X-API-Key": api_key, "Accept": "application/json"},
             timeout=timeout,
         )
+        # Login preflight throttle state (see ensure_logged_in / LOGIN_CHECK_INTERVAL_SEC).
+        self._last_login_check: float = 0.0
+        self._last_login_ok: bool = False
 
     def close(self) -> None:
         try:
@@ -92,9 +100,86 @@ class SlskdClient:
         except Exception:  # noqa: BLE001
             pass
 
+    # -- connection health -------------------------------------------------------
+
+    def server_state(self) -> Optional[Dict[str, Any]]:
+        """GET /api/v0/server -> the ServerState dict, or None on any error.
+
+        Fields are camelCased and version-dependent; callers use _first() to read them.
+        """
+        try:
+            resp = self._client.get("/api/v0/server")
+            resp.raise_for_status()
+            data = resp.json()
+            return data if isinstance(data, dict) else None
+        except Exception as exc:  # noqa: BLE001
+            log_event(log, "slskd.server_state_error", error=str(exc))
+            return None
+
+    def is_logged_in(self) -> bool:
+        """True when slskd is connected AND logged into the Soulseek network.
+
+        Authoritative signal is the boolean ``isLoggedIn``. When that key is absent
+        (older/variant slskd), fall back to the ``state`` flags string containing
+        "LoggedIn". False when the server state can't be read.
+        """
+        state = self.server_state()
+        if not state:
+            return False
+        if "isLoggedIn" in state and state["isLoggedIn"] is not None:
+            return bool(state["isLoggedIn"])
+        return "loggedin" in str(_first(state, "state", default="")).lower().replace(" ", "")
+
+    def reconnect(self) -> bool:
+        """PUT /api/v0/server (empty body) -> slskd Connect(): kick its reconnect
+        watchdog. Returns True on a 2xx, False (+ log) on error."""
+        try:
+            resp = self._client.put("/api/v0/server")
+            return 200 <= resp.status_code < 300
+        except Exception as exc:  # noqa: BLE001
+            log_event(log, "slskd.reconnect_error", error=str(exc))
+            return False
+
+    def ensure_logged_in(self, *, heal: bool = True) -> bool:
+        """Preflight the Soulseek login before a search.
+
+        Returns True when logged in. When not, logs an actionable event and (if
+        ``heal`` and slskd isn't already transitioning) kicks the reconnect watchdog,
+        then returns False. Throttled: a recent successful check short-circuits without
+        re-hitting the server (see LOGIN_CHECK_INTERVAL_SEC), so a healthy connection
+        costs nothing on the hot path.
+        """
+        now = time.time()
+        if self._last_login_ok and (now - self._last_login_check) < LOGIN_CHECK_INTERVAL_SEC:
+            return True
+        logged = self.is_logged_in()
+        self._last_login_check = now
+        self._last_login_ok = logged
+        if logged:
+            return True
+        log_event(
+            log,
+            "slskd.not_logged_in",
+            message=(
+                "slskd is Disconnected / not logged into the Soulseek network — searches "
+                "will be skipped; check SLSKD_SLSK_USERNAME/SLSKD_SLSK_PASSWORD in secrets/.env"
+            ),
+        )
+        if heal:
+            transitioning = bool(_first(self.server_state() or {}, "isTransitioning", default=False))
+            if not transitioning:
+                self.reconnect()
+        return False
+
     # -- search lifecycle --------------------------------------------------------
 
     def start_search(self, text: str) -> Optional[str]:
+        # Preflight: a Disconnected / not-logged-in slskd otherwise raises
+        # InvalidOperationException server-side and every search fails silently.
+        # Convert that into a clear log + heal attempt, and skip gracefully (None).
+        if not self.ensure_logged_in():
+            log_event(log, "slskd.search_skipped_not_connected", text=text)
+            return None
         try:
             resp = self._client.post("/api/v0/searches", json={"searchText": text})
             resp.raise_for_status()
