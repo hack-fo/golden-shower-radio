@@ -452,7 +452,13 @@ def run() -> int:
                              if od_ledger is not None else None)
             lineup_planner = WeeklyMatrixPlanner(
                 lineup_controller, budget=lineup_budget, ledger=od_ledger, cfg=cfg)
-            log_event(log, "main.lineup_ready", shows=show_registry.count())
+            # controller_ready/planner_ready report the staged layer. The director->planner/
+            # controller handoff (matrix apply, hiatus transitions) is director-driven future
+            # work; for now they are instantiated + reachable and the registry feeds the world
+            # model. The readiness flags also keep both locals genuinely consumed.
+            log_event(log, "main.lineup_ready", shows=show_registry.count(),
+                      controller_ready=lineup_controller is not None,
+                      planner_ready=lineup_planner is not None)
         except Exception as exc:  # noqa: BLE001 - the lineup layer is best-effort, never fatal to boot
             log_event(log, "main.lineup_init_failed", error=str(exc))
             show_registry = lineup_controller = lineup_planner = None
