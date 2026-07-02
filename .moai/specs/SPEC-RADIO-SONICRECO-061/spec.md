@@ -1,6 +1,6 @@
 ---
 id: SPEC-RADIO-SONICRECO-061
-version: 0.2.1
+version: 0.2.2
 status: draft
 created: 2026-07-01
 updated: 2026-07-02
@@ -12,6 +12,8 @@ issue_number: 61
 # SPEC-RADIO-SONICRECO-061 — Grounded Sonic Recommendation Engine (content embeddings + brute-force vector retrieval + constrained-ID LLM re-rank)
 
 ## HISTORY
+
+- 2026-07-02 (v0.2.2): **Plan-auditor fixes** (report `.moai/reports/spec-audit-SONICRECO-061-2026-07-02.md`; audit verdict READY, no blockers). **F1** — corrected the anti-appeal-rail citation: `OPS-004 REQ-OF-004` is literally the APOLITICAL constraint, not anti-appeal; the precise IDs are **CORE-001 REQ-D-008** ("curatorial context, never an optimization target") + **PROGRAMMING-007 REQ-PR-008** ("never for appeal"), swapped in §1.6 and REQ-RK-007. **F2** — NFR-SR-3 now states the gating explicitly: the grounded PLAYOUT re-rank activates only when the engine is enabled AND `scheduling_enabled` is on; with either off, the playout pull is byte-identical. **F3** — reworded the NFR-SR-8 amendment provenance (2026-07-01 = the decision date, folded into v0.2.0, not a separate version). F4/F5 (cosmetic: REQ-GD-003 EARS-label, VE header priority) accepted as-is — REQ-GD-003 is already a well-formed constraint; the §16 index is authoritative. No REQ/NFR count change (21 + 10 = 31).
 
 - 2026-07-02 (v0.2.1): **Design-division amendment** (a same-day second revision on top of v0.2.0). Encodes
   the agreed principle — **"LOCAL structure does recall + grounding; Claude does judgment at planning cadence;
@@ -240,7 +242,7 @@ host / director decides, with full creative freedom, WHICH real candidates to pl
 what order, and with what character. What is NOT the AI's call, and what this SPEC fixes as hard rails, is:
 selection is grounded (only real, in-set IDs); retrieval is deterministic and off the hot path; the LLM
 never overrides the HARD LRP / no-repeat rails; and no path optimises against play-count / popularity /
-engagement (the inherited OPS-004 REQ-OF-004 / PROGRAMMING-007 anti-appeal rail). The embedding model, K,
+engagement (the inherited CORE-001 REQ-D-008 / PROGRAMMING-007 REQ-PR-008 anti-appeal rail). The embedding model, K,
 softmax temperature, brute-force-vs-sqlite-vec, and the enable toggles are TUNABLE config; the requirement
 guarantees only that selection is grounded, off the hot path, and never binds engagement to airplay.
 
@@ -704,7 +706,7 @@ While the like / skip signals accumulate (`brain/like.py` `AffinityStore` in `ev
 `taste.py` `play_through` / `early_skip` signals, `:490`–`:519`), the system SHALL feed them into the
 grounded re-rank as NON-BINDING curatorial context that gently nudges ordering — and SHALL NOT compute
 play-count / skip-rate / like-volume as an optimisation TARGET or a deterministic airplay function
-(inherited OPS-004 REQ-OF-004 / PROGRAMMING-007 anti-appeal rail). [HARD] Feedback is context the re-rank
+(inherited CORE-001 REQ-D-008 / PROGRAMMING-007 REQ-PR-008 anti-appeal rail). [HARD] Feedback is context the re-rank
 WEIGHS, never a popularity score it maximises; the same anti-appeal invariant PL already enforces. The
 signal weights are config; that feedback is a non-binding re-rank input (never an appeal target) is the
 rail.
@@ -733,7 +735,7 @@ metric-learning layer over the embeddings (a Mahalanobis-style weighting of vect
 influence, the bliss-rs idea mapped onto our taste layer) learned LOCALLY from the existing
 `SIGNAL_PLAY_THROUGH` / `SIGNAL_EARLY_SKIP` signals (`brain/taste.py:490`–`519`) so that similarity reflects
 what actually plays-through vs skips for that persona. [HARD] It MUST respect the inherited anti-appeal rail
-(OPS-004 REQ-OF-004 / PROGRAMMING-007): it is CURATORIAL similarity SHAPING, NEVER a popularity / engagement
+(CORE-001 REQ-D-008 / PROGRAMMING-007 REQ-PR-008): it is CURATORIAL similarity SHAPING, NEVER a popularity / engagement
 score to maximise and never a deterministic airplay function. It is OFF by default, BOUNDED, and DEGRADES to
 plain cosine similarity when disabled or unavailable (NFR-SR-3/7). The metric / bound / learning policy are
 config; that the `related_fn` is an optional, bounded, anti-appeal-respecting feedback-weighted similarity
@@ -802,7 +804,11 @@ AC-NFR-SR-2.
 ### NFR-SR-3 — OFF the hot path; byte-identical when OFF (Ubiquitous) — Priority High
 No engine component shall sit on the sub-1s playout pull path. With the engine disabled, `library.pick_next`
 / `server._pick_refined` / `/api/next` shall be BYTE-IDENTICAL to today; a component fault shall degrade to
-today's deterministic result (REQ-GD-004), never a stalled or worse-than-today one. See acceptance.md
+today's deterministic result (REQ-GD-004), never a stalled or worse-than-today one. [HARD] The grounded
+PLAYOUT re-rank (Group RK) is additionally gated on `scheduling_enabled` (default OFF): it activates ONLY
+when the engine is enabled AND `scheduling_enabled` is on; with EITHER toggle off, `library.pick_next` /
+`server._pick_refined` / `/api/next` are byte-identical (acquisition-side grounding is independent of
+`scheduling_enabled`). See acceptance.md
 AC-NFR-SR-3.
 
 ### NFR-SR-4 — The ID-grounding firewall is load-bearing (Ubiquitous) — Priority High
@@ -830,7 +836,7 @@ gracefully — without crashing the daemon, the director loop, or the picker, an
 acceptance.md AC-NFR-SR-7.
 
 ### NFR-SR-8 — Licence policy: non-commercial personal project (Ubiquitous) — Priority Medium
-[AMENDED 2026-07-01, swept 2026-07-02 (v0.2.0) — the station is a NON-COMMERCIAL personal project (memory:
+[AMENDED in v0.2.0 (2026-07-02), reflecting the 2026-07-01 non-commercial decision — the station is a NON-COMMERCIAL personal project (memory:
 non-commercial-posture), which SUPERSEDES the earlier "permissive-only" gate.] Permissively-licensed
 components remain PREFERRED, and the primary path stays permissive anyway (music-tuned CLAP
 `larger_clap_music` Apache-2.0, the CLaMP 3 upgrade tier MIT, NumPy BSD, sqlite-vec Apache-2.0/MIT).
