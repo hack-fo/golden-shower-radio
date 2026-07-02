@@ -1,6 +1,6 @@
 ---
 id: SPEC-RADIO-DISCO-062
-version: 0.1.0
+version: 0.1.1
 status: draft
 created: 2026-07-02
 updated: 2026-07-02
@@ -12,6 +12,8 @@ issue_number: null
 # SPEC-RADIO-DISCO-062 — "Disco Mode": a vibrant listener-influence surface
 
 ## HISTORY
+
+- 2026-07-02 (v0.1.1): **Plan-auditor fixes** (report `.moai/reports/spec-audit-DISCO-062-2026-07-02.md`; verdict NEEDS-FIXES → resolved). **D2** — corrected `brain/like.py` symbol `TokenGate` → `LikeTokener` (the real class at :92; methods mint :114 / verify :129 were right). **D3** — line-number drift fixed (`LikeGate` :320→:319, `_handle_like_token` :744→:743, `_handle_like` :766→:765, `_build_options` :99→:92). **D5** — flagged the vibe-steer degrade as a run-phase [BUILD-GAP]: `SIGNAL_LISTENER_CONTEXT` is a SCALAR nudge, not the per-descriptor mapping REQ-DN-002 needs (with R-D-4 concurrent-steer aggregation + access-gate default). **D1 was a FALSE POSITIVE** — the auditor ran on this branch, where SONICRECO-061's SPEC files are absent (they are committed on `feature/SPEC-RADIO-SONICRECO-061`, not yet merged to main); `REQ-VE-005` + Groups GD/RK are verified real there, and REQ-VE-005 explicitly names a future "disco mode" surface as its consumer — so the cross-refs stand and are now annotated with the branch location. **D4** (cosmetic `## 10X./10Y.` heading artifacts) left as-is to avoid a section-renumber cascade. No REQ/NFR count change (23 + 8 = 31).
 
 - 2026-07-02 (v0.1.0): Initial DESIGN / PLAN draft (no code this pass), occupying the new
   global-incrementing DISCO-062 id (062 is the next free RADIO id; 061 = SONICRECO, 060 = LIVEMIX are
@@ -233,7 +235,7 @@ Composed / consumed concepts:
   ships, Group DL degrades to the existing `brain/library.py` `normalize_key` + `track_for_key` lookup
   (play-if-owned bias) + a simple wishlist note (REQ-DL-002). The dependency is recorded so DISCO-062 is
   not built assuming a matcher / wishlist surface that does not yet exist.
-- **SONICRECO-061 (DRAFT, unbuilt) — REQ-VE-005 + Groups GD / RK.** The vibe path (Group DN) hands its
+- **SONICRECO-061 (DRAFT, unbuilt; committed on branch `feature/SPEC-RADIO-SONICRECO-061`, not yet merged to main — `REQ-VE-005` + Groups GD/RK verified present there).** The vibe path (Group DN) hands its
   natural-language query to SONICRECO's text→audio KNN via the CLAP text tower (REQ-VE-005), whose
   grounded retrieval + constrained-ID selection (Groups GD / RK) shape the candidate pool for a bounded
   window. SONICRECO-061 REQ-VE-005 already names a future conversational "disco mode" surface as its
@@ -394,12 +396,12 @@ existing function reused as-is.
 | `brain/server.py` `do_GET` dispatch (`:476`-`:506`) | **[MODIFY]** | Add a `/disco` branch → a new `_handle_disco()` serving the vibrant page, and a `/api/disco/wall` branch → a new `_handle_disco_wall()` serving the accepted-suggestions feed. Rides the existing never-crash `try/except` (`:507`-`:513`) so a Disco fault returns 500 without touching the daemon. New routes; no new dependency (REQ-DH-001/002, NFR-D-2). |
 | `brain/server.py` `do_POST` dispatch (`:426`-`:451`) | **[MODIFY]** | Add a `/api/disco` branch → a new `_handle_disco_submit()` accepting a submission body, invoking the DU review gate, and returning an accept/reject verdict (REQ-DH-002, Group DU). |
 | `brain/server.py` `_handle_next` (`:517`) / `_pick_refined` (`:305`) | **[UNTOUCHED — rail]** | [HARD] The sub-1s pull path stays byte-identical; Disco routes never call `_handle_next`. The vibe steer influences selection only via the taste/retrieval seams read by the picker, never by intercepting the pull (REQ-DH-003, NFR-D-1). |
-| `brain/server.py` `_handle_like_token` (`:744`) / `_handle_like` (`:766`) | **[REUSE — precedent]** | The mint → verify → identity-hash → rate-limit → dedup pattern is the precedent for the DU submission gate's per-listener rate-limit + anonymized identity (REQ-DU-004). |
+| `brain/server.py` `_handle_like_token` (`:743`) / `_handle_like` (`:765`) | **[REUSE — precedent]** | The mint → verify → identity-hash → rate-limit → dedup pattern is the precedent for the DU submission gate's per-listener rate-limit + anonymized identity (REQ-DU-004). |
 | `brain/server.py` `_handle_root` / `state.website_html()` (`:795`) | **[REFERENCE]** | The existing site render; the `/disco` page is a sibling render, and may link from the site (Group DZ). |
 | `brain/website.py` `render_website(cfg)` (`:14`) + `:root` tokens (`:26`-`:30`) | **[MODIFY / REFERENCE]** | The `/disco` page reuses the render idiom and the CSS-custom-property token pattern; the vibrant Disco palette (orange / peach / flamenco red / cuba libre / summery) is a warm cousin of the existing `--gold #f5c542` / `--bg #0c0a06` tokens. [HARD] Reconcile with brand context (Group DZ, REQ-DZ-002). |
-| `brain/llm.py` `generate_talk_script` (`:997`) / `_query_text` subscription-auth never-raise seam (`:1019` fallback) / `_build_options` (`:99`) | **[REUSE / NEW sibling]** | A new `review_disco_submission()`-style call mirrors the tools-off, one-turn, subscription-auth, never-raise contract (never crashes; degrades to a deterministic verdict on any exception) for the LLM review (REQ-DU-001/005). |
-| `brain/taste.py` `TasteProfile` (`:366`) / `relevance` (`:464`) / `SIGNAL_LISTENER_CONTEXT` (`:493`) / `_SIGNAL_DIRECTION` (`:514`) / `aggregate_delta` (`:522`) | **[REUSE — vibe degradation]** | The vibe-steer degradation applies a bounded, expiring `SIGNAL_LISTENER_CONTEXT`-style delta to the per-persona `TasteProfile` weights when SONICRECO is unavailable (REQ-DN-002). |
-| `brain/like.py` `hash_identity` (`:65`) / `LikeGate` (`:320`) / `TokenGate.mint`/`verify` (`:114`/`:129`) | **[REUSE]** | Anonymized identity hash (`SHA256(cookie + salt)`) + dedup / rate-limit for the DU per-listener gate and the DW anonymized wall (REQ-DU-004, REQ-DW-003, NFR-D-5). |
+| `brain/llm.py` `generate_talk_script` (`:997`) / `_query_text` subscription-auth never-raise seam (`:1019` fallback) / `_build_options` (`:92`) | **[REUSE / NEW sibling]** | A new `review_disco_submission()`-style call mirrors the tools-off, one-turn, subscription-auth, never-raise contract (never crashes; degrades to a deterministic verdict on any exception) for the LLM review (REQ-DU-001/005). |
+| `brain/taste.py` `TasteProfile` (`:366`) / `relevance` (`:464`) / `SIGNAL_LISTENER_CONTEXT` (`:493`) / `_SIGNAL_DIRECTION` (`:514`) / `aggregate_delta` (`:522`) | **[REUSE — vibe degradation]** | The vibe-steer degradation applies a bounded, expiring `SIGNAL_LISTENER_CONTEXT`-style delta to the per-persona `TasteProfile` weights when SONICRECO is unavailable (REQ-DN-002). [BUILD-GAP] `SIGNAL_LISTENER_CONTEXT` is today a SCALAR global nudge (`+0.05`), NOT the per-descriptor genre/mood mapping REQ-DN-002 needs → the degrade path requires NEW per-descriptor mapping logic designed at implementation; concurrent-steer aggregation (R-D-4) + the access-gate default remain run-phase items. |
+| `brain/like.py` `hash_identity` (`:65`) / `LikeGate` (`:319`) / `LikeTokener.mint`/`verify` (`:114`/`:129`) | **[REUSE]** | Anonymized identity hash (`SHA256(cookie + salt)`) + dedup / rate-limit for the DU per-listener gate and the DW anonymized wall (REQ-DU-004, REQ-DW-003, NFR-D-5). |
 | `brain/library.py` `normalize_key` (`:43`) / `track_for_key` (`:588`) / `keys` (`:602`) | **[REUSE — song/artist degradation]** | The song/artist degradation resolves a submission via `normalize_key(artist, title)` → `track_for_key` (play-if-owned bias) + a simple wishlist note when REQUEST-011 is unavailable (REQ-DL-002). |
 | REQUEST-011 Group RM (matcher) / RWL (wishlist + acquisition) / RS (access-gate + moderation) | **[CONSUME — GREENFIELD]** | The song/artist path routes an accepted submission into REQUEST-011's matcher + wishlist; DISCO-062 does not re-specify them. Unbuilt → Group DL degrades (REQ-DL-001/002). |
 | SONICRECO-061 REQ-VE-005 (text→audio CLAP KNN) / Group GD (ID-grounding firewall) / Group RK (constrained-ID selection) | **[CONSUME — GREENFIELD]** | The vibe path hands its query to SONICRECO's grounded retrieval to shape the candidate pool; DISCO-062 does not re-own the engine. Unbuilt → Group DN degrades (REQ-DN-001/002). |
